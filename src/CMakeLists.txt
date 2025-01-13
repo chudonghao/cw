@@ -1,10 +1,8 @@
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-if(MSVC)
-  add_compile_options(/utf-8)
-endif()
+set(Boost_USE_STATIC_LIBS ON)
+find_package(Boost REQUIRED COMPONENTS filesystem)
+link_directories(${Boost_LIBRARY_DIRS})
 
 add_subdirectory(cw)
 add_subdirectory(cwlang)

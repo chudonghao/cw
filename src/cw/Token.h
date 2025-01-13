@@ -98,6 +98,10 @@ tok::TokenType from_chars(const char *str);
 
 struct NoneProperty {};
 
+struct BoolProperty {
+  bool value{false};
+};
+
 struct IntegerProperty {
   bool sign{true};
   int precision{4};  // 1, 2, 4, 8
@@ -113,10 +117,13 @@ struct StringProperty {
   std::string value;
 };
 
+struct IdentifierProperty {
+  std::string name;
+};
+
 class Token {
  public:
-  using Property = std::variant<NoneProperty, IntegerProperty, FloatProperty,
-                                StringProperty>;
+  using Property = std::variant<NoneProperty, IntegerProperty, FloatProperty, StringProperty, BoolProperty, IdentifierProperty>;
 
   SourceLocation location{};
   tok::TokenType type{};

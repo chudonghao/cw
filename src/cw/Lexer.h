@@ -7,10 +7,17 @@
 
 #pragma once
 
+#include <vector>
+
+#include "Source.h"
+
 namespace cw {
 
 class Lexer {
+  const std::vector<Source>* sources_{};
+
  public:
+  void Reset(const std::vector<Source>* sources);
 };
 
 }  // namespace cw
