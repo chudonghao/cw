@@ -84,6 +84,8 @@ class LRCanonicalCollection {
 
   int size() const { return C_.size(); }
 
+  bool empty() const { return C_.empty(); }
+
   const std::set<int>& operator[](int index) const { return C_[index]; }
 
   int index(const std::set<int>& I) const {
@@ -205,27 +207,35 @@ class GrammarAnalyzer {
 
   static GrammarAnalyzer Analyze(const Grammar& g, unsigned int GRAMMAR_TYPE = ALL);
 
-  void DumpFirsts(std::ostream& os);
+  bool IsLR0() const;
 
-  void DumpFollows(std::ostream& os);
+  bool IsSLR() const;
 
-  void DumpSelects(std::ostream& os);
+  bool IsLR1() const;
 
-  void DumpLR0Item(std::ostream& os, int ii);
+  void DumpFirsts(std::ostream& os) const;
 
-  void DumpLR0Items(std::ostream& os);
+  void DumpFollows(std::ostream& os) const;
 
-  void DumpLR0CanonicalCollection(std::ostream& os);
+  void DumpSelects(std::ostream& os) const;
 
-  void DumpLR0ParseTable(std::ostream& os);
+  void DumpLR0Item(std::ostream& os, int ii) const;
 
-  void DumpSLRParseTable(std::ostream& os);
+  void DumpLR0Items(std::ostream& os) const;
+
+  void DumpLR0CanonicalCollection(std::ostream& os) const;
+
+  void DumpLR0ParseTable(std::ostream& os) const;
+
+  void DumpSLRParseTable(std::ostream& os) const;
 
  private:
   GrammarAnalyzer(const Grammar& g) : grammar(g) {}
 
  private:
-  void DumpParseTable(std::ostream& os, const MultiActionLRParseTable& table);
+  void DumpParseTable(std::ostream& os, const MultiActionLRParseTable& table) const;
+
+  bool HasConflict(const MultiActionLRParseTable& table) const;
 };
 
 }  // namespace cw::lang

@@ -8,8 +8,10 @@
 #include "GrammarAnalyzer.h"
 #include "Grammar.h"
 
+#include <boost/algorithm/string.hpp>
+
 #include <iostream>
-#include <unordered_set>
+#include <vector>
 
 namespace cw::lang {
 
@@ -424,10 +426,6 @@ GrammarAnalyzer GrammarAnalyzer::Analyze(const Grammar &g, unsigned int GRAMMAR_
     ga.lr0_canonical_collection = LR0_CANONICAL_COLLECTION(g, ga.lr0_items);
   }
 
-  g.Dump(std::cout);
-  ga.DumpLR0Items(std::cout);
-  ga.DumpLR0CanonicalCollection(std::cout);
-
   if (GRAMMAR_TYPE & LR0) {
     ga.lr0_parse_table = LR0_PARSE_TABLE(g, ga.lr0_items, ga.lr0_canonical_collection);
   }
@@ -442,7 +440,21 @@ GrammarAnalyzer GrammarAnalyzer::Analyze(const Grammar &g, unsigned int GRAMMAR_
   return ga;
 }
 
-void GrammarAnalyzer::DumpFirsts(std::ostream &os) {
+bool GrammarAnalyzer::IsLR0() const {
+  if (lr0_items.empty() || lr0_canonical_collection.empty()) {
+    return false;
+  }
+  return !HasConflict(lr0_parse_table);
+}
+
+bool GrammarAnalyzer::IsSLR() const {
+  if (lr0_items.empty() || lr0_canonical_collection.empty()) {
+    return false;
+  }
+  return !HasConflict(slr_parse_table);
+}
+
+void GrammarAnalyzer::DumpFirsts(std::ostream &os) const {
   std::set<int> viewed_index;
   for (auto A : grammar.V_N()) {
     if (firsts_db[A].empty()) {
@@ -457,7 +469,7 @@ void GrammarAnalyzer::DumpFirsts(std::ostream &os) {
   }
 }
 
-void GrammarAnalyzer::DumpFollows(std::ostream &os) {
+void GrammarAnalyzer::DumpFollows(std::ostream &os) const {
   for (auto A : grammar.V_N()) {
     if (follows_db[A].empty()) {
       continue;
@@ -471,7 +483,7 @@ void GrammarAnalyzer::DumpFollows(std::ostream &os) {
   }
 }
 
-void GrammarAnalyzer::DumpSelects(std::ostream &os) {
+void GrammarAnalyzer::DumpSelects(std::ostream &os) const {
   for (int pi = 0; pi < grammar.NumProductions(); ++pi) {
     os << "SELECT( ";
     grammar.DumpProduction(os, pi);
@@ -483,7 +495,7 @@ void GrammarAnalyzer::DumpSelects(std::ostream &os) {
   }
 }
 
-void GrammarAnalyzer::DumpLR0Item(std::ostream &os, int ii) {
+void GrammarAnalyzer::DumpLR0Item(std::ostream &os, int ii) const {
   auto &item = lr0_items[ii];
   auto &p = grammar.P(item.production);
 
@@ -501,7 +513,7 @@ void GrammarAnalyzer::DumpLR0Item(std::ostream &os, int ii) {
   os << " (next: " << item.next_state << ")";
 }
 
-void GrammarAnalyzer::DumpLR0Items(std::ostream &os) {
+void GrammarAnalyzer::DumpLR0Items(std::ostream &os) const {
   for (int ii = 0; ii < lr0_items.size(); ++ii) {
     os << "item " << ii << ": ";
     DumpLR0Item(os, ii);
@@ -509,7 +521,7 @@ void GrammarAnalyzer::DumpLR0Items(std::ostream &os) {
   }
 }
 
-void GrammarAnalyzer::DumpLR0CanonicalCollection(std::ostream &os) {
+void GrammarAnalyzer::DumpLR0CanonicalCollection(std::ostream &os) const {
   auto &C = lr0_canonical_collection;
 
   for (int i = 0; i < C.size(); ++i) {
@@ -531,15 +543,19 @@ void GrammarAnalyzer::DumpLR0CanonicalCollection(std::ostream &os) {
   }
 }
 
-void GrammarAnalyzer::DumpLR0ParseTable(std::ostream &os) {
-  DumpParseTable(os, lr0_parse_table);
-}
+void GrammarAnalyzer::DumpLR0ParseTable(std::ostream &os) const { DumpParseTable(os, lr0_parse_table); }
 
-void GrammarAnalyzer::DumpSLRParseTable(std::ostream &os) {
-  DumpParseTable(os, slr_parse_table);
-}
+void GrammarAnalyzer::DumpSLRParseTable(std::ostream &os) const { DumpParseTable(os, slr_parse_table); }
 
-void GrammarAnalyzer::DumpParseTable(std::ostream &os, const MultiActionLRParseTable &table) {
+void GrammarAnalyzer::DumpParseTable(std::ostream &os, const MultiActionLRParseTable &table) const {
+  auto FormatActions = [](const std::set<LRAction> &actions) {
+    std::vector<std::string> action_strs;
+    for (auto &action : actions) {
+      action_strs.push_back(to_string(action));
+    }
+    return boost::join(action_strs, "/");
+  };
+
   os << "state/action/symbol\t";
   for (auto a : grammar.V_T()) {
     os << grammar.SymbolName(a) << "\t";
@@ -552,19 +568,25 @@ void GrammarAnalyzer::DumpParseTable(std::ostream &os, const MultiActionLRParseT
   for (int s = 0; s < table.num_states(); ++s) {
     os << s << "\t";
     for (auto a : grammar.V_T()) {
-      for (auto &action : table(s, a)) {
-        os << to_string(action);
-      }
-      std::cout << "\t";
+      os << FormatActions(table(s, a)) << "\t";
     }
     for (auto A : grammar.V_N()) {
-      for (auto &action : table(s, A)) {
-        os << to_string(action);
-      }
-      std::cout << "\t";
+      os << FormatActions(table(s, A)) << "\t";
     }
     os << std::endl;
   }
+}
+
+bool GrammarAnalyzer::HasConflict(const MultiActionLRParseTable &table) const {
+  for (int state = 0; state < table.num_states(); ++state) {
+    for (int symbol = 0; symbol < table.num_symbols(); ++symbol) {
+      auto &action = table(state, symbol);
+      if (action.size() > 1) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 }  // namespace cw::lang
