@@ -27,8 +27,6 @@ struct Production {
   Symbol l{};
   // right
   Right r{};
-  // auxiliary
-  // int index{};
 
   Production() = default;
 
@@ -147,6 +145,9 @@ class Grammar {
   void Dump(std::ostream& os) const;
 
   void DumpProduction(std::ostream& os, int pi) const;
+
+ private:
+  Grammar() = default;
 };
 
 }  // namespace cw::lang

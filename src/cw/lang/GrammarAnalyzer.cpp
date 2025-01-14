@@ -11,6 +11,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include <iostream>
+#include <stdexcept>
 #include <vector>
 
 namespace cw::lang {
@@ -77,7 +78,7 @@ FIRSTS_db FIRSTS(const Grammar &g) {
     firsts_db[a].insert(a);
   }
 
-  // if V -> ε, FIRST(V) += {ε}
+  // if A -> ε, FIRST(A) += {ε}
   for (auto A : g.V_N()) {
     for (auto p : g.Productions4(A)) {
       if (g.IsEmptyProduction(p)) {
@@ -208,12 +209,6 @@ int NextSymbol(const Grammar &g, const LRItem &item) {
   BOOST_ASSERT(item.place_holder >= 0 && item.place_holder < p.r.size());
   return p.r[item.place_holder];
 }
-
-// bool IsLR0EqualItem(const Grammar &g, const LRItem &item, const LRItem &test) {
-//   auto &p = g.P(item.production);
-//   auto &p_test = g.P(test.production);
-//   return IsNextSymbolNonTerminal(g, test) && NextSymbol(g, test) == p.l;
-// }
 
 std::vector<LRItem> LR0_ITEMS(const Grammar &g) {
   std::vector<LRItem> items;
@@ -435,6 +430,7 @@ GrammarAnalyzer GrammarAnalyzer::Analyze(const Grammar &g, unsigned int GRAMMAR_
   }
 
   if (GRAMMAR_TYPE & LR1) {
+    // TODO
   }
 
   return ga;
@@ -453,6 +449,12 @@ bool GrammarAnalyzer::IsSLR() const {
   }
   return !HasConflict(slr_parse_table);
 }
+
+LRParseTable GrammarAnalyzer::CreateLR0PaserTable() const { return ConvertToSingleActionLRParseTable(lr0_parse_table); }
+
+LRParseTable GrammarAnalyzer::CreateSLRPaserTable() const { return ConvertToSingleActionLRParseTable(slr_parse_table); }
+
+LRParseTable GrammarAnalyzer::CreateLR1ParserTable() const { return ConvertToSingleActionLRParseTable(lr1_parse_table); }
 
 void GrammarAnalyzer::DumpFirsts(std::ostream &os) const {
   std::set<int> viewed_index;
@@ -587,6 +589,25 @@ bool GrammarAnalyzer::HasConflict(const MultiActionLRParseTable &table) const {
     }
   }
   return false;
+}
+
+LRParseTable GrammarAnalyzer::ConvertToSingleActionLRParseTable(const MultiActionLRParseTable &table) const {
+  LRParseTable parse_table;
+  parse_table.Resize(table.num_states(), table.num_symbols());
+
+  for (int state = 0; state < table.num_states(); ++state) {
+    for (int symbol = 0; symbol < table.num_symbols(); ++symbol) {
+      auto &actions = table(state, symbol);
+      if (actions.size() > 1) {
+        throw std::logic_error("Invalid table");
+      }
+      if (actions.size() == 1) {
+        parse_table(state, symbol) = *table(state, symbol).begin();
+      }
+    }
+  }
+
+  return parse_table;
 }
 
 }  // namespace cw::lang

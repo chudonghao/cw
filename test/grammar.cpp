@@ -1,4 +1,5 @@
-#include <functional>
+#include <fstream>
+
 #include <gtest/gtest.h>
 
 #include "cw/lang/Grammar.h"
@@ -316,7 +317,6 @@ TEST(Grammar, LR1) {
   auto g = Grammar::Create(P, num_symbols, "S", "ε", "$");
   auto ga = GrammarAnalyzer::Analyze(g, GrammarAnalyzer::ALL);
 
-
   std::cout << "===G===" << std::endl;
   g.Dump(std::cout);
   std::cout << "===LR(0) items===" << std::endl;
@@ -331,4 +331,25 @@ TEST(Grammar, LR1) {
   ASSERT_FALSE(ga.IsLR0());
   ASSERT_FALSE(ga.IsSLR());
   // ASSERT_TRUE(ga.IsLR1());
+}
+
+TEST(Grammar, CW_Expr) {
+  using namespace cw::lang;
+
+  Grammar g = ExprGrammar();
+  auto ga = GrammarAnalyzer::Analyze(g, GrammarAnalyzer::ALL);
+
+  std::cout << "===G===" << std::endl;
+  g.Dump(std::cout);
+  std::cout << "===LR(0) items===" << std::endl;
+  ga.DumpLR0Items(std::cout);
+  std::cout << "===LR(0) canonical collection===" << std::endl;
+  ga.DumpLR0CanonicalCollection(std::cout);
+  std::cout << "===LR(0) parse table===" << std::endl;
+  ga.DumpLR0ParseTable(std::cout);
+  std::cout << "===SLR parse table===" << std::endl;
+  ga.DumpSLRParseTable(std::cout);
+
+  ASSERT_FALSE(ga.IsLR0());
+  ASSERT_TRUE(ga.IsSLR());
 }

@@ -2,7 +2,10 @@ add_library(
   cw_lang
   STATIC 
   lang/Grammar.h lang/Grammar.cpp
+  lang/LRParseTable.h lang/LRParseTable.cpp
+  lang/LRStateMachine.h lang/LRStateMachine.cpp
   lang/GrammarAnalyzer.h lang/GrammarAnalyzer.cpp
+  lang/cw.h
   Token.cpp Token.h
   Lexer.h Lexer.cpp
   Parser.h Parser.cpp
