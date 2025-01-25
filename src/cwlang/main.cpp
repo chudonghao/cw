@@ -1,6 +1,6 @@
 /// \file main.cpp
 /// \author Donghao Chu
-/// \date 2025-01-06
+/// \date 2025/01/06
 /// \copyright 2025 Donghao Chu
 /// \license Apache License, Version 2.0
 /// \url https://github.com/chudonghao/cw
@@ -13,11 +13,12 @@
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 
-#include "cw/lang/Lexer.h"
-#include "cw/lang/Parser.h"
-#include "cw/lang/Source.h"
+#include "cw/Lexer.h"
+#include "cw/Parser.h"
+#include "cw/Source.h"
 
 namespace fs = boost::filesystem;
+namespace po = boost::program_options;
 
 class Compiler {
   cw::Lexer lexer;
@@ -25,8 +26,8 @@ class Compiler {
 
  public:
   void Compile(const std::vector<cw::Source>& sources) {
-    lexer.Reset(&sources);
-    parser.Reset(&lexer);
+    lexer.Reset(sources);
+    parser.Reset(lexer);
 
     parser();
   }
@@ -60,14 +61,14 @@ class Machine {
 
   void CollectSources(const std::vector<std::string>& inputs_from_args) {
     for (const auto& input : inputs_from_args) {
-      if (input.empty() || input == "--") {
+      if (input.empty() || input == "-") {
         return;
       }
       ReadSource(input);
     }
     std::string input;
     while (std::getline(std::cin, input)) {
-      if (input.empty() || input == "--") {
+      if (input.empty() || input == "-") {
         return;
       }
       ReadSource(input);
@@ -75,40 +76,48 @@ class Machine {
   }
 
   // main loop
-  void Run(const std::vector<std::string>& inputs_from_args) {
+  void Run(const std::vector<std::string>& inputs_from_args, const std::string& output_path) {
     CollectSources(inputs_from_args);
     compiler.Compile(sources);
   }
 };
 
 int main(int argc, char* argv[]) {
-  std::vector<std::string> inputs_from_args;
-  for (int i = 1; i < argc; ++i) {
-    if (strcmp(argv[i], "--") == 0) {
-      for (int j = i + 1; j < argc; ++j) {
-        inputs_from_args.push_back(argv[j]);
-      }
-      argc = i;
-      break;
-    }
-  }
-
   try {
-    boost::program_options::options_description desc("Allowed options");
+    po::options_description desc("Allowed options");
     desc.add_options()("help,h", "Display help information");
-    desc.add_options()("output,o", boost::program_options::value<std::string>(), "Output file");
+    desc.add_options()("output,o", po::value<std::string>(), "Output file");
+    desc.add_options()("files", po::value<std::vector<std::string>>(), "Input files");
 
-    boost::program_options::variables_map vm;
-    boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), vm);
-    boost::program_options::notify(vm);
+    po::positional_options_description p;
+    p.add("files", -1);
+
+    po::variables_map vm;
+    po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
+    po::notify(vm);
 
     if (vm.count("help")) {
       std::cout << desc;
-      std::cout << "Usage: cwlang [options] [-- [file1] [file2] ...]\n";
+      std::cout << "Usage: cwlang [options] [file1] [file2] ...\n";
       return 0;
     }
+
+    std::vector<std::string> files_from_args;
+    if (vm.count("files")) {
+      files_from_args = vm["files"].as<std::vector<std::string>>();
+    }
+
+    std::string output_path;
+    if (vm.count("output")) {
+      output_path = vm["output"].as<std::string>();
+    }
+    if (output_path.empty()) {
+      std::cerr << "Output file is not specified\n";
+      return -1;
+    }
+
     Machine machine;
-    machine.Run(inputs_from_args);
+    machine.Run(files_from_args, output_path);
     return 0;
   } catch (std::exception& e) {
     std::cerr << e.what() << "\n";

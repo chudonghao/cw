@@ -1,6 +1,6 @@
 /// \file Token.h
 /// \author Donghao Chu
-/// \date 2025-01-06
+/// \date 2025/01/06
 /// \copyright 2025 Donghao Chu
 /// \license Apache License, Version 2.0
 /// \url https://github.com/chudonghao/cw
@@ -10,7 +10,9 @@
 #include <string>
 #include <variant>
 
-#include "SourceLocation.h"
+#include "Source.h"
+
+#include "ExprGrammar.h"
 
 namespace cw {
 
@@ -24,13 +26,75 @@ namespace tok {
 // 5. Separator (one word, one code)
 enum TokenType {
   unknown,  // unknown
-  comment,  // comment
+
+  // Identifiers
+  identifier = expr::identifier,  // abc_123, etc.
+
+  // Constants
+  bool_ = expr::bool_,                    // true, false
+  integer = expr::integer,                // 123, 0u, 'a', etc.
+  float_ = expr::float_,                  // 1.23f, 0.0, etc.
+  string_literal = expr::string_literal,  // "abc", etc.
+
+  // Operators
+  period = expr::period,                            // .
+  arrow = expr::arrow,                              // ->
+  amp = expr::amp,                                  // &
+  ampamp = expr::ampamp,                            // &&
+  star = expr::star,                                // *
+  plus = expr::plus,                                // +
+  plusplus = expr::plusplus,                        // ++
+  minus = expr::minus,                              // -
+  minusminus = expr::minusminus,                    // --
+  tilde = expr::tilde,                              // ~
+  exclaim = expr::exclaim,                          // !
+  exclaimequal = expr::exclaimequal,                // !=
+  slash = expr::slash,                              // /
+  percent = expr::percent,                          // %
+  less = expr::less,                                // <
+  lessequal = expr::lessequal,                      // <=
+  lessless = expr::lessless,                        // <<
+  greater = expr::greater,                          // >
+  greaterequal = expr::greaterequal,                // >=
+  greatergreater = expr::greatergreater,            // >>
+  caret = expr::caret,                              // ^
+  pipe = expr::pipe,                                // |
+  pipepipe = expr::pipepipe,                        // ||
+  question = expr::question,                        // ?
+  colon = expr::colon,                              // :
+  coloncolon = expr::coloncolon,                    // ::
+  equal = expr::equal,                              // =
+  plusequal = expr::plusequal,                      // +=
+  minusequal = expr::minusequal,                    // -=
+  starequal = expr::starequal,                      // *=
+  slashequal = expr::slashequal,                    // /=
+  percentequal = expr::percentequal,                // %=
+  lesslessequal = expr::lesslessequal,              // <<=
+  greatergreaterequal = expr::greatergreaterequal,  // >>=
+  ampequal = expr::ampequal,                        // &=
+  caretequal = expr::caretequal,                    // ^=
+  pipeequal = expr::pipeequal,                      // |=
+  equalequal = expr::equalequal,                    // ==
+  comma = expr::comma,                              // ,
+
+  // Separators
+  semi = expr::semi,          // ;
+  l_square = expr::l_square,  // [
+  r_square = expr::r_square,  // ]
+  l_paren = expr::l_paren,    // (
+  r_paren = expr::r_paren,    // )
+  l_brace = expr::l_brace,    // {
+  r_brace = expr::r_brace,    // }
+
+  // 语句
+  NonExprTokenStart = expr::num_symbols,
 
   // Keywords
   struct_,    // struct
+  virtual_,   // virtual
   func,       // func
   var,        // var
-  align,      // align
+  alias,      // alias
   if_,        // if
   else_,      // else
   for_,       // for
@@ -38,61 +102,19 @@ enum TokenType {
   continue_,  // continue
   return_,    // return
 
-  // Identifiers
-  identifier,  // abc_123, etc.
-
-  // Constants
-  bool_,           // true, false
-  integer,         // 123, 0u, etc.
-  float_,          // 1.23f, 0.0, etc.
-  string_literal,  // "abc", etc.
-
-  // Operators
-  period,        // .
-  arrow,         // ->
-  amp,           // &
-  ampamp,        // &&
-  star,          // *
-  plus,          // +
-  plusplus,      // ++
-  minus,         // -
-  minusminus,    // --
-  tilde,         // ~
-  exclaim,       // !
-  exclaimequal,  // !=
-  slash,         // /
-  percent,       // %
-  less,          // <
-  lessequal,     // <=
-  greater,       // >
-  greaterequal,  // >=
-  caret,         // ^
-  pipe,          // |
-  pipepipe,      // ||
-  question,      // ?
-  colon,         // :
-  equal,         // =
-  equalequal,    // ==
-  comma,         // ,
-
-  // Separators
-  semi,      // ;
-  l_square,  // [
-  r_square,  // ]
-  l_paren,   // (
-  r_paren,   // )
-  l_brace,   // {
-  r_brace,   // }
-
   // Others
-  blank,  // space \t
-  eol,    // \r \n \r\n
-  eof,    // EOF
+  comment,  // comment
+  blank,    // space \t
+  eol,      // \r \n \r\n
+  eof,      // EOF
+  eos,      // end of sources
 };
 
-const char *to_chars(tok::TokenType type);
+const char *to_string(TokenType type);
 
-tok::TokenType from_chars(const char *str);
+TokenType from_string(const char *str);
+
+inline bool IsBlankOrComment(TokenType type) { return type == comment || type == blank || type == eol || type == eof; }
 
 }  // namespace tok
 
@@ -130,6 +152,13 @@ class Token {
   Property property{};
 
   Token() = default;
+
+  template <typename T>
+  const T &get() const {
+    return std::get<T>(property);
+  }
+
+  bool Valid() const { return type != tok::unknown; }
 };
 
 }  // namespace cw

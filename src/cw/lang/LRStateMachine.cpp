@@ -1,6 +1,6 @@
 /// \file LRStateMachine.cpp
 /// \author Donghao Chu
-/// \date 2025-01-13
+/// \date 2025/01/13
 /// \copyright 2025 Donghao Chu
 /// \license Apache License, Version 2.0
 /// \url https://github.com/chudonghao/cw
@@ -21,7 +21,13 @@ void LRStateMachine::Reset() {
 }
 
 int LRStateMachine::operator()(int symbol) {
+  if (symbol < 0 || parse_table_.num_symbols() <= symbol) {
+    throw std::logic_error("Invalid symbol");
+  }
+
+  // state
   int state = state_stack_.empty() ? 0 : state_stack_.back();
+  // action
   auto action = parse_table_(state, symbol);
 
   switch (action.type) {

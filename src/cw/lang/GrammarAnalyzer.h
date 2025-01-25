@@ -1,6 +1,6 @@
 /// \file GrammarAnalyzer.h
 /// \author Donghao Chu
-/// \date 2025-01-13
+/// \date 2025/01/13
 /// \copyright 2025 Donghao Chu
 /// \license Apache License, Version 2.0
 /// \url https://github.com/chudonghao/cw
@@ -142,21 +142,21 @@ class GrammarAnalyzer {
 
   bool IsLR1() const;
 
-  LRParseTable CreateLR0PaserTable() const;
+  LRParseTable CreateLR0ParseTable() const;
 
-  LRParseTable CreateSLRPaserTable() const;
+  LRParseTable CreateSLRParseTable() const;
 
-  LRParseTable CreateLR1ParserTable() const;
+  LRParseTable CreateLR1ParseTable() const;
 
-  LRParseTable CreateLRPaserTable() const {
+  LRParseTable CreateLRParseTable() const {
     if (IsLR1()) {
-      return CreateLR1ParserTable();
+      return CreateLR1ParseTable();
     }
     if (IsSLR()) {
-      return CreateSLRPaserTable();
+      return CreateSLRParseTable();
     }
     if (IsLR0()) {
-      return CreateLR0PaserTable();
+      return CreateLR0ParseTable();
     }
     throw std::logic_error("Invalid grammar");
   }
@@ -181,8 +181,6 @@ class GrammarAnalyzer {
   GrammarAnalyzer(const Grammar& g) : grammar(g) {}
 
  private:
-  void DumpParseTable(std::ostream& os, const MultiActionLRParseTable& table) const;
-
   bool HasConflict(const MultiActionLRParseTable& table) const;
 
   LRParseTable ConvertToSingleActionLRParseTable(const MultiActionLRParseTable& table) const;

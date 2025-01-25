@@ -1,15 +1,15 @@
-/// \file cw.h
+/// \file ExprGrammar.h
 /// \author Donghao Chu
-/// \date 2025-01-14
+/// \date 2025/01/14
 /// \copyright 2025 Donghao Chu
 /// \license Apache License, Version 2.0
 /// \url https://github.com/chudonghao/cw
 
 #pragma once
 
-#include "Grammar.h"
+#include "lang/Grammar.h"
 
-namespace cw::lang {
+namespace cw::expr {
 
 enum ExprGrammarSymbol : int {
   ε,
@@ -259,8 +259,8 @@ inline const char *to_string(ExprGrammarSymbol symbol) {
   }
 }
 
-template <>
-inline ExprGrammarSymbol from_string<ExprGrammarSymbol>(const char *str) {
+inline ExprGrammarSymbol from_string(ExprGrammarSymbol tag, const char *str) {
+  (void)tag;
   if (strcmp(str, to_string(ε)) == 0) {
     return ε;
   }
@@ -491,8 +491,21 @@ inline ExprGrammarSymbol from_string<ExprGrammarSymbol>(const char *str) {
 
 inline bool is_terminal(ExprGrammarSymbol symbol) { return symbol >= terminals_start && symbol <= terminals_end; }
 
-inline ProductionVec<ExprGrammarSymbol> ExprGrammarProductions() {
-  ProductionVec<ExprGrammarSymbol> P;
+}  // namespace cw
+
+namespace cw::lang {
+
+template <>
+inline expr::ExprGrammarSymbol from_string<expr::ExprGrammarSymbol>(const char *str) {
+  return from_string(expr::ExprGrammarSymbol{}, str);
+}
+
+}  // namespace cw::lang
+
+namespace cw {
+
+inline lang::ProductionVec<expr::ExprGrammarSymbol> ExprGrammarProductions() {
+  lang::ProductionVec<expr::ExprGrammarSymbol> P;
   P("Expr", "T17");
   P("StringLiterals", "string_literal");
   P("StringLiterals", "string_literal", "string_literal");
@@ -596,6 +609,6 @@ inline ProductionVec<ExprGrammarSymbol> ExprGrammarProductions() {
   return P;
 }
 
-inline Grammar ExprGrammar() { return Grammar::Create(ExprGrammarProductions(), ExprGrammarSymbol::num_symbols, "Expr", "ε", "$"); }
+inline lang::Grammar ExprGrammar() { return lang::Grammar::Create("CW Expr Grammar", ExprGrammarProductions(), expr::ExprGrammarSymbol::num_symbols, "Expr", "ε", "$"); }
 
-}  // namespace cw::lang
+}  // namespace cw

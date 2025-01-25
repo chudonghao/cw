@@ -1,6 +1,6 @@
 /// \file Grammar.h
 /// \author Donghao Chu
-/// \date 2025-01-10
+/// \date 2025/01/10
 /// \copyright 2025 Donghao Chu
 /// \license Apache License, Version 2.0
 /// \url https://github.com/chudonghao/cw
@@ -76,12 +76,13 @@ class Grammar {
   using ProductionRight_t = decltype(Production_t::r);
 
  private:
+  std::string name_;
   std::vector<SymbolInfo> symbol_infos_;
   std::vector<int> V_T_;
   std::vector<int> V_N_;
   // productions
   ProductionVec<int> P_;
-  // augmented grammar: S '- > S
+  // augmented grammar: S' -> S
   Production<int> P_prime_;
   // start symbol
   int S_;
@@ -99,10 +100,14 @@ class Grammar {
 
  public:
   template <typename Symbol_t>
-  static Grammar Create(const ProductionVec<Symbol_t>& P, int num_symbols, Symbol_t Start, Symbol_t ε, Symbol_t $);
+  static Grammar Create(const char* name, const ProductionVec<Symbol_t>& P, int num_symbols, Symbol_t Start, Symbol_t ε, Symbol_t $);
 
   template <typename Symbol_t>
-  static Grammar Create(const ProductionVec<Symbol_t>& P, int num_symbols, const char* Start, const char* ε, const char* $);
+  static Grammar Create(const char* name, const ProductionVec<Symbol_t>& P, int num_symbols, const char* Start, const char* ε, const char* $);
+
+  Grammar(const char* name) : name_(name) {}
+
+  const std::string& name() const { return name_; }
 
   std::vector<int>& V() { return V_; }
   std::vector<int>& V_T() { return V_T_; }
@@ -145,9 +150,6 @@ class Grammar {
   void Dump(std::ostream& os) const;
 
   void DumpProduction(std::ostream& os, int pi) const;
-
- private:
-  Grammar() = default;
 };
 
 }  // namespace cw::lang
@@ -156,8 +158,8 @@ class Grammar {
 namespace cw::lang {
 
 template <typename Symbol_t>
-Grammar Grammar::Create(const ProductionVec<Symbol_t>& P, int num_symbols, Symbol_t Start, Symbol_t ε, Symbol_t $) {
-  Grammar G;
+Grammar Grammar::Create(const char* name, const ProductionVec<Symbol_t>& P, int num_symbols, Symbol_t Start, Symbol_t ε, Symbol_t $) {
+  Grammar G(name);
   std::transform(P.begin(), P.end(), std::back_inserter(G.P_), ProductionTransform<Symbol_t, int>());
   G.S_ = Start;
   G.ε_ = ε;
@@ -201,8 +203,8 @@ Grammar Grammar::Create(const ProductionVec<Symbol_t>& P, int num_symbols, Symbo
 }
 
 template <typename Symbol_t>
-Grammar Grammar::Create(const ProductionVec<Symbol_t>& P, int num_symbols, const char* Start, const char* ε, const char* $) {
-  return Create(P, num_symbols, from_string<Symbol_t>(Start), from_string<Symbol_t>(ε), from_string<Symbol_t>($));
+Grammar Grammar::Create(const char* name, const ProductionVec<Symbol_t>& P, int num_symbols, const char* Start, const char* ε, const char* $) {
+  return Create(name, P, num_symbols, from_string<Symbol_t>(Start), from_string<Symbol_t>(ε), from_string<Symbol_t>($));
 }
 
 }  // namespace cw::lang

@@ -2,9 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include "cw/ExprGrammar.h"
 #include "cw/lang/Grammar.h"
 #include "cw/lang/GrammarAnalyzer.h"
-#include "cw/lang/cw.h"
+
 
 namespace G_ab {
 
@@ -23,18 +24,18 @@ enum Symbol {
 
 const char *to_string(Symbol s) {
   switch (s) {
-  case ε:
-    return "ε";
-  case S:
-    return "S";
-  case B:
-    return "B";
-  case a:
-    return "a";
-  case b:
-    return "b";
-  case end:
-    return "$";
+    case ε:
+      return "ε";
+    case S:
+      return "S";
+    case B:
+      return "B";
+    case a:
+      return "a";
+    case b:
+      return "b";
+    case end:
+      return "$";
   }
   throw std::runtime_error("Invalid symbol");
 }
@@ -64,26 +65,27 @@ Symbol operator"" _s(const char *s, size_t l) {
 
 bool is_terminal(Symbol s) { return terminal_start <= s && s < terminal_end; }
 
-} // namespace G_ab
+}  // namespace G_ab
 namespace cw::lang {
-template <> G_ab::Symbol from_string<G_ab::Symbol>(const char *s) {
+template <>
+G_ab::Symbol from_string<G_ab::Symbol>(const char *s) {
   return G_ab::operator"" _s(s, strlen(s));
 }
-} // namespace cw::lang
+}  // namespace cw::lang
 
 namespace G_Expr {
 
 enum Symbol : int {
-  ε,      // ε
-  E,      // E
-  T,      // T,
-  F,      // F
-  plus,   // +
-  times,  // *
-  lparen, // (
-  rparen, // )
-  id,     // id
-  end,    // $
+  ε,       // ε
+  E,       // E
+  T,       // T,
+  F,       // F
+  plus,    // +
+  times,   // *
+  lparen,  // (
+  rparen,  // )
+  id,      // id
+  end,     // $
 
   num_symbols,
   terminal_start = plus,
@@ -95,26 +97,26 @@ const char *to_string(Symbol s) {
     return "";
   }
   switch (s) {
-  case ε:
-    return "ε";
-  case E:
-    return "E";
-  case T:
-    return "T";
-  case F:
-    return "F";
-  case plus:
-    return "+";
-  case times:
-    return "*";
-  case lparen:
-    return "(";
-  case rparen:
-    return ")";
-  case id:
-    return "id";
-  case end:
-    return "$";
+    case ε:
+      return "ε";
+    case E:
+      return "E";
+    case T:
+      return "T";
+    case F:
+      return "F";
+    case plus:
+      return "+";
+    case times:
+      return "*";
+    case lparen:
+      return "(";
+    case rparen:
+      return ")";
+    case id:
+      return "id";
+    case end:
+      return "$";
   }
   throw std::logic_error("Invalid symbol");
 }
@@ -156,15 +158,16 @@ Symbol from_string(Symbol tag, const char *s) {
 
 bool is_terminal(Symbol s) { return terminal_start <= s && s < terminal_end; }
 
-} // namespace G_Expr
+}  // namespace G_Expr
 
 namespace cw::lang {
 
-template <> G_Expr::Symbol from_string<G_Expr::Symbol>(const char *s) {
+template <>
+G_Expr::Symbol from_string<G_Expr::Symbol>(const char *s) {
   return from_string(G_Expr::Symbol{}, s);
 }
 
-} // namespace cw::lang
+}  // namespace cw::lang
 
 namespace G_Equation {
 
@@ -186,24 +189,24 @@ enum Symbol : int {
 
 const char *to_string(Symbol s) {
   switch (s) {
-  case ε:
-    return "ε";
-  case S:
-    return "S";
-  case L:
-    return "L";
-  case R:
-    return "R";
-  case times:
-    return "*";
-  case plus:
-    return "+";
-  case equal:
-    return "=";
-  case id:
-    return "id";
-  case end:
-    return "$";
+    case ε:
+      return "ε";
+    case S:
+      return "S";
+    case L:
+      return "L";
+    case R:
+      return "R";
+    case times:
+      return "*";
+    case plus:
+      return "+";
+    case equal:
+      return "=";
+    case id:
+      return "id";
+    case end:
+      return "$";
   }
   throw std::logic_error("Invalid symbol");
 }
@@ -242,31 +245,30 @@ Symbol from_string(Symbol tag, const char *s) {
 
 bool is_terminal(Symbol s) { return terminal_start <= s && s < terminal_end; }
 
-} // namespace G_Equation
+}  // namespace G_Equation
 
 namespace cw::lang {
-template <> G_Equation::Symbol from_string<G_Equation::Symbol>(const char *s) {
+template <>
+G_Equation::Symbol from_string<G_Equation::Symbol>(const char *s) {
   return from_string(G_Equation::Symbol{}, s);
 }
-} // namespace cw::lang
+}  // namespace cw::lang
 
-TEST(Grammar, LR0_Canonical_Collection) {
+TEST(Grammar, LR0) {
   using namespace cw::lang;
 
-  ProductionVec<G_ab::Symbol> P;
+  using Symbol_t = G_ab::Symbol;
+  auto num_symbols = G_ab::num_symbols;
+
+  ProductionVec<Symbol_t> P;
   P("S", "B", "B");
   P("B", "a", "B");
   P("B", "b");
 
-  auto g = Grammar::Create(P, G_ab::num_symbols, "S", "ε", "$");
+  auto g = Grammar::Create("ab", P, num_symbols, "S", "ε", "$");
   auto ga = GrammarAnalyzer::Analyze(g, GrammarAnalyzer::LR0);
 
-  std::cout << "===G===" << std::endl;
-  g.Dump(std::cout);
-  std::cout << "===LR(0) items===" << std::endl;
-  ga.DumpLR0Items(std::cout);
-  std::cout << "===LR(0) canonical collection===" << std::endl;
-  ga.DumpLR0CanonicalCollection(std::cout);
+  ASSERT_TRUE(ga.IsLR0());
 }
 
 TEST(Grammar, SLR) {
@@ -283,20 +285,8 @@ TEST(Grammar, SLR) {
   P("F", "(", "E", ")");
   P("F", "id");
 
-  auto g = Grammar::Create(P, num_symbols, "E", "ε", "$");
-  auto ga =
-      GrammarAnalyzer::Analyze(g, GrammarAnalyzer::LR0 | GrammarAnalyzer::SLR);
-  std::cout << "===G===" << std::endl;
-  g.Dump(std::cout);
-  std::cout << "===LR(0) items===" << std::endl;
-  ga.DumpLR0Items(std::cout);
-  std::cout << "===LR(0) canonical collection===" << std::endl;
-  ga.DumpLR0CanonicalCollection(std::cout);
-  std::cout << "===LR(0) parse table===" << std::endl;
-  ga.DumpLR0ParseTable(std::cout);
-  std::cout << "===SLR parse table===" << std::endl;
-  ga.DumpSLRParseTable(std::cout);
-
+  auto g = Grammar::Create("Expr", P, num_symbols, "E", "ε", "$");
+  auto ga = GrammarAnalyzer::Analyze(g, GrammarAnalyzer::LR0 | GrammarAnalyzer::SLR);
   ASSERT_FALSE(ga.IsLR0());
   ASSERT_TRUE(ga.IsSLR());
 }
@@ -314,42 +304,18 @@ TEST(Grammar, LR1) {
   P("L", "id");
   P("R", "L");
 
-  auto g = Grammar::Create(P, num_symbols, "S", "ε", "$");
+  auto g = Grammar::Create("Equation", P, num_symbols, "S", "ε", "$");
   auto ga = GrammarAnalyzer::Analyze(g, GrammarAnalyzer::ALL);
-
-  std::cout << "===G===" << std::endl;
-  g.Dump(std::cout);
-  std::cout << "===LR(0) items===" << std::endl;
-  ga.DumpLR0Items(std::cout);
-  std::cout << "===LR(0) canonical collection===" << std::endl;
-  ga.DumpLR0CanonicalCollection(std::cout);
-  std::cout << "===LR(0) parse table===" << std::endl;
-  ga.DumpLR0ParseTable(std::cout);
-  std::cout << "===SLR parse table===" << std::endl;
-  ga.DumpSLRParseTable(std::cout);
-
   ASSERT_FALSE(ga.IsLR0());
   ASSERT_FALSE(ga.IsSLR());
   // ASSERT_TRUE(ga.IsLR1());
 }
 
 TEST(Grammar, CW_Expr) {
-  using namespace cw::lang;
+  using namespace cw;
 
-  Grammar g = ExprGrammar();
-  auto ga = GrammarAnalyzer::Analyze(g, GrammarAnalyzer::ALL);
-
-  std::cout << "===G===" << std::endl;
-  g.Dump(std::cout);
-  std::cout << "===LR(0) items===" << std::endl;
-  ga.DumpLR0Items(std::cout);
-  std::cout << "===LR(0) canonical collection===" << std::endl;
-  ga.DumpLR0CanonicalCollection(std::cout);
-  std::cout << "===LR(0) parse table===" << std::endl;
-  ga.DumpLR0ParseTable(std::cout);
-  std::cout << "===SLR parse table===" << std::endl;
-  ga.DumpSLRParseTable(std::cout);
-
+  lang::Grammar g = ExprGrammar();
+  auto ga = lang::GrammarAnalyzer::Analyze(g, lang::GrammarAnalyzer::ALL);
   ASSERT_FALSE(ga.IsLR0());
   ASSERT_TRUE(ga.IsSLR());
 }

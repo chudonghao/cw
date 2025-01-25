@@ -1,6 +1,6 @@
 /// \file GrammarAnalyzer.cpp
 /// \author Donghao Chu
-/// \date 2025-01-13
+/// \date 2025/01/13
 /// \copyright 2025 Donghao Chu
 /// \license Apache License, Version 2.0
 /// \url https://github.com/chudonghao/cw
@@ -437,24 +437,31 @@ GrammarAnalyzer GrammarAnalyzer::Analyze(const Grammar &g, unsigned int GRAMMAR_
 }
 
 bool GrammarAnalyzer::IsLR0() const {
-  if (lr0_items.empty() || lr0_canonical_collection.empty()) {
+  if (lr0_items.empty() || lr0_canonical_collection.empty() || lr0_parse_table.empty()) {
     return false;
   }
   return !HasConflict(lr0_parse_table);
 }
 
 bool GrammarAnalyzer::IsSLR() const {
-  if (lr0_items.empty() || lr0_canonical_collection.empty()) {
+  if (lr0_items.empty() || lr0_canonical_collection.empty() || slr_parse_table.empty()) {
     return false;
   }
   return !HasConflict(slr_parse_table);
 }
 
-LRParseTable GrammarAnalyzer::CreateLR0PaserTable() const { return ConvertToSingleActionLRParseTable(lr0_parse_table); }
+bool GrammarAnalyzer::IsLR1() const {
+  if (lr1_items.empty() || lr1_canonical_collection.empty() || lr1_parse_table.empty()) {
+    return false;
+  }
+  return !HasConflict(lr1_parse_table);
+}
 
-LRParseTable GrammarAnalyzer::CreateSLRPaserTable() const { return ConvertToSingleActionLRParseTable(slr_parse_table); }
+LRParseTable GrammarAnalyzer::CreateLR0ParseTable() const { return ConvertToSingleActionLRParseTable(lr0_parse_table); }
 
-LRParseTable GrammarAnalyzer::CreateLR1ParserTable() const { return ConvertToSingleActionLRParseTable(lr1_parse_table); }
+LRParseTable GrammarAnalyzer::CreateSLRParseTable() const { return ConvertToSingleActionLRParseTable(slr_parse_table); }
+
+LRParseTable GrammarAnalyzer::CreateLR1ParseTable() const { return ConvertToSingleActionLRParseTable(lr1_parse_table); }
 
 void GrammarAnalyzer::DumpFirsts(std::ostream &os) const {
   std::set<int> viewed_index;
@@ -545,39 +552,9 @@ void GrammarAnalyzer::DumpLR0CanonicalCollection(std::ostream &os) const {
   }
 }
 
-void GrammarAnalyzer::DumpLR0ParseTable(std::ostream &os) const { DumpParseTable(os, lr0_parse_table); }
+void GrammarAnalyzer::DumpLR0ParseTable(std::ostream &os) const { Write(os, grammar, lr0_parse_table); }
 
-void GrammarAnalyzer::DumpSLRParseTable(std::ostream &os) const { DumpParseTable(os, slr_parse_table); }
-
-void GrammarAnalyzer::DumpParseTable(std::ostream &os, const MultiActionLRParseTable &table) const {
-  auto FormatActions = [](const std::set<LRAction> &actions) {
-    std::vector<std::string> action_strs;
-    for (auto &action : actions) {
-      action_strs.push_back(to_string(action));
-    }
-    return boost::join(action_strs, "/");
-  };
-
-  os << "state/action/symbol\t";
-  for (auto a : grammar.V_T()) {
-    os << grammar.SymbolName(a) << "\t";
-  }
-  for (auto A : grammar.V_N()) {
-    os << grammar.SymbolName(A) << "\t";
-  }
-  os << std::endl;
-
-  for (int s = 0; s < table.num_states(); ++s) {
-    os << s << "\t";
-    for (auto a : grammar.V_T()) {
-      os << FormatActions(table(s, a)) << "\t";
-    }
-    for (auto A : grammar.V_N()) {
-      os << FormatActions(table(s, A)) << "\t";
-    }
-    os << std::endl;
-  }
-}
+void GrammarAnalyzer::DumpSLRParseTable(std::ostream &os) const { Write(os, grammar, slr_parse_table); }
 
 bool GrammarAnalyzer::HasConflict(const MultiActionLRParseTable &table) const {
   for (int state = 0; state < table.num_states(); ++state) {
