@@ -7,20 +7,17 @@
 
 #pragma once
 
+#include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace cw {
 
 struct Source {
-  std::string path;
+  std::filesystem::path path;
   std::string content;
 };
 
-struct SourceLocation {
-  int file{0};
-  int line{0};
-  int column{0};
-  int size{0};
-};
+std::string_view LineSource(const Source &source, int pos);
 
 }  // namespace cw

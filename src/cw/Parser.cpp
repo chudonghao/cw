@@ -7,25 +7,27 @@
 
 #include "Parser.h"
 
-#include <boost/leaf/exception.hpp>
 #include <memory>
 
-#include <boost/leaf.hpp>
+#include <fmt/format.h>
 
-#include "Exception.h"
+#include "Diagnostic.h"
 #include "Lexer.h"
 #include "Token.h"
 
-#define THROW(info) BOOST_LEAF_THROW_EXCEPTION(ParseException(info))
-
 namespace cw {
 
-void Parser::Reset(Lexer& lexer) { lexer_ = &lexer; }
+void Parser::SetDiagnosticEngine(DiagnosticEngine* diagnostic_engine) { diagnostic_engine_ = diagnostic_engine; }
+
+void Parser::Reset(Lexer* lexer) { lexer_ = lexer; }
 
 std::unique_ptr<TranslationUnitDecl> Parser::operator()() noexcept(false) {
-  if (!lexer_) {
-    BOOST_LEAF_THROW_EXCEPTION(ParseException("Lexer is not initialized"));
-  }
+  BOOST_ASSERT(lexer_);
+  BOOST_ASSERT(lexer_->Sources());
+  BOOST_ASSERT(diagnostic_engine_);
+
+  InitializeLexer();
+
   auto ast = TranslationUnitDecl_();
   return ast;
 }
@@ -34,17 +36,17 @@ std::unique_ptr<TranslationUnitDecl> Parser::TranslationUnitDecl_() {
   auto tud = std::make_unique<TranslationUnitDecl>();
   for (;;) {
     auto& token = lexer_->Token();
+
     if (token.type == tok::struct_) {
       tud->Decls.emplace_back(StructDecl_());
-    }
-    if (token.type == tok::func) {
+    } else if (token.type == tok::func) {
       tud->Decls.emplace_back(FunctionDecl_());
     } else if (token.type == tok::var) {
       tud->Decls.emplace_back(VarDecl_());
     } else if (token.type == tok::eos) {
       return tud;
     } else {
-      THROW("Expect struct/func/var");
+      HandleExpect({tok::struct_, tok::func, tok::var});
     }
   }
 }
@@ -53,28 +55,28 @@ std::unique_ptr<StructDecl> Parser::StructDecl_() {
   auto sd = std::make_unique<StructDecl>();
 
   auto& token = lexer_->Token();
+
   if (token.type != tok::struct_) {
-    THROW("Expect struct");
+    HandleExpect({tok::struct_});
+    return nullptr;
   }
 
-  lexer_->Advance();
+  AdvanceLexer();
 
   if (token.type != tok::identifier) {
-    THROW("Expect identifier");
+    HandleExpect({tok::identifier});
+    return nullptr;
   }
   sd->name = token.get<IdentifierProperty>().name;
 
-  lexer_->Advance();
-
-  if (token.type == tok::semi) {
-    lexer_->Advance();
-    return sd;
-  }
+  AdvanceLexer();
 
   if (token.type != tok::l_brace) {
-    THROW("Expect '{'");
+    HandleExpect({tok::l_brace});
+    return nullptr;
   }
-  lexer_->Advance();
+
+  AdvanceLexer();
 
   for (;;) {
     if (token.type == tok::var) {
@@ -86,12 +88,14 @@ std::unique_ptr<StructDecl> Parser::StructDecl_() {
     } else if (token.type == tok::r_brace) {
       break;
     } else {
-      THROW("Expect virtual/var/'}'");
+      HandleExpect({tok::virtual_, tok::var, tok::r_brace});
+      return nullptr;
     }
   }
 
   if (token.type != tok::r_brace) {
-    THROW("Expect '}'");
+    HandleExpect({tok::r_brace});
+    return nullptr;
   }
 
   return sd;
@@ -101,13 +105,17 @@ std::unique_ptr<FunctionDecl> Parser::FunctionDecl_() {
   auto fd = std::make_unique<FunctionDecl>();
 
   auto& token = lexer_->Token();
+
   if (token.type != tok::func) {
-    THROW("Expect func");
+    HandleExpect({tok::func});
+    return nullptr;
   }
-  lexer_->Advance();
+
+  AdvanceLexer();
 
   if (token.type != tok::identifier) {
-    THROW("Expect identifier");
+    HandleExpect({tok::identifier});
+    return nullptr;
   }
   fd->name = token.get<IdentifierProperty>().name;
 
@@ -120,28 +128,23 @@ std::unique_ptr<VarDecl> Parser::VarDecl_() {
   auto vd = std::make_unique<VarDecl>();
 
   auto& token = lexer_->Token();
+
   if (token.type != tok::var) {
-    THROW("Expect var");
+    HandleExpect({tok::var});
+    return nullptr;
   }
-  lexer_->Advance();
+
+  AdvanceLexer();
 
   if (token.type != tok::identifier) {
-    THROW("Expect identifier");
+    HandleExpect({tok::identifier});
+    return nullptr;
   }
   vd->name = token.get<IdentifierProperty>().name;
-  lexer_->Advance();
 
-  if (token.type != tok::colon) {
-    THROW("Expect ':'");
-  }
-  lexer_->Advance();
+  AdvanceLexer();
 
-  // TODO: parse type
-
-  if (token.type == tok::semi) {
-    lexer_->Advance();
-    return vd;
-  }
+  // TODO
 
   return vd;
 }
@@ -150,15 +153,20 @@ std::unique_ptr<VirtualDecl> Parser::VirtualDecl_() {
   auto vd = std::make_unique<VirtualDecl>();
 
   auto& token = lexer_->Token();
+
   if (token.type != tok::virtual_) {
-    THROW("Expect virtual");
+    HandleExpect({tok::virtual_});
+    return nullptr;
   }
-  lexer_->Advance();
+
+  AdvanceLexer();
 
   if (token.type != tok::l_brace) {
-    THROW("Expect '{'");
+    HandleExpect({tok::l_brace});
+    return nullptr;
   }
-  lexer_->Advance();
+
+  AdvanceLexer();
 
   for (;;) {
     if (token.type == tok::func) {
@@ -167,16 +175,82 @@ std::unique_ptr<VirtualDecl> Parser::VirtualDecl_() {
     } else if (token.type == tok::r_brace) {
       break;
     } else {
-      THROW("Expect func/'}'");
+      HandleExpect({tok::func, tok::r_brace});
+      return nullptr;
     }
   }
 
   if (token.type != tok::r_brace) {
-    THROW("Expect '}'");
+    HandleExpect({tok::r_brace});
+    return nullptr;
   }
-  lexer_->Advance();
+
+  AdvanceLexer();
 
   return vd;
+}
+
+void Parser::InitializeLexer() {
+  parsed_location_ = TokenLocation{};
+  // skip blank and comment in the beginning
+  lexer_->SkipBlankComment();
+}
+
+void Parser::AdvanceLexer() {
+  lexer_->Advance(false);
+  parsed_location_ = lexer_->Token().location;
+  lexer_->SkipBlankComment();
+}
+
+void Parser::AdvanceLexerSkipLine() {
+  lexer_->SkipLine();
+  parsed_location_ = lexer_->Token().location;
+  lexer_->SkipBlankComment();
+}
+
+void Parser::HandleExpect(std::vector<tok::TokenType> expected) {
+  auto sources = lexer_->Sources();
+  auto& token = lexer_->Token();
+
+  std::filesystem::path path;
+  int line = 0;
+  int column = 0;
+  std::string info;
+  std::string line_source;
+  int size = 0;
+
+  if (token.type != tok::invalid && token.type != tok::eos) {
+    if (0 <= token.location.file && token.location.file < static_cast<int>(sources->size())) {
+      path = (*sources)[token.location.file].path;
+      line_source = LineSource((*sources)[token.location.file], token.location.pos);
+      line = token.location.line;
+      column = token.location.column;
+      size = token.source_view.size();
+    } else {
+      // should not happen
+    }
+  } else {
+    if (0 <= parsed_location_.file && parsed_location_.file < static_cast<int>(sources->size())) {
+      path = (*sources)[parsed_location_.file].path;
+      line_source = LineSource((*sources)[parsed_location_.file], parsed_location_.pos);
+      line = parsed_location_.line;
+      column = parsed_location_.column;
+      size = 0;
+    } else {
+      // should not happen
+    }
+  }
+
+  {
+    auto actual = to_string(token.type);
+    std::vector<const char*> expected_strs(expected.size());
+    std::transform(expected.begin(), expected.end(), expected_strs.begin(), cw::tok::to_string);
+    info = fmt::format("Expect {} but got {}", fmt::join(expected_strs, "/"), actual);
+  }
+
+  diagnostic_engine_->Add(kErrorDiagnostic, path, line, column, info, line_source, size);
+
+  AdvanceLexerSkipLine();
 }
 
 }  // namespace cw

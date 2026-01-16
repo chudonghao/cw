@@ -9,11 +9,15 @@
 
 #include <cstring>
 
+#include "cw/Token.h"
+
 namespace cw {
 namespace tok {
 
 const char *to_string(TokenType type) {
   switch (type) {
+    case invalid:
+      return "invalid";
     case identifier:
       return "identifier";
     case bool_:
@@ -116,8 +120,6 @@ const char *to_string(TokenType type) {
       return "{";
     case r_brace:
       return "}";
-    case unknown:
-      return "unknown";
     case comment:
       return "comment";
     case struct_:
@@ -150,15 +152,16 @@ const char *to_string(TokenType type) {
       return "eof";
     case eos:
       return "eos";
+    case undefined:
+      return "undefined";
     default:
       return "unknown";
   }
 }
 
 TokenType from_string(const char *str) {
-  if (!str) return unknown;
+  if (!str) return invalid;
 
-  if (strcmp(str, "unknown") == 0) return unknown;
   if (strcmp(str, "identifier") == 0) return identifier;
   if (strcmp(str, "bool") == 0) return bool_;
   if (strcmp(str, "integer") == 0) return integer;
@@ -227,7 +230,7 @@ TokenType from_string(const char *str) {
   if (strcmp(str, "eof") == 0) return eof;
   if (strcmp(str, "eos") == 0) return eos;
 
-  return unknown;
+  return invalid;
 }
 
 }  // namespace tok

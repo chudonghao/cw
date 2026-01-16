@@ -21,19 +21,123 @@ namespace lex = boost::spirit::lex;
 
 namespace cw {
 
-struct Lexer::LexerImpl : lex::lexer<lex::lexertl::lexer<>> {
-  const std::vector<Source>* sources_{};
+namespace {
 
-  int source_{0};
+class CharIterator {
+ public:
+  using value_type = char;
+  using reference = const char&;
+  using pointer = const char*;
+  using difference_type = std::ptrdiff_t;
+  using iterator_category = std::forward_iterator_tag;
+
+  CharIterator() = default;
+
+  CharIterator(const std::vector<Source>* sources, int source, int pos) : sources_(sources), source_(source), pos_(pos), line_(0), column_(0) { Normalize(); }
+
+  static CharIterator begin(const std::vector<Source>* sources) {
+    BOOST_ASSERT(sources);
+    if (sources->empty()) {
+      return end(sources);
+    }
+    return CharIterator(sources, 0, 0);
+  }
+
+  static CharIterator end(const std::vector<Source>* sources) {
+    BOOST_ASSERT(sources);
+    return CharIterator(sources, sources->size(), 0);
+  }
+
+  reference operator*() const {
+    BOOST_ASSERT(sources_ && 0 <= source_ && source_ < static_cast<int>(sources_->size()));
+    const auto& content = (*sources_)[source_].content;
+    BOOST_ASSERT(0 <= pos_ && pos_ <= static_cast<int>(content.size()));
+    // C++ 标准保证 content[size()] == '\0'
+    return content[pos_];
+  }
+
+  pointer operator->() const {
+    BOOST_ASSERT(sources_ && 0 <= source_ && source_ < static_cast<int>(sources_->size()));
+    const auto& content = (*sources_)[source_].content;
+    BOOST_ASSERT(0 <= pos_ && pos_ <= static_cast<int>(content.size()));
+    // C++ 标准保证 content[size()] == '\0'
+    return &content[pos_];
+  }
+
+  CharIterator& operator++() {
+    BOOST_ASSERT(sources_ && 0 <= source_ && source_ < static_cast<int>(sources_->size()));
+
+    // 更新行号和列号
+    const auto& content = (*sources_)[source_].content;
+    if (pos_ < static_cast<int>(content.size())) {
+      char ch = content[pos_];
+      if (ch == '\n') {
+        ++line_;
+        column_ = 0;
+      } else {
+        ++column_;
+      }
+    }
+
+    ++pos_;
+    Normalize();
+    return *this;
+  }
+
+  CharIterator operator++(int) {
+    CharIterator tmp = *this;
+    ++(*this);
+    return tmp;
+  }
+
+  friend bool operator==(const CharIterator& lhs, const CharIterator& rhs) {
+    if (lhs.sources_ != rhs.sources_) return false;
+    if (lhs.source_ != rhs.source_) return false;
+    return lhs.pos_ == rhs.pos_;
+  }
+
+  friend bool operator!=(const CharIterator& lhs, const CharIterator& rhs) { return !(lhs == rhs); }
+
+  int Source() const { return source_; }
+  int Pos() const { return pos_; }
+  int Line() const { return line_; }
+  int Column() const { return column_; }
+
+ private:
+  void Normalize() {
+    if (!sources_ || source_ < 0) return;
+
+    while (source_ < static_cast<int>(sources_->size())) {
+      const auto& content = (*sources_)[source_].content;
+      // 允许 pos_ 指向 size() 位置（表示文件末尾的 '\0'）
+      if (pos_ <= static_cast<int>(content.size())) {
+        break;
+      }
+      // 切换到下一个源文件，重置位置和行列号
+      ++source_;
+      pos_ = 0;
+      line_ = 0;
+      column_ = 0;
+    }
+  }
+
+  const std::vector<cw::Source>* sources_{nullptr};
+  int source_{-1};
+  int pos_{0};
   int line_{0};
   int column_{0};
-  const char* content_begin_{};
-  const char* content_iter_{};
-  const char* content_end_{};
-  iterator_type token_iter_{};
-  std::vector<int> line_pos_vec_{};
+};
 
-  LexerImpl() {
+}  // namespace
+
+struct MultiSourceLexer : lex::lexer<lex::lexertl::lexer<lex::lexertl::token<CharIterator>>> {
+  const std::vector<Source>* sources{};
+
+  CharIterator char_iter{};
+  CharIterator char_end{};
+  iterator_type token_iter{};
+
+  MultiSourceLexer() {
     const auto& rules = this->self;
 
     // 注释
@@ -116,153 +220,153 @@ struct Lexer::LexerImpl : lex::lexer<lex::lexertl::lexer<>> {
     rules.add(R"([ \t\v\f]+)", tok::blank);
     rules.add(R"(\r?\n)", tok::eol);
     rules.add(R"(\0)", tok::eof);
+    rules.add(R"(.)", tok::undefined);
 
-    token_iter_ = this->end();
+    token_iter = this->end();
   }
 
-  void Reset(const std::vector<Source>& sources) {
-    sources_ = &sources;
+  const std::vector<Source>* Sources() const { return sources; }
 
-    ResetTokenIter(0);
+  void Reset(const std::vector<Source>* sources) {
+    this->sources = sources;
+
+    char_iter = CharIterator::begin(sources);
+    char_end = CharIterator::end(sources);
+
+    token_iter = this->begin(char_iter, char_end);
   }
 
-  void ResetTokenIter(int source) {
-    source_ = source;
-    line_ = 0;
-    column_ = 0;
-    line_pos_vec_.clear();
-    if (source_ < sources_->size()) {
-      content_begin_ = (*sources_)[source_].content.c_str();
-      content_iter_ = content_begin_;
-      content_end_ = content_begin_ + (*sources_)[source_].content.size() + 1;
-      token_iter_ = this->begin(content_iter_, content_end_);
-      line_pos_vec_.push_back(0);
-    } else {
-      content_begin_ = nullptr;
-      content_iter_ = nullptr;
-      content_end_ = nullptr;
-      token_iter_ = this->end();
-    }
-  }
-
-  bool Valid() {
-    if (!sources_) return false;
-    if (source_ >= sources_->size()) return false;
-    return token_iter_ != this->end();
-  }
+  bool Valid() { return token_iter != this->end(); }
 
   tok::TokenType Type() {
-    if (!Valid()) return tok::eos;
-    auto& token = *token_iter_;
+    auto& token = *token_iter;
     return static_cast<tok::TokenType>(token.id());
   }
 
-  int Source() const { return source_; }
+  int Source() const { return char_iter.Source(); }
 
-  int Line() const { return line_; }
+  int Pos() const { return char_iter.Pos(); }
 
-  int Column() const { return column_; }
+  int Line() const { return char_iter.Line(); }
 
-  int Pos() const { return content_iter_ - content_begin_; }
-
-  int Size() const {
-    if (token_iter_ != this->end()) {
-      auto& token = *token_iter_;
-      return token.value().size();
-    }
-    return 0;
-  }
+  int Column() const { return char_iter.Column(); }
 
   std::string_view Str() const {
-    if (token_iter_ != this->end()) {
-      auto& token = *token_iter_;
-      return std::string_view(token.value().begin(), token.value().size());
+    if (token_iter != this->end()) {
+      auto& token = *token_iter;
+      auto begin = &*token.value().begin();
+      auto end = &*token.value().end();
+      auto size = std::distance(begin, end);
+      return std::string_view(begin, size);
     } else {
       return {};
     }
   }
 
-  void Advance() {
-    if (token_iter_ != this->end()) {
-      auto& token = *token_iter_;
-      if (token.id() == tok::eol) {
-        ++line_;
-        column_ = 0;
-        line_pos_vec_.push_back(std::distance(content_begin_, content_iter_));
-      } else {
-        column_ += token.value().size();
+  void Advance() { ++token_iter; }
+};
+
+struct Lexer::Impl {
+  MultiSourceLexer multi_source_lexer{};
+  cw::Token token{};
+
+  const std::vector<Source>* Sources() const { return multi_source_lexer.Sources(); }
+
+  void Reset(const std::vector<Source>* sources) {
+    multi_source_lexer.Reset(sources);
+
+    TakeToken();
+  }
+
+  void SkipBlankComment() {
+    while (multi_source_lexer.Valid() && IsBlankOrComment(multi_source_lexer.Type())) {
+      multi_source_lexer.Advance();
+    }
+
+    TakeToken();
+  }
+
+  void SkipLine() {
+    for (; multi_source_lexer.Valid();) {
+      bool is_line_end = multi_source_lexer.Type() == tok::eol || multi_source_lexer.Type() == tok::eof;
+
+      multi_source_lexer.Advance();
+
+      if (is_line_end) {
+        break;
       }
-      ++token_iter_;
     }
-    if (token_iter_ == this->end()) {
-      ResetTokenIter(source_ + 1);
+
+    TakeToken();
+  }
+
+  void Advance(bool skip_blank_comment) {
+    // advance
+    if (multi_source_lexer.Valid()) {
+      multi_source_lexer.Advance();
     }
+
+    // skip blank and comment
+    if (skip_blank_comment) {
+      while (multi_source_lexer.Valid() && IsBlankOrComment(multi_source_lexer.Type())) {
+        multi_source_lexer.Advance();
+      }
+    }
+
+    // take token
+    TakeToken();
+  }
+
+  const cw::Token& Token() const { return token; }
+
+ private:
+  static void UpdateTokenProperty(cw::Token& token) {
+    // TODO:解析属性
+    switch (token.type) {
+      case tok::identifier:
+        token.property = IdentifierProperty{(std::string)token.source_view};
+        break;
+      case tok::bool_:
+        break;
+      default:
+        token.property = NoneProperty{};
+        break;
+    }
+  }
+
+  void TakeToken() {
+    // eos is a special token, it is not in the lexer
+    if (multi_source_lexer.Valid()) {
+      token.type = multi_source_lexer.Type();
+    } else {
+      token.type = tok::eos;
+    }
+
+    token.location.file = multi_source_lexer.Source();
+    token.location.pos = multi_source_lexer.Pos();
+    token.location.line = multi_source_lexer.Line();
+    token.location.column = multi_source_lexer.Column();
+    token.source_view = multi_source_lexer.Str();
+    UpdateTokenProperty(token);
   }
 };
 
-Lexer::Lexer() : impl_{std::make_unique<LexerImpl>()} {}
+Lexer::Lexer() : impl_{std::make_unique<Impl>()} {}
 
 Lexer::~Lexer() = default;
 
-void Lexer::Reset(const std::vector<Source>& sources) {
-  impl_->Reset(sources);
+const std::vector<Source>* Lexer::Sources() const { return impl_->Sources(); }
 
-  //   ↓
-  // 0 1
-  SkipBlankAndShift();
+void Lexer::Reset(const std::vector<Source>* sources) { impl_->Reset(sources); }
 
-  impl_->Advance();
+void Lexer::SkipBlankComment() { impl_->SkipBlankComment(); }
 
-  // ↓ ↓
-  // 0 1
-  SkipBlankAndShift();
-}
+void Lexer::SkipLine() { impl_->SkipLine(); }
 
-void Lexer::Advance() {
-  impl_->Advance();
+void Lexer::Advance() { impl_->Advance(true); }
 
-  SkipBlankAndShift();
-}
+void Lexer::Advance(bool skip_blank_comment) { impl_->Advance(skip_blank_comment); }
 
-const Token& Lexer::Token(int k) const {
-  BOOST_ASSERT(k <= 1);
-  return token_[k];
-}
-
-int Lexer::LinePos(int line) const {
-  if (line < 0 || line >= impl_->line_pos_vec_.size()) return -1;
-  return impl_->line_pos_vec_[line];
-}
-
-void Lexer::SkipBlankAndShift() {
-  while (IsBlankOrComment(impl_->Type())) {
-    impl_->Advance();
-  }
-
-  token_[0] = std::move(token_[1]);
-
-  auto type = impl_->Type();
-  if (type != tok::unknown) {
-    token_[1].type = type;
-    token_[1].location.file = impl_->Source();
-    token_[1].location.line = impl_->Line();
-    token_[1].location.column = impl_->Column();
-    token_[1].location.size = impl_->Size();
-
-    // TODO:解析属性
-    switch (token_[1].type) {
-      case tok::identifier:
-        token_[1].property = IdentifierProperty{(std::string)impl_->Str()};
-        break;
-      case tok::bool_:
-        // TODO
-        break;
-      default:
-        break;
-    }
-  } else {
-    token_[1] = {};
-  }
-}
+const Token& Lexer::Token() const { return impl_->Token(); }
 
 }  // namespace cw

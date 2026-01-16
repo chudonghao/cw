@@ -15,28 +15,28 @@
 namespace cw {
 
 class Lexer {
-  struct LexerImpl;
-  std::unique_ptr<LexerImpl> impl_{};
-
-  Token token_[2]{};
+  struct Impl;
+  std::unique_ptr<Impl> impl_{};
 
  public:
   Lexer();
 
   ~Lexer();
 
-  void Reset(const std::vector<Source>& sources);
+  const std::vector<Source>* Sources() const;
 
+  void Reset(const std::vector<Source>* sources);
+
+  void SkipBlankComment();
+
+  void SkipLine();
+
+  /// \note skip_blank_comment = true
   void Advance();
 
-  const Token& Token(int k = 0) const;
+  void Advance(bool skip_blank_comment);
 
-  int LinePos(int line) const;
-
- private:
-  const std::vector<Source>& Sources() const;
-
-  void SkipBlankAndShift();
+  const Token& Token() const;
 };
 
 }  // namespace cw

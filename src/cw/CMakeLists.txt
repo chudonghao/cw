@@ -27,14 +27,14 @@ add_library(
   cw
   STATIC
   ${CMAKE_CURRENT_BINARY_DIR}/ExprParseTable.h
-  Source.h
+  Source.h Source.cpp
   ExprGrammar.h
   ExprParser.h ExprParser.cpp
   Token.h Token.cpp
   Lexer.h Lexer.cpp
   Parser.h Parser.cpp
-  Exception.h Exception.cpp
+  Diagnostic.h Diagnostic.cpp
 )
-target_link_libraries(cw PUBLIC cw.lang)
+target_link_libraries(cw PUBLIC cw.lang PRIVATE fmt::fmt)
 target_include_directories(cw PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../ ${CMAKE_CURRENT_BINARY_DIR})
 

@@ -11,6 +11,8 @@ endif()
 set(Boost_USE_STATIC_LIBS ON)
 find_package(Boost REQUIRED COMPONENTS filesystem program_options)
 
+find_package(fmt REQUIRED)
+
 add_subdirectory(src)
 
 if(CW_BUILD_TESTS)

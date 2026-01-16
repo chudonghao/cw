@@ -79,13 +79,15 @@ TEST(Lexer, Basic) {
       ")\n"
       "{\n"
       "}\n"
-      "";
+      "\1"
+      "\"";
 
   std::vector<cw::Source> sources = {
       {"test.cw", content},
   };
 
-  lexer.Reset(sources);
+  lexer.Reset(&sources);
+  lexer.SkipBlankComment();
   ASSERT_EQ(lexer.Token().type, cw::tok::bool_);
   lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::bool_);
@@ -220,5 +222,9 @@ TEST(Lexer, Basic) {
   lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::r_brace);
   lexer.Advance();
-  ASSERT_EQ(lexer.Token().type, cw::tok::unknown);
+  ASSERT_EQ(lexer.Token().type, cw::tok::undefined);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::undefined);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eos);
 }

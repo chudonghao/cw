@@ -25,9 +25,9 @@ class Compiler {
   cw::Parser parser;
 
  public:
-  void Compile(const std::vector<cw::Source>& sources) {
+  void Compile(const std::vector<cw::Source>* sources) {
     lexer.Reset(sources);
-    parser.Reset(lexer);
+    parser.Reset(&lexer);
 
     parser();
   }

@@ -9,17 +9,25 @@
 
 #include <memory>
 
+#include "Token.h"
 #include "ast.h"
 
 namespace cw {
 
 class Lexer;
+class DiagnosticEngine;
 
 class Parser {
-  Lexer* lexer_;
+  Lexer* lexer_{};
+
+  TokenLocation parsed_location_{};
+
+  DiagnosticEngine* diagnostic_engine_{nullptr};
 
  public:
-  void Reset(Lexer& lexer);
+  void SetDiagnosticEngine(DiagnosticEngine* diagnostic_engine);
+
+  void Reset(Lexer* lexer);
 
   std::unique_ptr<TranslationUnitDecl> operator()() noexcept(false);
 
@@ -33,6 +41,14 @@ class Parser {
   std::unique_ptr<VarDecl> VarDecl_();
 
   std::unique_ptr<VirtualDecl> VirtualDecl_();
+
+  void InitializeLexer();
+
+  void AdvanceLexer();
+
+  void AdvanceLexerSkipLine();
+
+  void HandleExpect(std::vector<tok::TokenType> expected);
 };
 
 }  // namespace cw

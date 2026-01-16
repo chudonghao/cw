@@ -25,7 +25,7 @@ namespace tok {
 // 4. Operator (one word, one code/one type, one code)
 // 5. Separator (one word, one code)
 enum TokenType {
-  unknown,  // unknown
+  invalid,  // invalid
 
   // Identifiers
   identifier = expr::identifier,  // abc_123, etc.
@@ -108,6 +108,8 @@ enum TokenType {
   eol,      // \r \n \r\n
   eof,      // EOF
   eos,      // end of sources
+
+  undefined = 0xffff,  // undefined
 };
 
 const char *to_string(TokenType type);
@@ -143,12 +145,28 @@ struct IdentifierProperty {
   std::string name;
 };
 
+struct TokenLocation {
+  /// Source file index.
+  int file{};
+  /// Byte position in the source file.
+  int pos{};
+  /// Line number (0-based).
+  int line{};
+  /// Column number (0-based).
+  int column{};
+};
+
 class Token {
  public:
   using Property = std::variant<NoneProperty, IntegerProperty, FloatProperty, StringProperty, BoolProperty, IdentifierProperty>;
 
-  SourceLocation location{};
+  /// Token location.
+  TokenLocation location{};
+  /// Source text covered by this token.
+  std::string_view source_view{};
+  /// Token kind.
   tok::TokenType type{};
+  /// Parsed token property.
   Property property{};
 
   Token() = default;
@@ -158,7 +176,7 @@ class Token {
     return std::get<T>(property);
   }
 
-  bool Valid() const { return type != tok::unknown; }
+  bool Valid() const { return type != tok::invalid; }
 };
 
 }  // namespace cw
