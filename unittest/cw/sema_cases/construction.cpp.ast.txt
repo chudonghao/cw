@@ -1,0 +1,38 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address}} <construction.cpp:1:1, line:4:1> line:1:8 referenced struct ConstructionValue definition
+| |-DefinitionData empty standard_layout has_user_declared_ctor can_const_default_init
+| | |-DefaultConstructor defaulted_is_constexpr
+| | |-CopyConstructor simple trivial has_const_param implicit_has_const_param
+| | |-MoveConstructor
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment
+| | `-Destructor non_trivial user_declared
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit referenced struct ConstructionValue
+| |-CXXConstructorDecl {{address}} <line:2:3, col:33> col:3 used ConstructionValue 'void (int)' implicit-inline
+| | |-ParmVarDecl {{address}} <col:21, col:25> col:25 value 'int'
+| | `-CompoundStmt {{address}} <col:32, col:33>
+| |-CXXDestructorDecl {{address}} <line:3:3, col:25> col:3 used ~ConstructionValue 'void () noexcept' implicit-inline
+| | `-CompoundStmt {{address}} <col:24, col:25>
+| `-CXXConstructorDecl {{address:1}} <line:1:8> col:8 implicit constexpr ConstructionValue 'void (const ConstructionValue &)' inline default trivial noexcept-unevaluated {{address:1}}
+|   `-ParmVarDecl {{address}} <col:8> col:8 'const ConstructionValue &'
+|-FunctionDecl {{address:2}} <line:5:1, col:50> col:7 used operator new 'void *(unsigned long, void *) noexcept'
+| |-ParmVarDecl {{address}} <<built-in>:175:23, col:37> construction.cpp:5:33 'unsigned long'
+| `-ParmVarDecl {{address}} <col:35, col:41> col:41 address 'void *'
+`-FunctionDecl {{address}} <line:6:1, line:9:1> line:6:6 Construction 'void (ConstructionValue *, short)'
+  |-ParmVarDecl {{address:3}} <col:19, col:38> col:38 used address 'ConstructionValue *'
+  |-ParmVarDecl {{address:4}} <col:47, col:53> col:53 used argument 'short'
+  `-CompoundStmt {{address}} <col:63, line:9:1>
+    |-DeclStmt {{address}} <line:7:3, col:36>
+    | `-VarDecl {{address}} <col:3, col:35> col:21 value 'ConstructionValue' callinit destroyed
+    |   `-CXXConstructExpr {{address}} <col:21, col:35> 'ConstructionValue' 'void (int)'
+    |     `-ImplicitCastExpr {{address}} <col:27> 'int' <IntegralCast>
+    |       `-ImplicitCastExpr {{address}} <col:27> 'short' <LValueToRValue>
+    |         `-DeclRefExpr {{address}} <col:27> 'short' lvalue ParmVar {{address:4}} 'argument' 'short'
+    `-CXXNewExpr {{address}} <line:8:3, col:45> 'ConstructionValue *' global Function {{address:2}} 'operator new' 'void *(unsigned long, void *) noexcept'
+      |-CXXConstructExpr {{address}} <col:19, col:45> 'ConstructionValue' 'void (int)'
+      | `-ImplicitCastExpr {{address}} <col:37> 'int' <IntegralCast>
+      |   `-ImplicitCastExpr {{address}} <col:37> 'short' <LValueToRValue>
+      |     `-DeclRefExpr {{address}} <col:37> 'short' lvalue ParmVar {{address:4}} 'argument' 'short'
+      `-ImplicitCastExpr {{address}} <col:10> 'void *' <BitCast>
+        `-ImplicitCastExpr {{address}} <col:10> 'ConstructionValue *' <LValueToRValue>
+          `-DeclRefExpr {{address}} <col:10> 'ConstructionValue *' lvalue ParmVar {{address:3}} 'address' 'ConstructionValue *'

@@ -1,0 +1,57 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:base}} <member_access.cw:1:1, line:4:2> Base trivial
+| |-FieldDecl {{address:inherited}} <line:2:3, col:17> inherited 'i32'
+| | `-BuiltinType {{address}} <col:13, col:16> 'i32'
+| `-FieldDecl {{address:base_hidden}} <line:3:3, col:14> hidden 'i16'
+|   `-BuiltinType {{address}} <col:10, col:13> 'i16'
+|-StructDecl {{address}} <line:6:1, line:9:2> Value trivial : 'Base'
+| |-BaseType 'Base' Struct {{address:base}} 'Base'
+| |-FieldDecl {{address:own}} <line:7:3, col:11> own 'u32'
+| | `-BuiltinType {{address}} <col:7, col:10> 'u32'
+| `-FieldDecl {{address:derived_hidden}} <line:8:3, col:14> hidden 'i64'
+|   `-BuiltinType {{address}} <col:10, col:13> 'i64'
+|-FunctionDecl {{address:make}} <line:11:1, line:13:2> Make 'func () Value'
+| |-ReturnVarDecl {{address:make_return}} <line:11:13, col:18> 'Value'
+| | `-NamedType {{address}} <col:13, col:18> 'Value'
+| `-CompoundStmt {{address}} <col:19, line:13:2>
+|   `-ImplicitResultInitializationExpr {{address}} <line:12:3, col:9> 'void' ReturnVar {{address:make_return}} 'Value'
+|     `-CallExpr {{address}} <col:3, col:9> 'Value' pure-rvalue
+|       `-DeclRefExpr {{address}} <col:3, col:7> 'func () Value' Function {{address:make}} 'Make' 'func () Value'
+`-FunctionDecl {{address}} <line:15:1, line:23:2> MemberAccess 'func (Value, *Value, *const Value) void'
+  |-ParmVarDecl {{address:value}} <line:15:19, col:30> value 'Value'
+  | `-NamedType {{address}} <col:25, col:30> 'Value'
+  |-ParmVarDecl {{address:pointer}} <col:32, col:46> pointer '*Value'
+  | `-PointerType {{address}} <col:40, col:46>
+  |   `-NamedType {{address}} <col:41, col:46> 'Value'
+  |-ParmVarDecl {{address:const_pointer}} <col:48, col:74> const_pointer '*const Value'
+  | `-PointerType {{address}} <col:62, col:74>
+  |   `-ConstType {{address}} <col:63, col:74>
+  |     `-NamedType {{address}} <col:69, col:74> 'Value'
+  `-CompoundStmt {{address}} <col:76, line:23:2>
+    |-ExprStmt {{address}} <line:16:3, col:13>
+    | `-MemberExpr {{address}} <col:3, col:12> 'u32' lvalue .own Field {{address:own}} 'own' 'u32'
+    |   `-DeclRefExpr {{address}} <col:3, col:8> 'Value' lvalue ParmVar {{address:value}} 'value' 'Value'
+    |-ExprStmt {{address}} <line:17:3, col:19>
+    | `-MemberExpr {{address}} <col:3, col:18> 'i32' lvalue .inherited Field {{address:inherited}} 'inherited' 'i32'
+    |   `-DeclRefExpr {{address}} <col:3, col:8> 'Value' lvalue ParmVar {{address:value}} 'value' 'Value'
+    |-ExprStmt {{address}} <line:18:3, col:16>
+    | `-MemberExpr {{address}} <col:3, col:15> 'i64' lvalue .hidden Field {{address:derived_hidden}} 'hidden' 'i64'
+    |   `-DeclRefExpr {{address}} <col:3, col:8> 'Value' lvalue ParmVar {{address:value}} 'value' 'Value'
+    |-ExprStmt {{address}} <line:19:3, col:20>
+    | `-MemberExpr {{address}} <col:3, col:19> 'u32' move-lvalue .own Field {{address:own}} 'own' 'u32'
+    |   `-ParenExpr {{address}} <col:3, col:15> 'Value' move-lvalue
+    |     `-UnaryOperator {{address}} <col:4, col:14> 'Value' move-lvalue 'move'
+    |       `-DeclRefExpr {{address}} <col:9, col:14> 'Value' lvalue ParmVar {{address:value}} 'value' 'Value'
+    |-ExprStmt {{address}} <line:20:3, col:14>
+    | `-MemberExpr {{address}} <col:3, col:13> 'u32' move-lvalue .own Field {{address:own}} 'own' 'u32'
+    |   `-MaterializeTemporaryExpr {{address}} <col:3, col:9> 'Value' move-lvalue
+    |     `-CallExpr {{address}} <col:3, col:9> 'Value' pure-rvalue
+    |       `-DeclRefExpr {{address}} <col:3, col:7> 'func () Value' Function {{address:make}} 'Make' 'func () Value'
+    |-ExprStmt {{address}} <line:21:3, col:16>
+    | `-MemberExpr {{address}} <col:3, col:15> 'u32' lvalue ->own Field {{address:own}} 'own' 'u32'
+    |   `-ImplicitCastExpr {{address}} <col:3, col:10> '*Value' pure-rvalue <LValueToRValue>
+    |     `-DeclRefExpr {{address}} <col:3, col:10> '*Value' lvalue ParmVar {{address:pointer}} 'pointer' '*Value'
+    `-ExprStmt {{address}} <line:22:3, col:22>
+      `-MemberExpr {{address}} <col:3, col:21> 'const u32' lvalue ->own Field {{address:own}} 'own' 'u32'
+        `-ImplicitCastExpr {{address}} <col:3, col:16> '*const Value' pure-rvalue <LValueToRValue>
+          `-DeclRefExpr {{address}} <col:3, col:16> '*const Value' lvalue ParmVar {{address:const_pointer}} 'const_pointer' '*const Value'

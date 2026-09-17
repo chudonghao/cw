@@ -1,0 +1,71 @@
+TranslationUnitDecl {{address}}
+|-FunctionDecl {{address:select_mut}} <reference_binding.cw:1:1, line:3:2> Select 'func (mut i32) mut i32'
+| |-ParmVarDecl {{address:mut_parameter}} <line:1:13, col:26> value 'mut i32'
+| | `-ReferenceType {{address}} <col:19, col:26> 'mut'
+| |   `-BuiltinType {{address}} <col:23, col:26> 'i32'
+| |-ReturnVarDecl {{address:select_mut_return}} <col:28, col:35> 'mut i32'
+| | `-ReferenceType {{address}} <col:28, col:35> 'mut'
+| |   `-BuiltinType {{address}} <col:32, col:35> 'i32'
+| `-CompoundStmt {{address}} <col:36, line:3:2>
+|   `-ImplicitResultInitializationExpr {{address}} <line:2:3, col:8> 'void' ReturnVar {{address:select_mut_return}} 'mut i32'
+|     `-DeclRefExpr {{address}} <col:3, col:8> 'i32' lvalue ParmVar {{address:mut_parameter}} 'value' 'mut i32'
+|-FunctionDecl {{address:select_copy}} <line:5:1, line:7:2> Select 'func (copy i32) copy i32'
+| |-ParmVarDecl {{address:copy_parameter}} <line:5:13, col:27> value 'copy i32'
+| | `-ReferenceType {{address}} <col:19, col:27> 'copy'
+| |   `-BuiltinType {{address}} <col:24, col:27> 'i32'
+| |-ReturnVarDecl {{address:select_copy_return}} <col:29, col:37> 'copy i32'
+| | `-ReferenceType {{address}} <col:29, col:37> 'copy'
+| |   `-BuiltinType {{address}} <col:34, col:37> 'i32'
+| `-CompoundStmt {{address}} <col:38, line:7:2>
+|   `-ImplicitResultInitializationExpr {{address}} <line:6:3, col:8> 'void' ReturnVar {{address:select_copy_return}} 'copy i32'
+|     `-DeclRefExpr {{address}} <col:3, col:8> 'const i32' lvalue ParmVar {{address:copy_parameter}} 'value' 'copy i32'
+|-FunctionDecl {{address:select_move}} <line:9:1, line:11:2> Select 'func (move i32) move i32'
+| |-ParmVarDecl {{address:move_parameter}} <line:9:13, col:27> value 'move i32'
+| | `-ReferenceType {{address}} <col:19, col:27> 'move'
+| |   `-BuiltinType {{address}} <col:24, col:27> 'i32'
+| |-ReturnVarDecl {{address:select_move_return}} <col:29, col:37> 'move i32'
+| | `-ReferenceType {{address}} <col:29, col:37> 'move'
+| |   `-BuiltinType {{address}} <col:34, col:37> 'i32'
+| `-CompoundStmt {{address}} <col:38, line:11:2>
+|   `-ImplicitResultInitializationExpr {{address}} <line:10:3, col:13> 'void' ReturnVar {{address:select_move_return}} 'move i32'
+|     `-UnaryOperator {{address}} <col:3, col:13> 'i32' move-lvalue 'move'
+|       `-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue ParmVar {{address:move_parameter}} 'value' 'move i32'
+`-FunctionDecl {{address}} <line:13:1, line:21:2> ReferenceBinding 'func (i32) void'
+  |-ParmVarDecl {{address:reference_binding_parameter}} <line:13:23, col:32> value 'i32'
+  | `-BuiltinType {{address}} <col:29, col:32> 'i32'
+  `-CompoundStmt {{address}} <col:34, line:21:2>
+    |-DeclStmt {{address}} <line:14:3, col:29>
+    | `-VarGroupDecl {{address}} <col:3, col:29>
+    |   |-VarDecl {{address:link}} <col:7, col:19> link 'mut i32'
+    |   | `-ReferenceType {{address}} <col:12, col:19> 'mut'
+    |   |   `-BuiltinType {{address}} <col:16, col:19> 'i32'
+    |   `-DeclRefExpr {{address}} <col:23, col:28> 'i32' lvalue ParmVar {{address:reference_binding_parameter}} 'value' 'i32'
+    |-DeclStmt {{address}} <line:15:3, col:32>
+    | `-VarGroupDecl {{address}} <col:3, col:32>
+    |   |-VarDecl {{address:fixed}} <col:7, col:22> fixed 'const i32'
+    |   | `-ConstType {{address}} <col:13, col:22>
+    |   |   `-BuiltinType {{address}} <col:19, col:22> 'i32'
+    |   `-ImplicitCastExpr {{address}} <col:26, col:31> 'i32' pure-rvalue <LValueToRValue>
+    |     `-DeclRefExpr {{address}} <col:26, col:31> 'i32' lvalue ParmVar {{address:reference_binding_parameter}} 'value' 'i32'
+    |-ExprStmt {{address}} <line:17:3, col:16>
+    | `-CallExpr {{address}} <col:3, col:15> 'i32' lvalue
+    |   |-DeclRefExpr {{address}} <col:3, col:9> 'func (mut i32) mut i32' Function {{address:select_mut}} 'Select' 'func (mut i32) mut i32'
+    |   `-DeclRefExpr {{address}} <col:10, col:14> 'i32' lvalue Var {{address:link}} 'link' 'mut i32'
+    |-DeclStmt {{address}} <line:18:3, col:30>
+    | `-VarGroupDecl {{address}} <col:3, col:30>
+    |   |-VarDecl {{address}} <col:7, col:12> owned 'i32'
+    |   `-ImplicitCastExpr {{address}} <col:16, col:29> 'i32' pure-rvalue <LValueToRValue>
+    |     `-CallExpr {{address}} <col:16, col:29> 'const i32' lvalue
+    |       |-DeclRefExpr {{address}} <col:16, col:22> 'func (copy i32) copy i32' Function {{address:select_copy}} 'Select' 'func (copy i32) copy i32'
+    |       `-DeclRefExpr {{address}} <col:23, col:28> 'const i32' lvalue Var {{address:fixed}} 'fixed' 'const i32'
+    |-ExprStmt {{address}} <line:19:3, col:22>
+    | `-CallExpr {{address}} <col:3, col:21> 'i32' move-lvalue
+    |   |-DeclRefExpr {{address}} <col:3, col:9> 'func (move i32) move i32' Function {{address:select_move}} 'Select' 'func (move i32) move i32'
+    |   `-UnaryOperator {{address}} <col:10, col:20> 'i32' move-lvalue 'move'
+    |     `-DeclRefExpr {{address}} <col:15, col:20> 'i32' lvalue ParmVar {{address:reference_binding_parameter}} 'value' 'i32'
+    `-ExprStmt {{address}} <line:20:3, col:13>
+      `-CallExpr {{address}} <col:3, col:12> 'i32' move-lvalue
+        |-DeclRefExpr {{address}} <col:3, col:9> 'func (move i32) move i32' Function {{address:select_move}} 'Select' 'func (move i32) move i32'
+        `-MaterializeTemporaryExpr {{address}} <col:10, col:11> 'i32' move-lvalue
+          `-ImplicitCastExpr {{address}} <col:10, col:11> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+            `-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' 1

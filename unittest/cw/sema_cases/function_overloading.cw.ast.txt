@@ -1,0 +1,13 @@
+TranslationUnitDecl {{address}}
+|-FunctionDecl {{address}} <function_overloading.cw:1:1, col:44> FunctionOverloading 'func (i32) void'
+| |-ParmVarDecl {{address}} <col:26, col:35> value 'i32'
+| | `-BuiltinType {{address}} <col:32, col:35> 'i32'
+| |-ReturnVarDecl {{address}} <col:37, col:41> 'void'
+| | `-BuiltinType {{address}} <col:37, col:41> 'void'
+| `-CompoundStmt {{address}} <col:42, col:44>
+`-FunctionDecl {{address}} <line:3:1, col:44> FunctionOverloading 'func (u32) void'
+  |-ParmVarDecl {{address}} <col:26, col:35> value 'u32'
+  | `-BuiltinType {{address}} <col:32, col:35> 'u32'
+  |-ReturnVarDecl {{address}} <col:37, col:41> 'void'
+  | `-BuiltinType {{address}} <col:37, col:41> 'void'
+  `-CompoundStmt {{address}} <col:42, col:44>

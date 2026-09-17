@@ -1,0 +1,46 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:point}} <constructor_this.cw:1:1, line:4:2> Point
+| |-FieldDecl {{address:x}} <line:2:3, col:9> x 'i32'
+| | `-BuiltinType {{address}} <col:5, col:8> 'i32'
+| `-FieldDecl {{address:y}} <line:3:3, col:9> y 'i32'
+|   `-BuiltinType {{address}} <col:5, col:8> 'i32'
+|-ConstructorDecl {{address:primary_constructor}} <line:6:1, line:9:2> Point target Struct {{address:point}} 'Point' 'func (i32, i32) void'
+| |-ParmVarDecl {{address:primary_x}} <line:6:12, col:17> x 'i32'
+| | `-BuiltinType {{address}} <col:14, col:17> 'i32'
+| |-ParmVarDecl {{address:primary_y}} <col:19, col:24> y 'i32'
+| | `-BuiltinType {{address}} <col:21, col:24> 'i32'
+| `-CompoundStmt {{address}} <col:26, line:9:2>
+|   |-ExprStmt {{address}} <line:7:3, col:15>
+|   | `-InitializationExpr {{address}} <col:3, col:14> 'void'
+|   |   |-MemberExpr {{address}} <col:3, col:9> 'i32' lvalue .x Field {{address:x}} 'x' 'i32'
+|   |   | `-ThisExpr {{address}} <col:3, col:7> 'Point' lvalue this
+|   |   `-ImplicitCastExpr {{address}} <col:13, col:14> 'i32' pure-rvalue <LValueToRValue>
+|   |     `-DeclRefExpr {{address}} <col:13, col:14> 'i32' lvalue ParmVar {{address:primary_x}} 'x' 'i32'
+|   `-ExprStmt {{address}} <line:8:3, col:15>
+|     `-InitializationExpr {{address}} <col:3, col:14> 'void'
+|       |-MemberExpr {{address}} <col:3, col:9> 'i32' lvalue .y Field {{address:y}} 'y' 'i32'
+|       | `-ThisExpr {{address}} <col:3, col:7> 'Point' lvalue this
+|       `-ImplicitCastExpr {{address}} <col:13, col:14> 'i32' pure-rvalue <LValueToRValue>
+|         `-DeclRefExpr {{address}} <col:13, col:14> 'i32' lvalue ParmVar {{address:primary_y}} 'y' 'i32'
+|-ConstructorDecl {{address:delegating_constructor}} <line:11:1, line:13:2> Point target Struct {{address:point}} 'Point' 'func (i32) void'
+| |-ParmVarDecl {{address:delegating_x}} <line:11:12, col:17> x 'i32'
+| | `-BuiltinType {{address}} <col:14, col:17> 'i32'
+| `-CompoundStmt {{address}} <col:19, line:13:2>
+|   `-ExprStmt {{address}} <line:12:3, col:23>
+|     `-InitializationExpr {{address}} <col:3, col:22> 'void'
+|       |-ThisExpr {{address}} <col:3, col:7> 'Point' lvalue this
+|       `-ConstructionExpr {{address}} <col:11, col:22> 'Point' pure-rvalue delegating target <col:11, col:16> 'Point' Constructor {{address:primary_constructor}} 'Point' 'func (i32, i32) void'
+|         |-ImplicitCastExpr {{address}} <col:17, col:18> 'i32' pure-rvalue <LValueToRValue>
+|         | `-DeclRefExpr {{address}} <col:17, col:18> 'i32' lvalue ParmVar {{address:delegating_x}} 'x' 'i32'
+|         `-ImplicitCastExpr {{address}} <col:20, col:21> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|           `-IntegerLiteral {{address}} <col:20, col:21> 'comptime_int' 0
+|-DestructorDecl {{address}} <line:15:1, col:16> Point target Struct {{address:point}} 'Point' 'func () void'
+| `-CompoundStmt {{address}} <col:14, col:16>
+`-FunctionDecl {{address}} <line:17:1, line:19:2> ConstructorThis 'func () void'
+  `-CompoundStmt {{address}} <line:17:24, line:19:2>
+    `-DeclStmt {{address}} <line:18:3, col:21>
+      `-VarGroupDecl {{address}} <col:3, col:21>
+        |-VarDecl {{address}} <col:7, col:8> p 'Point'
+        `-ConstructionExpr {{address}} <col:12, col:20> 'Point' pure-rvalue complete-object target <col:12, col:17> 'Point' Constructor {{address:delegating_constructor}} 'Point' 'func (i32) void'
+          `-ImplicitCastExpr {{address}} <col:18, col:19> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+            `-IntegerLiteral {{address}} <col:18, col:19> 'comptime_int' 1

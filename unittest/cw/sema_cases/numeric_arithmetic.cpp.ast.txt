@@ -1,0 +1,105 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+`-FunctionDecl {{address}} <numeric_arithmetic.cpp:1:1, line:16:1> line:1:6 NumericArithmetic 'void (signed char, unsigned char, short, int, long long, float, double, long, unsigned long)'
+  |-ParmVarDecl {{address:1}} <col:24, col:36> col:36 used signed8 'signed char'
+  |-ParmVarDecl {{address:2}} <col:45, col:59> col:59 used unsigned8 'unsigned char'
+  |-ParmVarDecl {{address:3}} <col:70, col:76> col:76 used signed16 'short'
+  |-ParmVarDecl {{address:4}} <line:2:24, col:28> col:28 used signed32 'int'
+  |-ParmVarDecl {{address:5}} <col:38, col:48> col:48 used signed64 'long long'
+  |-ParmVarDecl {{address:6}} <col:58, col:64> col:64 used single 'float'
+  |-ParmVarDecl {{address:7}} <col:72, col:79> col:79 used wide 'double'
+  |-ParmVarDecl {{address:8}} <line:3:24, col:29> col:29 used offset 'long'
+  |-ParmVarDecl {{address:9}} <col:37, col:51> col:51 used size 'unsigned long'
+  `-CompoundStmt {{address}} <col:57, line:16:1>
+    |-DeclStmt {{address}} <line:4:3, col:38>
+    | `-VarDecl {{address}} <col:3, col:31> col:8 same_small 'int' cinit
+    |   `-BinaryOperator {{address}} <col:21, col:31> 'int' '+'
+    |     |-ImplicitCastExpr {{address}} <col:21> 'int' <IntegralCast>
+    |     | `-ImplicitCastExpr {{address}} <col:21> 'signed char' <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:21> 'signed char' lvalue ParmVar {{address:1}} 'signed8' 'signed char'
+    |     `-ImplicitCastExpr {{address}} <col:31> 'int' <IntegralCast>
+    |       `-ImplicitCastExpr {{address}} <col:31> 'signed char' <LValueToRValue>
+    |         `-DeclRefExpr {{address}} <col:31> 'signed char' lvalue ParmVar {{address:1}} 'signed8' 'signed char'
+    |-DeclStmt {{address}} <line:5:3, col:44>
+    | `-VarDecl {{address}} <col:3, col:36> col:8 mixed_integer 'int' cinit
+    |   `-BinaryOperator {{address}} <col:24, col:36> 'int' '+'
+    |     |-ImplicitCastExpr {{address}} <col:24> 'int' <IntegralCast>
+    |     | `-ImplicitCastExpr {{address}} <col:24> 'unsigned char' <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:24> 'unsigned char' lvalue ParmVar {{address:2}} 'unsigned8' 'unsigned char'
+    |     `-ImplicitCastExpr {{address}} <col:36> 'int' <IntegralCast>
+    |       `-ImplicitCastExpr {{address}} <col:36> 'short' <LValueToRValue>
+    |         `-DeclRefExpr {{address}} <col:36> 'short' lvalue ParmVar {{address:3}} 'signed16' 'short'
+    |-DeclStmt {{address}} <line:6:3, col:30>
+    | `-VarDecl {{address}} <col:3, col:27> col:8 characters 'int' cinit
+    |   `-BinaryOperator {{address}} <col:21, col:27> 'int' '+'
+    |     |-ImplicitCastExpr {{address}} <col:21> 'int' <IntegralCast>
+    |     | `-CharacterLiteral {{address}} <col:21> 'char' 97
+    |     `-ImplicitCastExpr {{address}} <col:27> 'int' <IntegralCast>
+    |       `-CharacterLiteral {{address}} <col:27> 'char' 98
+    |-DeclStmt {{address}} <line:7:3, col:39>
+    | `-VarDecl {{address}} <col:3, col:33> col:8 mixed_float 'float' cinit
+    |   `-BinaryOperator {{address}} <col:22, col:33> 'float' '+'
+    |     |-ImplicitCastExpr {{address}} <col:22> 'float' <IntegralToFloating>
+    |     | `-ImplicitCastExpr {{address}} <col:22> 'int' <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:22> 'int' lvalue ParmVar {{address:4}} 'signed32' 'int'
+    |     `-ImplicitCastExpr {{address}} <col:33> 'float' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:33> 'float' lvalue ParmVar {{address:6}} 'single' 'float'
+    |-DeclStmt {{address}} <line:8:3, col:35>
+    | `-VarDecl {{address}} <col:3, col:31> col:8 wider_float 'double' cinit
+    |   `-BinaryOperator {{address}} <col:22, col:31> 'double' '*'
+    |     |-ImplicitCastExpr {{address}} <col:22> 'double' <FloatingCast>
+    |     | `-ImplicitCastExpr {{address}} <col:22> 'float' <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:22> 'float' lvalue ParmVar {{address:6}} 'single' 'float'
+    |     `-ImplicitCastExpr {{address}} <col:31> 'double' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:31> 'double' lvalue ParmVar {{address:7}} 'wide' 'double'
+    |-DeclStmt {{address}} <line:9:3, col:34>
+    | `-VarDecl {{address}} <col:3, col:31> col:8 literal_float 'double' cinit
+    |   `-BinaryOperator {{address}} <col:24, col:31> 'double' '+'
+    |     |-ImplicitCastExpr {{address}} <col:24> 'double' <FloatingCast>
+    |     | `-FloatingLiteral {{address}} <col:24> 'float' 1.000000e+00
+    |     `-FloatingLiteral {{address}} <col:31> 'double' 2.000000e+00
+    |-DeclStmt {{address}} <line:10:3, col:48>
+    | `-VarDecl {{address}} <col:3, col:40> col:8 integer_difference 'int' cinit
+    |   `-BinaryOperator {{address}} <col:29, col:40> 'int' '-'
+    |     |-ImplicitCastExpr {{address}} <col:29> 'int' <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:29> 'int' lvalue ParmVar {{address:4}} 'signed32' 'int'
+    |     `-ImplicitCastExpr {{address}} <col:40> 'int' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:40> 'int' lvalue ParmVar {{address:4}} 'signed32' 'int'
+    |-DeclStmt {{address}} <line:11:3, col:46>
+    | `-VarDecl {{address}} <col:3, col:38> col:8 integer_quotient 'int' cinit
+    |   `-BinaryOperator {{address}} <col:27, col:38> 'int' '/'
+    |     |-ImplicitCastExpr {{address}} <col:27> 'int' <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:27> 'int' lvalue ParmVar {{address:4}} 'signed32' 'int'
+    |     `-ImplicitCastExpr {{address}} <col:38> 'int' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:38> 'int' lvalue ParmVar {{address:4}} 'signed32' 'int'
+    |-DeclStmt {{address}} <line:12:3, col:47>
+    | `-VarDecl {{address}} <col:3, col:39> col:8 integer_remainder 'int' cinit
+    |   `-BinaryOperator {{address}} <col:28, col:39> 'int' '%'
+    |     |-ImplicitCastExpr {{address}} <col:28> 'int' <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:28> 'int' lvalue ParmVar {{address:4}} 'signed32' 'int'
+    |     `-ImplicitCastExpr {{address}} <col:39> 'int' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:39> 'int' lvalue ParmVar {{address:4}} 'signed32' 'int'
+    |-DeclStmt {{address}} <line:13:3, col:38>
+    | `-VarDecl {{address}} <col:3, col:32> col:8 float_quotient 'double' cinit
+    |   `-BinaryOperator {{address}} <col:25, col:32> 'double' '/'
+    |     |-ImplicitCastExpr {{address}} <col:25> 'double' <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:25> 'double' lvalue ParmVar {{address:7}} 'wide' 'double'
+    |     `-ImplicitCastExpr {{address}} <col:32> 'double' <FloatingCast>
+    |       `-ImplicitCastExpr {{address}} <col:32> 'float' <LValueToRValue>
+    |         `-DeclRefExpr {{address}} <col:32> 'float' lvalue ParmVar {{address:6}} 'single' 'float'
+    |-DeclStmt {{address}} <line:14:3, col:29>
+    | `-VarDecl {{address}} <col:3, col:23> col:8 sizes 'unsigned long' cinit
+    |   `-BinaryOperator {{address}} <col:16, col:23> 'unsigned long' '+'
+    |     |-ImplicitCastExpr {{address}} <col:16> 'unsigned long' <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:16> 'unsigned long' lvalue ParmVar {{address:9}} 'size' 'unsigned long'
+    |     `-ImplicitCastExpr {{address}} <col:23> 'unsigned long' <IntegralCast>
+    |       `-ImplicitCastExpr {{address}} <col:23> 'long' <LValueToRValue>
+    |         `-DeclRefExpr {{address}} <col:23> 'long' lvalue ParmVar {{address:8}} 'offset' 'long'
+    `-DeclStmt {{address}} <line:15:3, col:33>
+      `-VarDecl {{address}} <col:3, col:25> col:8 nested 'long long' cinit
+        `-BinaryOperator {{address}} <col:17, col:25> 'long long' '+'
+          |-ImplicitCastExpr {{address}} <col:17, col:21> 'long long' <IntegralCast>
+          | `-BinaryOperator {{address}} <col:17, col:21> 'int' '+'
+          |   |-IntegerLiteral {{address}} <col:17> 'int' 1
+          |   `-IntegerLiteral {{address}} <col:21> 'int' 2
+          `-ImplicitCastExpr {{address}} <col:25> 'long long' <LValueToRValue>
+            `-DeclRefExpr {{address}} <col:25> 'long long' lvalue ParmVar {{address:5}} 'signed64' 'long long'

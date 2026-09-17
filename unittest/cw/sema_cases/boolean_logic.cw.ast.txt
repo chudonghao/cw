@@ -1,0 +1,16 @@
+TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <boolean_logic.cw:1:1, line:3:2> BooleanLogic 'func (bool) void'
+  |-ParmVarDecl {{address:flag}} <line:1:19, col:28> flag 'bool'
+  | `-BuiltinType {{address}} <col:24, col:28> 'bool'
+  `-CompoundStmt {{address}} <col:30, line:3:2>
+    `-DeclStmt {{address}} <line:2:3, col:38>
+      `-VarGroupDecl {{address}} <col:3, col:38>
+        |-VarDecl {{address}} <col:7, col:12> logic 'bool'
+        `-BinaryOperator {{address}} <col:16, col:37> 'bool' pure-rvalue '||'
+          |-UnaryOperator {{address}} <col:16, col:21> 'bool' pure-rvalue '!'
+          | `-ImplicitCastExpr {{address}} <col:17, col:21> 'bool' pure-rvalue <LValueToRValue>
+          |   `-DeclRefExpr {{address}} <col:17, col:21> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+          `-BinaryOperator {{address}} <col:25, col:37> 'bool' pure-rvalue '&&'
+            |-ImplicitCastExpr {{address}} <col:25, col:29> 'bool' pure-rvalue <LValueToRValue>
+            | `-DeclRefExpr {{address}} <col:25, col:29> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+            `-BoolLiteral {{address}} <col:33, col:37> 'bool' pure-rvalue true

@@ -1,0 +1,67 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+`-FunctionDecl {{address}} <builtin_comparison.cpp:1:1, line:10:1> line:1:6 BuiltinComparison 'void (signed char, long long, float, long, unsigned long, bool)'
+  |-ParmVarDecl {{address:1}} <col:24, col:36> col:36 used small 'signed char'
+  |-ParmVarDecl {{address:2}} <col:43, col:53> col:53 used wide 'long long'
+  |-ParmVarDecl {{address:3}} <col:59, col:65> col:65 used single 'float'
+  |-ParmVarDecl {{address:4}} <col:73, col:78> col:78 used offset 'long'
+  |-ParmVarDecl {{address:5}} <col:86, col:100> col:100 used size 'unsigned long'
+  |-ParmVarDecl {{address:6}} <col:106, col:111> col:111 used flag 'bool'
+  `-CompoundStmt {{address}} <col:117, line:10:1>
+    |-DeclStmt {{address}} <line:2:3, col:36>
+    | `-VarDecl {{address}} <col:3, col:32> col:8 integer_order 'bool' cinit
+    |   `-BinaryOperator {{address}} <col:24, col:32> 'bool' '<'
+    |     |-ImplicitCastExpr {{address}} <col:24> 'long long' <IntegralCast>
+    |     | `-ImplicitCastExpr {{address}} <col:24> 'signed char' <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:24> 'signed char' lvalue ParmVar {{address:1}} 'small' 'signed char'
+    |     `-ImplicitCastExpr {{address}} <col:32> 'long long' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:32> 'long long' lvalue ParmVar {{address:2}} 'wide' 'long long'
+    |-DeclStmt {{address}} <line:3:3, col:36>
+    | `-VarDecl {{address}} <col:3, col:30> col:8 float_order 'bool' cinit
+    |   `-BinaryOperator {{address}} <col:22, col:30> 'bool' '>='
+    |     |-ImplicitCastExpr {{address}} <col:22> 'float' <IntegralToFloating>
+    |     | `-ImplicitCastExpr {{address}} <col:22> 'long long' <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:22> 'long long' lvalue ParmVar {{address:2}} 'wide' 'long long'
+    |     `-ImplicitCastExpr {{address}} <col:30> 'float' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:30> 'float' lvalue ParmVar {{address:3}} 'single' 'float'
+    |-DeclStmt {{address}} <line:4:3, col:35>
+    | `-VarDecl {{address}} <col:3, col:32> col:8 character_order 'bool' cinit
+    |   `-BinaryOperator {{address}} <col:26, col:32> 'bool' '>'
+    |     |-ImplicitCastExpr {{address}} <col:26> 'int' <IntegralCast>
+    |     | `-CharacterLiteral {{address}} <col:26> 'char' 97
+    |     `-ImplicitCastExpr {{address}} <col:32> 'int' <IntegralCast>
+    |       `-CharacterLiteral {{address}} <col:32> 'char' 98
+    |-DeclStmt {{address}} <line:5:3, col:35>
+    | `-VarDecl {{address}} <col:3, col:31> col:8 size_order 'bool' cinit
+    |   `-BinaryOperator {{address}} <col:21, col:31> 'bool' '<='
+    |     |-ImplicitCastExpr {{address}} <col:21> 'unsigned long' <IntegralCast>
+    |     | `-ImplicitCastExpr {{address}} <col:21> 'long' <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:21> 'long' lvalue ParmVar {{address:4}} 'offset' 'long'
+    |     `-ImplicitCastExpr {{address}} <col:31> 'unsigned long' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:31> 'unsigned long' lvalue ParmVar {{address:5}} 'size' 'unsigned long'
+    |-DeclStmt {{address}} <line:6:3, col:37>
+    | `-VarDecl {{address}} <col:3, col:33> col:8 numeric_equal 'bool' cinit
+    |   `-BinaryOperator {{address}} <col:24, col:33> 'bool' '=='
+    |     |-ImplicitCastExpr {{address}} <col:24> 'long long' <IntegralCast>
+    |     | `-ImplicitCastExpr {{address}} <col:24> 'signed char' <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:24> 'signed char' lvalue ParmVar {{address:1}} 'small' 'signed char'
+    |     `-ImplicitCastExpr {{address}} <col:33> 'long long' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:33> 'long long' lvalue ParmVar {{address:2}} 'wide' 'long long'
+    |-DeclStmt {{address}} <line:7:3, col:34>
+    | `-VarDecl {{address}} <col:3, col:29> col:8 bool_equal 'bool' cinit
+    |   `-BinaryOperator {{address}} <col:21, col:29> 'bool' '!='
+    |     |-ImplicitCastExpr {{address}} <col:21> 'int' <IntegralCast>
+    |     | `-ImplicitCastExpr {{address}} <col:21> 'bool' <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:21> 'bool' lvalue ParmVar {{address:6}} 'flag' 'bool'
+    |     `-ImplicitCastExpr {{address}} <col:29> 'int' <IntegralCast>
+    |       `-CXXBoolLiteralExpr {{address}} <col:29> 'bool' false
+    |-DeclStmt {{address}} <line:8:3, col:32>
+    | `-VarDecl {{address}} <col:3, col:31> col:8 integer_literals 'bool' cinit
+    |   `-BinaryOperator {{address}} <col:27, col:31> 'bool' '<'
+    |     |-IntegerLiteral {{address}} <col:27> 'int' 1
+    |     `-IntegerLiteral {{address}} <col:31> 'int' 2
+    `-DeclStmt {{address}} <line:9:3, col:31>
+      `-VarDecl {{address}} <col:3, col:28> col:8 mixed_literal 'bool' cinit
+        `-BinaryOperator {{address}} <col:24, col:28> 'bool' '<'
+          |-ImplicitCastExpr {{address}} <col:24> 'double' <IntegralToFloating>
+          | `-IntegerLiteral {{address}} <col:24> 'int' 1
+          `-FloatingLiteral {{address}} <col:28> 'double' 2.000000e+00

@@ -1,0 +1,53 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address}} <function_pointer_call.cw:1:1, line:4:2> CallbackHolder trivial
+| |-FieldDecl {{address:callback_field}} <line:2:3, col:28> callback '*func (i16) i32'
+| | `-PointerType {{address}} <col:12, col:27>
+| |   `-FunctionType {{address}} <col:13, col:27>
+| |     |-BuiltinType {{address}} <col:19, col:22> 'i16'
+| |     `-BuiltinType {{address}} <col:24, col:27> 'i32'
+| `-FieldDecl {{address:factory_field}} <line:3:3, col:36> factory '*func () *func (i16) i32'
+|   `-PointerType {{address}} <col:11, col:35>
+|     `-FunctionType {{address}} <col:12, col:35>
+|       `-PointerType {{address}} <col:20, col:35>
+|         `-FunctionType {{address}} <col:21, col:35>
+|           |-BuiltinType {{address}} <col:27, col:30> 'i16'
+|           `-BuiltinType {{address}} <col:32, col:35> 'i32'
+`-FunctionDecl {{address}} <line:6:1, line:10:2> FunctionPointerCall 'func (CallbackHolder, *func (i16) i32, i8) i32'
+  |-ParmVarDecl {{address:holder}} <line:6:26, col:47> holder 'CallbackHolder'
+  | `-NamedType {{address}} <col:33, col:47> 'CallbackHolder'
+  |-ParmVarDecl {{address:callback}} <col:49, col:73> callback '*func (i16) i32'
+  | `-PointerType {{address}} <col:58, col:73>
+  |   `-FunctionType {{address}} <col:59, col:73>
+  |     |-BuiltinType {{address}} <col:65, col:68> 'i16'
+  |     `-BuiltinType {{address}} <col:70, col:73> 'i32'
+  |-ParmVarDecl {{address:value}} <col:75, col:83> value 'i8'
+  | `-BuiltinType {{address}} <col:81, col:83> 'i8'
+  |-ReturnVarDecl {{address:return}} <col:85, col:88> 'i32'
+  | `-BuiltinType {{address}} <col:85, col:88> 'i32'
+  `-CompoundStmt {{address}} <col:89, line:10:2>
+    |-ExprStmt {{address}} <line:7:3, col:19>
+    | `-CallExpr {{address}} <col:3, col:18> 'i32' pure-rvalue
+    |   |-ImplicitCastExpr {{address}} <col:3, col:11> '*func (i16) i32' pure-rvalue <LValueToRValue>
+    |   | `-DeclRefExpr {{address}} <col:3, col:11> '*func (i16) i32' lvalue ParmVar {{address:callback}} 'callback' '*func (i16) i32'
+    |   `-ImplicitCastExpr {{address}} <col:12, col:17> 'i16' pure-rvalue <IntegerToInteger>
+    |     `-ImplicitCastExpr {{address}} <col:12, col:17> 'i8' pure-rvalue <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:12, col:17> 'i8' lvalue ParmVar {{address:value}} 'value' 'i8'
+    |-ExprStmt {{address}} <line:8:3, col:29>
+    | `-CallExpr {{address}} <col:3, col:28> 'i32' pure-rvalue
+    |   |-CallExpr {{address}} <col:3, col:21> '*func (i16) i32' pure-rvalue
+    |   | `-ImplicitCastExpr {{address}} <col:3, col:19> '*func () *func (i16) i32' pure-rvalue <LValueToRValue>
+    |   |   `-ParenExpr {{address}} <col:3, col:19> '*func () *func (i16) i32' lvalue
+    |   |     `-MemberExpr {{address}} <col:4, col:18> '*func () *func (i16) i32' lvalue .factory Field {{address:factory_field}} 'factory' '*func () *func (i16) i32'
+    |   |       `-DeclRefExpr {{address}} <col:4, col:10> 'CallbackHolder' lvalue ParmVar {{address:holder}} 'holder' 'CallbackHolder'
+    |   `-ImplicitCastExpr {{address}} <col:22, col:27> 'i16' pure-rvalue <IntegerToInteger>
+    |     `-ImplicitCastExpr {{address}} <col:22, col:27> 'i8' pure-rvalue <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:22, col:27> 'i8' lvalue ParmVar {{address:value}} 'value' 'i8'
+    `-ImplicitResultInitializationExpr {{address}} <line:9:3, col:27> 'void' ReturnVar {{address:return}} 'i32'
+      `-CallExpr {{address}} <col:3, col:27> 'i32' pure-rvalue
+        |-ImplicitCastExpr {{address}} <col:3, col:20> '*func (i16) i32' pure-rvalue <LValueToRValue>
+        | `-ParenExpr {{address}} <col:3, col:20> '*func (i16) i32' lvalue
+        |   `-MemberExpr {{address}} <col:4, col:19> '*func (i16) i32' lvalue .callback Field {{address:callback_field}} 'callback' '*func (i16) i32'
+        |     `-DeclRefExpr {{address}} <col:4, col:10> 'CallbackHolder' lvalue ParmVar {{address:holder}} 'holder' 'CallbackHolder'
+        `-ImplicitCastExpr {{address}} <col:21, col:26> 'i16' pure-rvalue <IntegerToInteger>
+          `-ImplicitCastExpr {{address}} <col:21, col:26> 'i8' pure-rvalue <LValueToRValue>
+            `-DeclRefExpr {{address}} <col:21, col:26> 'i8' lvalue ParmVar {{address:value}} 'value' 'i8'

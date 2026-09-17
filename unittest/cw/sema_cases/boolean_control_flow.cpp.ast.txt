@@ -1,0 +1,12 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+`-FunctionDecl {{address}} <boolean_control_flow.cpp:1:1, line:6:1> line:1:6 BooleanControlFlow 'void (bool)'
+  |-ParmVarDecl {{address:1}} <col:25, col:30> col:30 used flag 'bool'
+  `-CompoundStmt {{address}} <col:36, line:6:1>
+    |-IfStmt {{address}} <line:2:3, line:3:3>
+    | |-ImplicitCastExpr {{address}} <line:2:7> 'bool' <LValueToRValue>
+    | | `-DeclRefExpr {{address}} <col:7> 'bool' lvalue ParmVar {{address:1}} 'flag' 'bool'
+    | `-CompoundStmt {{address}} <col:13, line:3:3>
+    `-WhileStmt {{address}} <line:4:3, line:5:3>
+      |-ImplicitCastExpr {{address}} <line:4:10> 'bool' <LValueToRValue>
+      | `-DeclRefExpr {{address}} <col:10> 'bool' lvalue ParmVar {{address:1}} 'flag' 'bool'
+      `-CompoundStmt {{address}} <col:16, line:5:3>

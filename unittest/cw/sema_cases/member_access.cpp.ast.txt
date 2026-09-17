@@ -1,0 +1,59 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address}} <member_access.cpp:1:1, line:4:1> line:1:8 referenced struct Base definition
+| |-DefinitionData pass_in_registers aggregate standard_layout trivially_copyable pod trivial literal
+| | |-DefaultConstructor exists trivial needs_implicit
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct Base
+| |-FieldDecl {{address:1}} <line:2:3, col:7> col:7 referenced inherited 'int'
+| |-FieldDecl {{address}} <line:3:3, col:9> col:9 hidden 'short'
+| `-CXXDestructorDecl {{address}} <line:1:8> col:8 implicit ~Base 'void () noexcept' inline default trivial
+|-CXXRecordDecl {{address}} <line:5:1, line:8:1> line:5:8 referenced struct Value definition
+| |-DefinitionData pass_in_registers aggregate trivially_copyable trivial literal
+| | |-DefaultConstructor exists trivial needs_implicit
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial
+| |-public 'Base'
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct Value
+| |-FieldDecl {{address:2}} <line:6:3, col:16> col:16 referenced own 'unsigned int'
+| |-FieldDecl {{address:3}} <line:7:3, col:13> col:13 referenced hidden 'long long'
+| `-CXXDestructorDecl {{address}} <line:5:8> col:8 implicit referenced ~Value 'void () noexcept' inline default trivial
+|-FunctionDecl {{address:4}} <line:9:1, col:31> col:7 used Make 'Value ()'
+| `-CompoundStmt {{address}} <col:14, col:31>
+|   `-ReturnStmt {{address}} <col:16, col:28>
+|     `-CallExpr {{address}} <col:23, col:28> 'Value'
+|       `-ImplicitCastExpr {{address}} <col:23> 'Value (*)()' <FunctionToPointerDecay>
+|         `-DeclRefExpr {{address}} <col:23> 'Value ()' lvalue Function {{address:4}} 'Make' 'Value ()'
+`-FunctionDecl {{address}} <line:10:1, line:18:1> line:10:6 MemberAccess 'void (Value, Value *, const Value *)'
+  |-ParmVarDecl {{address:5}} <col:19, col:25> col:25 used value 'Value'
+  |-ParmVarDecl {{address:6}} <col:32, col:39> col:39 used pointer 'Value *'
+  |-ParmVarDecl {{address:7}} <col:48, col:61> col:61 used const_pointer 'const Value *'
+  `-CompoundStmt {{address}} <col:76, line:18:1>
+    |-MemberExpr {{address}} <line:11:3, col:9> 'unsigned int' lvalue .own {{address:2}}
+    | `-DeclRefExpr {{address}} <col:3> 'Value' lvalue ParmVar {{address:5}} 'value' 'Value'
+    |-MemberExpr {{address}} <line:12:3, col:9> 'int' lvalue .inherited {{address:1}}
+    | `-ImplicitCastExpr {{address}} <col:3> 'Base' lvalue <UncheckedDerivedToBase (Base)>
+    |   `-DeclRefExpr {{address}} <col:3> 'Value' lvalue ParmVar {{address:5}} 'value' 'Value'
+    |-MemberExpr {{address}} <line:13:3, col:9> 'long long' lvalue .hidden {{address:3}}
+    | `-DeclRefExpr {{address}} <col:3> 'Value' lvalue ParmVar {{address:5}} 'value' 'Value'
+    |-MemberExpr {{address}} <line:14:3, col:31> 'unsigned int' xvalue .own {{address:2}}
+    | `-CXXStaticCastExpr {{address}} <col:3, col:29> 'Value' xvalue static_cast<Value &&> <NoOp>
+    |   `-DeclRefExpr {{address}} <col:24> 'Value' lvalue ParmVar {{address:5}} 'value' 'Value'
+    |-ExprWithCleanups {{address}} <line:15:3, col:10> 'unsigned int' xvalue
+    | `-MemberExpr {{address}} <col:3, col:10> 'unsigned int' xvalue .own {{address:2}}
+    |   `-MaterializeTemporaryExpr {{address}} <col:3, col:8> 'Value' xvalue
+    |     `-CallExpr {{address}} <col:3, col:8> 'Value'
+    |       `-ImplicitCastExpr {{address}} <col:3> 'Value (*)()' <FunctionToPointerDecay>
+    |         `-DeclRefExpr {{address}} <col:3> 'Value ()' lvalue Function {{address:4}} 'Make' 'Value ()'
+    |-MemberExpr {{address}} <line:16:3, col:12> 'unsigned int' lvalue ->own {{address:2}}
+    | `-ImplicitCastExpr {{address}} <col:3> 'Value *' <LValueToRValue>
+    |   `-DeclRefExpr {{address}} <col:3> 'Value *' lvalue ParmVar {{address:6}} 'pointer' 'Value *'
+    `-MemberExpr {{address}} <line:17:3, col:18> 'const unsigned int' lvalue ->own {{address:2}}
+      `-ImplicitCastExpr {{address}} <col:3> 'const Value *' <LValueToRValue>
+        `-DeclRefExpr {{address}} <col:3> 'const Value *' lvalue ParmVar {{address:7}} 'const_pointer' 'const Value *'

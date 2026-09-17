@@ -1,0 +1,9 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address}} <named_type_parameter.cw:1:1, col:32> ParameterType trivial
+`-FunctionDecl {{address}} <line:3:1, col:54> NamedTypeParameter 'func (*ParameterType) void'
+  |-ParmVarDecl {{address}} <col:25, col:45> value '*ParameterType'
+  | `-PointerType {{address}} <col:31, col:45>
+  |   `-NamedType {{address}} <col:32, col:45> 'ParameterType'
+  |-ReturnVarDecl {{address}} <col:47, col:51> 'void'
+  | `-BuiltinType {{address}} <col:47, col:51> 'void'
+  `-CompoundStmt {{address}} <col:52, col:54>

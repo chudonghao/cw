@@ -1,0 +1,14 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+`-FunctionDecl {{address}} <boolean_logic.cpp:1:1, line:3:1> line:1:6 BooleanLogic 'void (bool)'
+  |-ParmVarDecl {{address:1}} <col:19, col:24> col:24 used flag 'bool'
+  `-CompoundStmt {{address}} <col:30, line:3:1>
+    `-DeclStmt {{address}} <line:2:3, col:37>
+      `-VarDecl {{address}} <col:3, col:33> col:8 logic 'bool' cinit
+        `-BinaryOperator {{address}} <col:16, col:33> 'bool' '||'
+          |-UnaryOperator {{address}} <col:16, col:17> 'bool' prefix '!' cannot overflow
+          | `-ImplicitCastExpr {{address}} <col:17> 'bool' <LValueToRValue>
+          |   `-DeclRefExpr {{address}} <col:17> 'bool' lvalue ParmVar {{address:1}} 'flag' 'bool'
+          `-BinaryOperator {{address}} <col:25, col:33> 'bool' '&&'
+            |-ImplicitCastExpr {{address}} <col:25> 'bool' <LValueToRValue>
+            | `-DeclRefExpr {{address}} <col:25> 'bool' lvalue ParmVar {{address:1}} 'flag' 'bool'
+            `-CXXBoolLiteralExpr {{address}} <col:33> 'bool' true

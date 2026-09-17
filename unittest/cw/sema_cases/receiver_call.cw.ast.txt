@@ -1,0 +1,102 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address}} <receiver_call.cw:1:1, col:27> Receiver trivial
+|-FunctionDecl {{address:select_mut}} <line:3:1, line:5:2> Select 'func (mut Receiver) void'
+| |-ParmVarDecl {{address:select_mut_receiver}} <line:3:13, col:30> this 'mut Receiver'
+| | `-ReferenceType {{address}} <col:18, col:30> 'mut'
+| |   `-NamedType {{address}} <col:22, col:30> 'Receiver'
+| |-ReturnVarDecl {{address}} <col:32, col:36> 'void'
+| | `-BuiltinType {{address}} <col:32, col:36> 'void'
+| `-CompoundStmt {{address}} <col:37, line:5:2>
+|   `-ExprStmt {{address}} <line:4:3, col:8>
+|     `-DeclRefExpr {{address}} <col:3, col:7> 'Receiver' lvalue ParmVar {{address:select_mut_receiver}} 'this' 'mut Receiver'
+|-FunctionDecl {{address:select_copy}} <line:7:1, col:44> Select 'func (copy Receiver) void'
+| |-ParmVarDecl {{address:select_copy_receiver}} <col:13, col:35> receiver 'copy Receiver'
+| | `-ReferenceType {{address}} <col:22, col:35> 'copy'
+| |   `-NamedType {{address}} <col:27, col:35> 'Receiver'
+| |-ReturnVarDecl {{address}} <col:37, col:41> 'void'
+| | `-BuiltinType {{address}} <col:37, col:41> 'void'
+| `-CompoundStmt {{address}} <col:42, col:44>
+|-FunctionDecl {{address:select_move}} <line:9:1, col:44> Select 'func (move Receiver) void'
+| |-ParmVarDecl {{address:select_move_receiver}} <col:13, col:35> receiver 'move Receiver'
+| | `-ReferenceType {{address}} <col:22, col:35> 'move'
+| |   `-NamedType {{address}} <col:27, col:35> 'Receiver'
+| |-ReturnVarDecl {{address}} <col:37, col:41> 'void'
+| | `-BuiltinType {{address}} <col:37, col:41> 'void'
+| `-CompoundStmt {{address}} <col:42, col:44>
+|-FunctionDecl {{address:make}} <line:11:1, line:13:2> Make 'func () Receiver'
+| |-ReturnVarDecl {{address:make_return}} <line:11:13, col:21> 'Receiver'
+| | `-NamedType {{address}} <col:13, col:21> 'Receiver'
+| `-CompoundStmt {{address}} <col:22, line:13:2>
+|   `-ImplicitResultInitializationExpr {{address}} <line:12:3, col:13> 'void' ReturnVar {{address:make_return}} 'Receiver'
+|     `-ConstructionExpr {{address}} <col:3, col:13> 'Receiver' pure-rvalue complete-object target <col:3, col:11> 'Receiver'
+|-FunctionDecl {{address:read_copy}} <line:15:1, col:42> Read 'func (copy Receiver) void'
+| |-ParmVarDecl {{address:read_receiver}} <col:11, col:33> receiver 'copy Receiver'
+| | `-ReferenceType {{address}} <col:20, col:33> 'copy'
+| |   `-NamedType {{address}} <col:25, col:33> 'Receiver'
+| |-ReturnVarDecl {{address}} <col:35, col:39> 'void'
+| | `-BuiltinType {{address}} <col:35, col:39> 'void'
+| `-CompoundStmt {{address}} <col:40, col:42>
+|-FunctionDecl {{address:with_arg_mut}} <line:17:1, col:55> WithArg 'func (mut Receiver, i32) void'
+| |-ParmVarDecl {{address:with_arg_receiver}} <col:14, col:35> receiver 'mut Receiver'
+| | `-ReferenceType {{address}} <col:23, col:35> 'mut'
+| |   `-NamedType {{address}} <col:27, col:35> 'Receiver'
+| |-ParmVarDecl {{address:with_arg_value}} <col:37, col:46> value 'i32'
+| | `-BuiltinType {{address}} <col:43, col:46> 'i32'
+| |-ReturnVarDecl {{address}} <col:48, col:52> 'void'
+| | `-BuiltinType {{address}} <col:48, col:52> 'void'
+| `-CompoundStmt {{address}} <col:53, col:55>
+`-FunctionDecl {{address}} <line:19:1, line:27:2> ReceiverCall 'func (Receiver, copy Receiver, *Receiver, *const Receiver, i32) void'
+  |-ParmVarDecl {{address:value}} <line:19:19, col:33> value 'Receiver'
+  | `-NamedType {{address}} <col:25, col:33> 'Receiver'
+  |-ParmVarDecl {{address:fixed}} <col:35, col:54> fixed 'copy Receiver'
+  | `-ReferenceType {{address}} <col:41, col:54> 'copy'
+  |   `-NamedType {{address}} <col:46, col:54> 'Receiver'
+  |-ParmVarDecl {{address:pointer}} <col:56, col:73> pointer '*Receiver'
+  | `-PointerType {{address}} <col:64, col:73>
+  |   `-NamedType {{address}} <col:65, col:73> 'Receiver'
+  |-ParmVarDecl {{address:const_pointer}} <col:75, col:104> const_pointer '*const Receiver'
+  | `-PointerType {{address}} <col:89, col:104>
+  |   `-ConstType {{address}} <col:90, col:104>
+  |     `-NamedType {{address}} <col:96, col:104> 'Receiver'
+  |-ParmVarDecl {{address:argument}} <col:106, col:118> argument 'i32'
+  | `-BuiltinType {{address}} <col:115, col:118> 'i32'
+  `-CompoundStmt {{address}} <col:120, line:27:2>
+    |-ExprStmt {{address}} <line:20:3, col:18>
+    | `-ReceiverCallExpr {{address}} <col:3, col:17> 'void' .
+    |   |-DeclRefExpr {{address}} <col:3, col:8> 'Receiver' lvalue ParmVar {{address:value}} 'value' 'Receiver'
+    |   `-DeclRefExpr {{address}} <col:9, col:15> 'func (mut Receiver) void' Function {{address:select_mut}} 'Select' 'func (mut Receiver) void'
+    |-ExprStmt {{address}} <line:21:3, col:18>
+    | `-ReceiverCallExpr {{address}} <col:3, col:17> 'void' .
+    |   |-DeclRefExpr {{address}} <col:3, col:8> 'const Receiver' lvalue ParmVar {{address:fixed}} 'fixed' 'copy Receiver'
+    |   `-DeclRefExpr {{address}} <col:9, col:15> 'func (copy Receiver) void' Function {{address:select_copy}} 'Select' 'func (copy Receiver) void'
+    |-ExprStmt {{address}} <line:22:3, col:25>
+    | `-ReceiverCallExpr {{address}} <col:3, col:24> 'void' .
+    |   |-ParenExpr {{address}} <col:3, col:15> 'Receiver' move-lvalue
+    |   | `-UnaryOperator {{address}} <col:4, col:14> 'Receiver' move-lvalue 'move'
+    |   |   `-DeclRefExpr {{address}} <col:9, col:14> 'Receiver' lvalue ParmVar {{address:value}} 'value' 'Receiver'
+    |   `-DeclRefExpr {{address}} <col:16, col:22> 'func (move Receiver) void' Function {{address:select_move}} 'Select' 'func (move Receiver) void'
+    |-ExprStmt {{address}} <line:23:3, col:19>
+    | `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' .
+    |   |-MaterializeTemporaryExpr {{address}} <col:3, col:9> 'Receiver' move-lvalue
+    |   | `-CallExpr {{address}} <col:3, col:9> 'Receiver' pure-rvalue
+    |   |   `-DeclRefExpr {{address}} <col:3, col:7> 'func () Receiver' Function {{address:make}} 'Make' 'func () Receiver'
+    |   `-DeclRefExpr {{address}} <col:10, col:16> 'func (move Receiver) void' Function {{address:select_move}} 'Select' 'func (move Receiver) void'
+    |-ExprStmt {{address}} <line:24:3, col:19>
+    | `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' ->
+    |   |-ImplicitCastExpr {{address}} <col:3, col:10> 'const Receiver' lvalue <NoOp>
+    |   | `-UnaryOperator {{address}} <col:3, col:10> 'Receiver' lvalue '*'
+    |   |   `-ImplicitCastExpr {{address}} <col:3, col:10> '*Receiver' pure-rvalue <LValueToRValue>
+    |   |     `-DeclRefExpr {{address}} <col:3, col:10> '*Receiver' lvalue ParmVar {{address:pointer}} 'pointer' '*Receiver'
+    |   `-DeclRefExpr {{address}} <col:12, col:16> 'func (copy Receiver) void' Function {{address:read_copy}} 'Read' 'func (copy Receiver) void'
+    |-ExprStmt {{address}} <line:25:3, col:25>
+    | `-ReceiverCallExpr {{address}} <col:3, col:24> 'void' ->
+    |   |-UnaryOperator {{address}} <col:3, col:16> 'const Receiver' lvalue '*'
+    |   | `-ImplicitCastExpr {{address}} <col:3, col:16> '*const Receiver' pure-rvalue <LValueToRValue>
+    |   |   `-DeclRefExpr {{address}} <col:3, col:16> '*const Receiver' lvalue ParmVar {{address:const_pointer}} 'const_pointer' '*const Receiver'
+    |   `-DeclRefExpr {{address}} <col:18, col:22> 'func (copy Receiver) void' Function {{address:read_copy}} 'Read' 'func (copy Receiver) void'
+    `-ExprStmt {{address}} <line:26:3, col:27>
+      `-ReceiverCallExpr {{address}} <col:3, col:26> 'void' .
+        |-DeclRefExpr {{address}} <col:3, col:8> 'Receiver' lvalue ParmVar {{address:value}} 'value' 'Receiver'
+        |-DeclRefExpr {{address}} <col:9, col:16> 'func (mut Receiver, i32) void' Function {{address:with_arg_mut}} 'WithArg' 'func (mut Receiver, i32) void'
+        `-ImplicitCastExpr {{address}} <col:17, col:25> 'i32' pure-rvalue <LValueToRValue>
+          `-DeclRefExpr {{address}} <col:17, col:25> 'i32' lvalue ParmVar {{address:argument}} 'argument' 'i32'

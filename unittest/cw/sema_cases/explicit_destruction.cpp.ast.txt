@@ -1,0 +1,27 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address}} <explicit_destruction.cpp:1:1, line:4:1> line:1:8 referenced struct DestructionValue definition
+| |-DefinitionData empty standard_layout has_user_declared_ctor can_const_default_init
+| | |-DefaultConstructor exists non_trivial user_provided defaulted_is_constexpr
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment
+| | `-Destructor non_trivial user_declared
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit referenced struct DestructionValue
+| |-CXXConstructorDecl {{address}} <line:2:3, col:23> col:3 DestructionValue 'void ()' implicit-inline
+| | `-CompoundStmt {{address}} <col:22, col:23>
+| `-CXXDestructorDecl {{address:1}} <line:3:3, col:24> col:3 used ~DestructionValue 'void () noexcept' implicit-inline
+|   `-CompoundStmt {{address}} <col:23, col:24>
+`-FunctionDecl {{address}} <line:5:1, line:8:1> line:5:6 ExplicitDestruction 'void (DestructionValue *, const DestructionValue *)'
+  |-ParmVarDecl {{address:2}} <col:26, col:44> col:44 used address 'DestructionValue *'
+  |-ParmVarDecl {{address:3}} <col:53, col:77> col:77 used const_address 'const DestructionValue *'
+  `-CompoundStmt {{address}} <col:92, line:8:1>
+    |-CXXMemberCallExpr {{address}} <line:6:3, col:30> 'void'
+    | `-MemberExpr {{address}} <col:3, col:13> '<bound member function type>' ->~DestructionValue {{address:1}}
+    |   `-ImplicitCastExpr {{address}} <col:3> 'DestructionValue *' <LValueToRValue>
+    |     `-DeclRefExpr {{address}} <col:3> 'DestructionValue *' lvalue ParmVar {{address:2}} 'address' 'DestructionValue *'
+    `-CXXMemberCallExpr {{address}} <line:7:3, col:36> 'void'
+      `-MemberExpr {{address}} <col:3, col:19> '<bound member function type>' ->~DestructionValue {{address:1}}
+        `-ImplicitCastExpr {{address}} <col:3> 'DestructionValue *' <NoOp>
+          `-ImplicitCastExpr {{address}} <col:3> 'const DestructionValue *' <LValueToRValue>
+            `-DeclRefExpr {{address}} <col:3> 'const DestructionValue *' lvalue ParmVar {{address:3}} 'const_address' 'const DestructionValue *'

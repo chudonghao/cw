@@ -1,0 +1,13 @@
+TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <variable_declaration.cw:1:1, line:3:2> VariableDeclaration 'func () void'
+  `-CompoundStmt {{address}} <line:1:28, line:3:2>
+    `-DeclStmt {{address}} <line:2:3, col:37>
+      `-VarGroupDecl {{address}} <col:3, col:37>
+        |-VarDecl {{address}} <col:7, col:16> first 'i32'
+        | `-BuiltinType {{address}} <col:13, col:16> 'i32'
+        |-VarDecl {{address}} <col:18, col:28> second 'i32'
+        | `-BuiltinType {{address}} <col:25, col:28> 'i32'
+        |-ImplicitCastExpr {{address}} <col:32, col:33> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+        | `-IntegerLiteral {{address}} <col:32, col:33> 'comptime_int' 1
+        `-ImplicitCastExpr {{address}} <col:35, col:36> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+          `-IntegerLiteral {{address}} <col:35, col:36> 'comptime_int' 2

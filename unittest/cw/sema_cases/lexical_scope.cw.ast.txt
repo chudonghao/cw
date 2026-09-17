@@ -1,0 +1,20 @@
+TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <lexical_scope.cw:1:1, line:10:2> LexicalScope 'func (i32) void'
+  |-ParmVarDecl {{address:parameter}} <line:1:19, col:28> value 'i32'
+  | `-BuiltinType {{address}} <col:25, col:28> 'i32'
+  |-ReturnVarDecl {{address}} <col:30, col:34> 'void'
+  | `-BuiltinType {{address}} <col:30, col:34> 'void'
+  `-CompoundStmt {{address}} <col:35, line:10:2>
+    |-ExprStmt {{address}} <line:2:3, col:9>
+    | `-DeclRefExpr {{address}} <col:3, col:8> 'i32' lvalue ParmVar {{address:parameter}} 'value' 'i32'
+    |-CompoundStmt {{address}} <line:4:3, line:7:4>
+    | |-DeclStmt {{address}} <line:5:5, col:24>
+    | | `-VarGroupDecl {{address}} <col:5, col:24>
+    | |   |-VarDecl {{address:local}} <col:9, col:18> value 'i32'
+    | |   | `-BuiltinType {{address}} <col:15, col:18> 'i32'
+    | |   `-ImplicitCastExpr {{address}} <col:22, col:23> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    | |     `-IntegerLiteral {{address}} <col:22, col:23> 'comptime_int' 0
+    | `-ExprStmt {{address}} <line:6:5, col:11>
+    |   `-DeclRefExpr {{address}} <col:5, col:10> 'i32' lvalue Var {{address:local}} 'value' 'i32'
+    `-ExprStmt {{address}} <line:9:3, col:9>
+      `-DeclRefExpr {{address}} <col:3, col:8> 'i32' lvalue ParmVar {{address:parameter}} 'value' 'i32'

@@ -1,0 +1,5 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+`-FunctionDecl {{address}} <function_definition.cpp:1:1, col:49> col:6 FunctionDefinition 'void (int, int)'
+  |-ParmVarDecl {{address}} <col:25, col:29> col:29 first 'int'
+  |-ParmVarDecl {{address}} <col:36, col:40> col:40 second 'int'
+  `-CompoundStmt {{address}} <col:48, col:49>

@@ -1,0 +1,100 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:base}} <single_inheritance.cw:1:1, line:3:2> Base
+| `-FieldDecl {{address:base_value}} <line:2:3, col:13> value 'i32'
+|   `-BuiltinType {{address}} <col:9, col:12> 'i32'
+|-ConstructorDecl {{address:base_constructor}} <line:5:1, line:7:2> Base target Struct {{address:base}} 'Base' 'func (i32) void'
+| |-ParmVarDecl {{address:base_parameter}} <line:5:11, col:20> value 'i32'
+| | `-BuiltinType {{address}} <col:17, col:20> 'i32'
+| `-CompoundStmt {{address}} <col:22, line:7:2>
+|   `-ExprStmt {{address}} <line:6:3, col:23>
+|     `-InitializationExpr {{address}} <col:3, col:22> 'void'
+|       |-MemberExpr {{address}} <col:3, col:13> 'i32' lvalue .value Field {{address:base_value}} 'value' 'i32'
+|       | `-ThisExpr {{address}} <col:3, col:7> 'Base' lvalue this
+|       `-ImplicitCastExpr {{address}} <col:17, col:22> 'i32' pure-rvalue <LValueToRValue>
+|         `-DeclRefExpr {{address}} <col:17, col:22> 'i32' lvalue ParmVar {{address:base_parameter}} 'value' 'i32'
+|-DestructorDecl {{address}} <line:9:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+| `-CompoundStmt {{address}} <col:13, col:15>
+|-StructDecl {{address:derived}} <line:11:1, line:13:2> SingleInheritance : 'Base'
+| |-BaseType 'Base' Struct {{address:base}} 'Base'
+| `-FieldDecl {{address:own}} <line:12:3, col:11> own 'i32'
+|   `-BuiltinType {{address}} <col:7, col:10> 'i32'
+|-ConstructorDecl {{address:derived_constructor}} <line:15:1, line:18:2> SingleInheritance target Struct {{address:derived}} 'SingleInheritance' 'func (i32) void'
+| |-ParmVarDecl {{address:derived_parameter}} <line:15:24, col:33> value 'i32'
+| | `-BuiltinType {{address}} <col:30, col:33> 'i32'
+| `-CompoundStmt {{address}} <col:35, line:18:2>
+|   |-ExprStmt {{address}} <line:16:3, col:28>
+|   | `-InitializationExpr {{address}} <col:3, col:27> 'void'
+|   |   |-BaseSubobjectExpr {{address}} <col:3, col:12> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|   |   | `-ThisExpr {{address}} <col:3, col:7> 'SingleInheritance' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:16, col:27> 'Base' pure-rvalue base-subobject target <col:16, col:20> 'Base' Constructor {{address:base_constructor}} 'Base' 'func (i32) void'
+|   |     `-ImplicitCastExpr {{address}} <col:21, col:26> 'i32' pure-rvalue <LValueToRValue>
+|   |       `-DeclRefExpr {{address}} <col:21, col:26> 'i32' lvalue ParmVar {{address:derived_parameter}} 'value' 'i32'
+|   `-ExprStmt {{address}} <line:17:3, col:21>
+|     `-InitializationExpr {{address}} <col:3, col:20> 'void'
+|       |-MemberExpr {{address}} <col:3, col:11> 'i32' lvalue .own Field {{address:own}} 'own' 'i32'
+|       | `-ThisExpr {{address}} <col:3, col:7> 'SingleInheritance' lvalue this
+|       `-ImplicitCastExpr {{address}} <col:15, col:20> 'i32' pure-rvalue <LValueToRValue>
+|         `-DeclRefExpr {{address}} <col:15, col:20> 'i32' lvalue ParmVar {{address:derived_parameter}} 'value' 'i32'
+|-DestructorDecl {{address}} <line:20:1, col:28> SingleInheritance target Struct {{address:derived}} 'SingleInheritance' 'func () void'
+| `-CompoundStmt {{address}} <col:26, col:28>
+|-FunctionDecl {{address}} <line:22:1, line:24:2> ReadBase 'func (copy SingleInheritance) i32'
+| |-ParmVarDecl {{address:read_parameter}} <line:22:15, col:43> value 'copy SingleInheritance'
+| | `-ReferenceType {{address}} <col:21, col:43> 'copy'
+| |   `-NamedType {{address}} <col:26, col:43> 'SingleInheritance'
+| |-ReturnVarDecl {{address:read_result}} <col:45, col:48> 'i32'
+| | `-BuiltinType {{address}} <col:45, col:48> 'i32'
+| `-CompoundStmt {{address}} <col:49, line:24:2>
+|   `-ReturnStmt {{address}} <line:23:3, col:27>
+|     `-ImplicitResultInitializationExpr {{address}} <col:10, col:26> 'void' ReturnVar {{address:read_result}} 'i32'
+|       `-ImplicitCastExpr {{address}} <col:10, col:26> 'i32' pure-rvalue <LValueToRValue>
+|         `-MemberExpr {{address}} <col:10, col:26> 'const i32' lvalue .value Field {{address:base_value}} 'value' 'i32'
+|           `-BaseSubobjectExpr {{address}} <col:10, col:20> 'const Base' lvalue .Base Struct {{address:base}} 'Base'
+|             `-DeclRefExpr {{address}} <col:10, col:15> 'const SingleInheritance' lvalue ParmVar {{address:read_parameter}} 'value' 'copy SingleInheritance'
+|-FunctionDecl {{address}} <line:26:1, line:28:2> ReadBasePointer 'func (*SingleInheritance) i32'
+| |-ParmVarDecl {{address:pointer_parameter}} <line:26:22, col:46> value '*SingleInheritance'
+| | `-PointerType {{address}} <col:28, col:46>
+| |   `-NamedType {{address}} <col:29, col:46> 'SingleInheritance'
+| |-ReturnVarDecl {{address:pointer_result}} <col:48, col:51> 'i32'
+| | `-BuiltinType {{address}} <col:48, col:51> 'i32'
+| `-CompoundStmt {{address}} <col:52, line:28:2>
+|   `-ReturnStmt {{address}} <line:27:3, col:28>
+|     `-ImplicitResultInitializationExpr {{address}} <col:10, col:27> 'void' ReturnVar {{address:pointer_result}} 'i32'
+|       `-ImplicitCastExpr {{address}} <col:10, col:27> 'i32' pure-rvalue <LValueToRValue>
+|         `-MemberExpr {{address}} <col:10, col:27> 'i32' lvalue .value Field {{address:base_value}} 'value' 'i32'
+|           `-BaseSubobjectExpr {{address}} <col:10, col:21> 'Base' lvalue ->Base Struct {{address:base}} 'Base'
+|             `-ImplicitCastExpr {{address}} <col:10, col:15> '*SingleInheritance' pure-rvalue <LValueToRValue>
+|               `-DeclRefExpr {{address}} <col:10, col:15> '*SingleInheritance' lvalue ParmVar {{address:pointer_parameter}} 'value' '*SingleInheritance'
+|-StructDecl {{address:root}} <line:30:1, line:32:2> Root trivial
+| `-FieldDecl {{address:root_value}} <line:31:3, col:12> root 'i32'
+|   `-BuiltinType {{address}} <col:8, col:11> 'i32'
+|-StructDecl {{address:middle}} <line:34:1, col:32> Middle trivial : 'Root'
+| `-BaseType 'Root' Struct {{address:root}} 'Root'
+|-StructDecl {{address:leaf}} <line:36:1, col:32> Leaf trivial : 'Middle'
+| `-BaseType 'Middle' Struct {{address:middle}} 'Middle'
+|-FunctionDecl {{address}} <line:38:1, line:40:2> ReadIndirectBase 'func (copy Leaf) i32'
+| |-ParmVarDecl {{address:indirect_parameter}} <line:38:23, col:38> value 'copy Leaf'
+| | `-ReferenceType {{address}} <col:29, col:38> 'copy'
+| |   `-NamedType {{address}} <col:34, col:38> 'Leaf'
+| |-ReturnVarDecl {{address:indirect_result}} <col:40, col:43> 'i32'
+| | `-BuiltinType {{address}} <col:40, col:43> 'i32'
+| `-CompoundStmt {{address}} <col:44, line:40:2>
+|   `-ReturnStmt {{address}} <line:39:3, col:26>
+|     `-ImplicitResultInitializationExpr {{address}} <col:10, col:25> 'void' ReturnVar {{address:indirect_result}} 'i32'
+|       `-ImplicitCastExpr {{address}} <col:10, col:25> 'i32' pure-rvalue <LValueToRValue>
+|         `-MemberExpr {{address}} <col:10, col:25> 'const i32' lvalue .root Field {{address:root_value}} 'root' 'i32'
+|           `-BaseSubobjectExpr {{address}} <col:10, col:20> 'const Root' lvalue .Root path Struct {{address:middle}} 'Middle' Struct {{address:root}} 'Root'
+|             `-DeclRefExpr {{address}} <col:10, col:15> 'const Leaf' lvalue ParmVar {{address:indirect_parameter}} 'value' 'copy Leaf'
+`-FunctionDecl {{address}} <line:42:1, line:44:2> ReadExplicitBasePath 'func (copy Leaf) i32'
+  |-ParmVarDecl {{address:explicit_parameter}} <line:42:27, col:42> value 'copy Leaf'
+  | `-ReferenceType {{address}} <col:33, col:42> 'copy'
+  |   `-NamedType {{address}} <col:38, col:42> 'Leaf'
+  |-ReturnVarDecl {{address:explicit_result}} <col:44, col:47> 'i32'
+  | `-BuiltinType {{address}} <col:44, col:47> 'i32'
+  `-CompoundStmt {{address}} <col:48, line:44:2>
+    `-ReturnStmt {{address}} <line:43:3, col:33>
+      `-ImplicitResultInitializationExpr {{address}} <col:10, col:32> 'void' ReturnVar {{address:explicit_result}} 'i32'
+        `-ImplicitCastExpr {{address}} <col:10, col:32> 'i32' pure-rvalue <LValueToRValue>
+          `-MemberExpr {{address}} <col:10, col:32> 'const i32' lvalue .root Field {{address:root_value}} 'root' 'i32'
+            `-BaseSubobjectExpr {{address}} <col:10, col:27> 'const Root' lvalue .Root Struct {{address:root}} 'Root'
+              `-BaseSubobjectExpr {{address}} <col:10, col:22> 'const Middle' lvalue .Middle Struct {{address:middle}} 'Middle'
+                `-DeclRefExpr {{address}} <col:10, col:15> 'const Leaf' lvalue ParmVar {{address:explicit_parameter}} 'value' 'copy Leaf'

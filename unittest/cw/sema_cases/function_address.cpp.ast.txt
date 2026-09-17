@@ -1,0 +1,31 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-FunctionDecl {{address:1}} <function_address.cpp:1:1, col:43> col:5 used Overloaded 'int (int)'
+| |-ParmVarDecl {{address:2}} <col:16, col:20> col:20 used value 'int'
+| `-CompoundStmt {{address}} <col:27, col:43>
+|   `-ReturnStmt {{address}} <col:29, col:36>
+|     `-ImplicitCastExpr {{address}} <col:36> 'int' <LValueToRValue>
+|       `-DeclRefExpr {{address}} <col:36> 'int' lvalue ParmVar {{address:2}} 'value' 'int'
+|-FunctionDecl {{address}} <line:2:1, col:45> col:6 Overloaded 'long (long)'
+| |-ParmVarDecl {{address:3}} <col:17, col:22> col:22 used value 'long'
+| `-CompoundStmt {{address}} <col:29, col:45>
+|   `-ReturnStmt {{address}} <col:31, col:38>
+|     `-ImplicitCastExpr {{address}} <col:38> 'long' <LValueToRValue>
+|       `-DeclRefExpr {{address}} <col:38> 'long' lvalue ParmVar {{address:3}} 'value' 'long'
+|-FunctionDecl {{address:4}} <line:4:1, col:61> col:7 used Select 'int (*(int (*)(int)))(int)'
+| |-ParmVarDecl {{address:5}} <col:14, col:33> col:20 used callback 'int (*)(int)'
+| `-CompoundStmt {{address}} <col:42, col:61>
+|   `-ReturnStmt {{address}} <col:44, col:51>
+|     `-ImplicitCastExpr {{address}} <col:51> 'int (*)(int)' <LValueToRValue>
+|       `-DeclRefExpr {{address}} <col:51> 'int (*)(int)' lvalue ParmVar {{address:5}} 'callback' 'int (*)(int)'
+`-FunctionDecl {{address}} <line:6:1, line:9:1> line:6:7 FunctionAddress 'int (*())(int)'
+  `-CompoundStmt {{address}} <col:31, line:9:1>
+    |-DeclStmt {{address}} <line:7:3, col:37>
+    | `-VarDecl {{address}} <col:3, col:27> col:9 callback 'int (*)(int)' cinit
+    |   `-UnaryOperator {{address}} <col:26, col:27> 'int (*)(int)' prefix '&' cannot overflow
+    |     `-DeclRefExpr {{address}} <col:27> 'int (int)' lvalue Function {{address:1}} 'Overloaded' 'int (int)'
+    `-ReturnStmt {{address}} <line:8:3, col:28>
+      `-CallExpr {{address}} <col:10, col:28> 'int (*)(int)'
+        |-ImplicitCastExpr {{address}} <col:10> 'int (*(*)(int (*)(int)))(int)' <FunctionToPointerDecay>
+        | `-DeclRefExpr {{address}} <col:10> 'int (*(int (*)(int)))(int)' lvalue Function {{address:4}} 'Select' 'int (*(int (*)(int)))(int)'
+        `-UnaryOperator {{address}} <col:17, col:18> 'int (*)(int)' prefix '&' cannot overflow
+          `-DeclRefExpr {{address}} <col:18> 'int (int)' lvalue Function {{address:1}} 'Overloaded' 'int (int)'

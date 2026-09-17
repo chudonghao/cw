@@ -1,0 +1,50 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:struct}} <object_address.cw:1:1, line:3:2> Addressed trivial
+| `-FieldDecl {{address:field}} <line:2:3, col:13> value 'i32'
+|   `-BuiltinType {{address}} <col:9, col:12> 'i32'
+`-FunctionDecl {{address}} <line:5:1, line:13:2> ObjectAddress 'func (Addressed, copy Addressed, *i32, bool, i32, i32) void'
+  |-ParmVarDecl {{address:object}} <line:5:20, col:36> object 'Addressed'
+  | `-NamedType {{address}} <col:27, col:36> 'Addressed'
+  |-ParmVarDecl {{address:readonly}} <col:38, col:61> readonly 'copy Addressed'
+  | `-ReferenceType {{address}} <col:47, col:61> 'copy'
+  |   `-NamedType {{address}} <col:52, col:61> 'Addressed'
+  |-ParmVarDecl {{address:pointer}} <col:63, col:75> pointer '*i32'
+  | `-PointerType {{address}} <col:71, col:75>
+  |   `-BuiltinType {{address}} <col:72, col:75> 'i32'
+  |-ParmVarDecl {{address:condition}} <col:77, col:91> condition 'bool'
+  | `-BuiltinType {{address}} <col:87, col:91> 'bool'
+  |-ParmVarDecl {{address:first}} <col:93, col:102> first 'i32'
+  | `-BuiltinType {{address}} <col:99, col:102> 'i32'
+  |-ParmVarDecl {{address:second}} <line:6:20, col:30> second 'i32'
+  | `-BuiltinType {{address}} <col:27, col:30> 'i32'
+  `-CompoundStmt {{address}} <col:32, line:13:2>
+    |-ExprStmt {{address}} <line:7:3, col:11>
+    | `-UnaryOperator {{address}} <col:3, col:10> '*Addressed' pure-rvalue '&'
+    |   `-DeclRefExpr {{address}} <col:4, col:10> 'Addressed' lvalue ParmVar {{address:object}} 'object' 'Addressed'
+    |-ExprStmt {{address}} <line:8:3, col:13>
+    | `-UnaryOperator {{address}} <col:3, col:12> '*const Addressed' pure-rvalue '&'
+    |   `-DeclRefExpr {{address}} <col:4, col:12> 'const Addressed' lvalue ParmVar {{address:readonly}} 'readonly' 'copy Addressed'
+    |-ExprStmt {{address}} <line:9:3, col:17>
+    | `-UnaryOperator {{address}} <col:3, col:16> '*i32' pure-rvalue '&'
+    |   `-MemberExpr {{address}} <col:4, col:16> 'i32' lvalue .value Field {{address:field}} 'value' 'i32'
+    |     `-DeclRefExpr {{address}} <col:4, col:10> 'Addressed' lvalue ParmVar {{address:object}} 'object' 'Addressed'
+    |-ExprStmt {{address}} <line:10:3, col:13>
+    | `-UnaryOperator {{address}} <col:3, col:12> '*i32' pure-rvalue '&'
+    |   `-UnaryOperator {{address}} <col:4, col:12> 'i32' lvalue '*'
+    |     `-ImplicitCastExpr {{address}} <col:5, col:12> '*i32' pure-rvalue <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:5, col:12> '*i32' lvalue ParmVar {{address:pointer}} 'pointer' '*i32'
+    |-ExprStmt {{address}} <line:11:3, col:33>
+    | `-UnaryOperator {{address}} <col:3, col:32> '*i32' pure-rvalue '&'
+    |   `-ParenExpr {{address}} <col:4, col:32> 'i32' lvalue
+    |     `-ConditionalOperator {{address}} <col:5, col:31> 'i32' lvalue
+    |       |-ImplicitCastExpr {{address}} <col:5, col:14> 'bool' pure-rvalue <LValueToRValue>
+    |       | `-DeclRefExpr {{address}} <col:5, col:14> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+    |       |-DeclRefExpr {{address}} <col:17, col:22> 'i32' lvalue ParmVar {{address:first}} 'first' 'i32'
+    |       `-DeclRefExpr {{address}} <col:25, col:31> 'i32' lvalue ParmVar {{address:second}} 'second' 'i32'
+    `-ExprStmt {{address}} <line:12:3, col:21>
+      `-UnaryOperator {{address}} <col:3, col:20> '*i32' pure-rvalue '&'
+        `-ParenExpr {{address}} <col:4, col:20> 'i32' lvalue
+          `-BinaryOperator {{address}} <col:5, col:19> 'i32' lvalue '='
+            |-DeclRefExpr {{address}} <col:5, col:10> 'i32' lvalue ParmVar {{address:first}} 'first' 'i32'
+            `-ImplicitCastExpr {{address}} <col:13, col:19> 'i32' pure-rvalue <LValueToRValue>
+              `-DeclRefExpr {{address}} <col:13, col:19> 'i32' lvalue ParmVar {{address:second}} 'second' 'i32'
