@@ -1,0 +1,13 @@
+TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <boolean_control_flow.cw:1:1, line:4:2> BooleanControlFlow 'func (bool) void'
+  |-ParmVarDecl {{address:flag}} <line:1:25, col:34> flag 'bool'
+  | `-BuiltinType {{address}} <col:30, col:34> 'bool'
+  `-CompoundStmt {{address}} <col:36, line:4:2>
+    |-IfStmt {{address}} <line:2:3, col:13>
+    | |-ImplicitCastExpr {{address}} <col:6, col:10> 'bool' pure-rvalue <LValueToRValue>
+    | | `-DeclRefExpr {{address}} <col:6, col:10> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+    | `-CompoundStmt {{address}} <col:11, col:13>
+    `-WhileStmt {{address}} <line:3:3, col:16>
+      |-ImplicitCastExpr {{address}} <col:9, col:13> 'bool' pure-rvalue <LValueToRValue>
+      | `-DeclRefExpr {{address}} <col:9, col:13> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+      `-CompoundStmt {{address}} <col:14, col:16>

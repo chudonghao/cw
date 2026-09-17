@@ -1,0 +1,11 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+`-FunctionDecl {{address}} <lexical_scope.cpp:1:1, line:8:1> line:1:6 LexicalScope 'void (int)'
+  |-ParmVarDecl {{address:1}} <col:19, col:23> col:23 used value 'int'
+  `-CompoundStmt {{address}} <col:30, line:8:1>
+    |-DeclRefExpr {{address}} <line:2:3> 'int' lvalue ParmVar {{address:1}} 'value' 'int'
+    |-CompoundStmt {{address}} <line:3:3, line:6:3>
+    | |-DeclStmt {{address}} <line:4:5, col:18>
+    | | `-VarDecl {{address:2}} <col:5, col:17> col:9 used value 'int' cinit
+    | |   `-IntegerLiteral {{address}} <col:17> 'int' 0
+    | `-DeclRefExpr {{address}} <line:5:5> 'int' lvalue Var {{address:2}} 'value' 'int'
+    `-DeclRefExpr {{address}} <line:7:3> 'int' lvalue ParmVar {{address:1}} 'value' 'int'

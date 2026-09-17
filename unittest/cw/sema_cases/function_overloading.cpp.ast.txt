@@ -1,0 +1,7 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-FunctionDecl {{address}} <function_overloading.cpp:1:1, col:38> col:6 FunctionOverloading 'void (int)'
+| |-ParmVarDecl {{address}} <col:26, col:30> col:30 value 'int'
+| `-CompoundStmt {{address}} <col:37, col:38>
+`-FunctionDecl {{address}} <line:2:1, col:47> col:6 FunctionOverloading 'void (unsigned int)'
+  |-ParmVarDecl {{address}} <col:26, col:39> col:39 value 'unsigned int'
+  `-CompoundStmt {{address}} <col:46, col:47>

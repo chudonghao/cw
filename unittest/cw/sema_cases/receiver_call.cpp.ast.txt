@@ -1,0 +1,64 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address}} <receiver_call.cpp:1:1, line:7:1> line:1:8 referenced struct Receiver definition
+| |-DefinitionData pass_in_registers empty aggregate standard_layout trivially_copyable pod trivial literal has_constexpr_non_copy_move_ctor can_const_default_init
+| | |-DefaultConstructor exists trivial constexpr needs_implicit defaulted_is_constexpr
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct Receiver
+| |-CXXMethodDecl {{address:1}} <line:2:3, col:20> col:8 used Select 'void () &' implicit-inline
+| | `-CompoundStmt {{address}} <col:19, col:20>
+| |-CXXMethodDecl {{address:2}} <line:3:3, col:26> col:8 used Select 'void () const &' implicit-inline
+| | `-CompoundStmt {{address}} <col:25, col:26>
+| |-CXXMethodDecl {{address:3}} <line:4:3, col:21> col:8 used Select 'void () &&' implicit-inline
+| | `-CompoundStmt {{address}} <col:20, col:21>
+| |-CXXMethodDecl {{address:4}} <line:5:3, col:24> col:8 used Read 'void () const &' implicit-inline
+| | `-CompoundStmt {{address}} <col:23, col:24>
+| |-CXXMethodDecl {{address:5}} <line:6:3, col:24> col:8 used WithArg 'void (int) &' implicit-inline
+| | |-ParmVarDecl {{address}} <col:16> col:19 'int'
+| | `-CompoundStmt {{address}} <col:23, col:24>
+| `-CXXDestructorDecl {{address}} <line:1:8> col:8 implicit referenced ~Receiver 'void () noexcept' inline default trivial
+|-FunctionDecl {{address:6}} <line:8:1, col:30> col:10 used Make 'Receiver ()'
+| `-CompoundStmt {{address}} <col:17, col:30>
+|   `-ReturnStmt {{address}} <col:19, col:27>
+|     `-InitListExpr {{address}} <col:26, col:27> 'Receiver'
+`-FunctionDecl {{address}} <line:9:1, line:18:1> line:9:6 ReceiverCall 'void (Receiver, const Receiver &, Receiver *, const Receiver *, int)'
+  |-ParmVarDecl {{address:7}} <col:19, col:28> col:28 used value 'Receiver'
+  |-ParmVarDecl {{address:8}} <col:35, col:51> col:51 used fixed 'const Receiver &'
+  |-ParmVarDecl {{address:9}} <col:58, col:68> col:68 used pointer 'Receiver *'
+  |-ParmVarDecl {{address:10}} <line:10:19, col:35> col:35 used const_pointer 'const Receiver *'
+  |-ParmVarDecl {{address:11}} <col:50, col:54> col:54 used argument 'int'
+  `-CompoundStmt {{address}} <col:64, line:18:1>
+    |-CXXMemberCallExpr {{address}} <line:11:3, col:16> 'void'
+    | `-MemberExpr {{address}} <col:3, col:9> '<bound member function type>' .Select {{address:1}}
+    |   `-DeclRefExpr {{address}} <col:3> 'Receiver' lvalue ParmVar {{address:7}} 'value' 'Receiver'
+    |-CXXMemberCallExpr {{address}} <line:12:3, col:16> 'void'
+    | `-MemberExpr {{address}} <col:3, col:9> '<bound member function type>' .Select {{address:2}}
+    |   `-DeclRefExpr {{address}} <col:3> 'const Receiver' lvalue ParmVar {{address:8}} 'fixed' 'const Receiver &'
+    |-CXXMemberCallExpr {{address}} <line:13:3, col:41> 'void'
+    | `-MemberExpr {{address}} <col:3, col:34> '<bound member function type>' .Select {{address:3}}
+    |   `-CXXStaticCastExpr {{address}} <col:3, col:32> 'Receiver' xvalue static_cast<Receiver &&> <NoOp>
+    |     `-DeclRefExpr {{address}} <col:27> 'Receiver' lvalue ParmVar {{address:7}} 'value' 'Receiver'
+    |-ExprWithCleanups {{address}} <line:14:3, col:17> 'void'
+    | `-CXXMemberCallExpr {{address}} <col:3, col:17> 'void'
+    |   `-MemberExpr {{address}} <col:3, col:10> '<bound member function type>' .Select {{address:3}}
+    |     `-MaterializeTemporaryExpr {{address}} <col:3, col:8> 'Receiver' xvalue
+    |       `-CallExpr {{address}} <col:3, col:8> 'Receiver'
+    |         `-ImplicitCastExpr {{address}} <col:3> 'Receiver (*)()' <FunctionToPointerDecay>
+    |           `-DeclRefExpr {{address}} <col:3> 'Receiver ()' lvalue Function {{address:6}} 'Make' 'Receiver ()'
+    |-CXXMemberCallExpr {{address}} <line:15:3, col:17> 'void'
+    | `-MemberExpr {{address}} <col:3, col:12> '<bound member function type>' ->Read {{address:4}}
+    |   `-ImplicitCastExpr {{address}} <col:3> 'const Receiver *' <NoOp>
+    |     `-ImplicitCastExpr {{address}} <col:3> 'Receiver *' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:3> 'Receiver *' lvalue ParmVar {{address:9}} 'pointer' 'Receiver *'
+    |-CXXMemberCallExpr {{address}} <line:16:3, col:23> 'void'
+    | `-MemberExpr {{address}} <col:3, col:18> '<bound member function type>' ->Read {{address:4}}
+    |   `-ImplicitCastExpr {{address}} <col:3> 'const Receiver *' <LValueToRValue>
+    |     `-DeclRefExpr {{address}} <col:3> 'const Receiver *' lvalue ParmVar {{address:10}} 'const_pointer' 'const Receiver *'
+    `-CXXMemberCallExpr {{address}} <line:17:3, col:25> 'void'
+      |-MemberExpr {{address}} <col:3, col:9> '<bound member function type>' .WithArg {{address:5}}
+      | `-DeclRefExpr {{address}} <col:3> 'Receiver' lvalue ParmVar {{address:7}} 'value' 'Receiver'
+      `-ImplicitCastExpr {{address}} <col:17> 'int' <LValueToRValue>
+        `-DeclRefExpr {{address}} <col:17> 'int' lvalue ParmVar {{address:11}} 'argument' 'int'

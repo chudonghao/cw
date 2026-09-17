@@ -1,0 +1,8 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+`-FunctionDecl {{address}} <variable_declaration.cpp:1:1, line:3:1> line:1:6 VariableDeclaration 'void ()'
+  `-CompoundStmt {{address}} <col:28, line:3:1>
+    `-DeclStmt {{address}} <line:2:3, col:28>
+      |-VarDecl {{address}} <col:3, col:15> col:7 first 'int' cinit
+      | `-IntegerLiteral {{address}} <col:15> 'int' 1
+      `-VarDecl {{address}} <col:3, col:27> col:18 second 'int' cinit
+        `-IntegerLiteral {{address}} <col:27> 'int' 2

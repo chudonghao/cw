@@ -1,0 +1,128 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:copy_move}} <copy_move_construction.cw:1:1, line:3:2> CopyMove
+| `-FieldDecl {{address:copy_move_value}} <line:2:3, col:13> value 'i32'
+|   `-BuiltinType {{address}} <col:9, col:12> 'i32'
+|-ConstructorDecl {{address:value_constructor}} <line:5:1, line:7:2> CopyMove target Struct {{address:copy_move}} 'CopyMove' 'func (i32) void'
+| |-ParmVarDecl {{address:value_parameter}} <line:5:15, col:24> value 'i32'
+| | `-BuiltinType {{address}} <col:21, col:24> 'i32'
+| `-CompoundStmt {{address}} <col:26, line:7:2>
+|   `-ExprStmt {{address}} <line:6:3, col:23>
+|     `-InitializationExpr {{address}} <col:3, col:22> 'void'
+|       |-MemberExpr {{address}} <col:3, col:13> 'i32' lvalue .value Field {{address:copy_move_value}} 'value' 'i32'
+|       | `-ThisExpr {{address}} <col:3, col:7> 'CopyMove' lvalue this
+|       `-ImplicitCastExpr {{address}} <col:17, col:22> 'i32' pure-rvalue <LValueToRValue>
+|         `-DeclRefExpr {{address}} <col:17, col:22> 'i32' lvalue ParmVar {{address:value_parameter}} 'value' 'i32'
+|-ConstructorDecl {{address:copy_constructor}} <line:9:1, line:11:2> CopyMove target Struct {{address:copy_move}} 'CopyMove' 'func (copy CopyMove) void'
+| |-ParmVarDecl {{address:copy_parameter}} <line:9:15, col:34> other 'copy CopyMove'
+| | `-ReferenceType {{address}} <col:21, col:34> 'copy'
+| |   `-NamedType {{address}} <col:26, col:34> 'CopyMove'
+| `-CompoundStmt {{address}} <col:36, line:11:2>
+|   `-ExprStmt {{address}} <line:10:3, col:29>
+|     `-InitializationExpr {{address}} <col:3, col:28> 'void'
+|       |-MemberExpr {{address}} <col:3, col:13> 'i32' lvalue .value Field {{address:copy_move_value}} 'value' 'i32'
+|       | `-ThisExpr {{address}} <col:3, col:7> 'CopyMove' lvalue this
+|       `-ImplicitCastExpr {{address}} <col:17, col:28> 'i32' pure-rvalue <LValueToRValue>
+|         `-MemberExpr {{address}} <col:17, col:28> 'const i32' lvalue .value Field {{address:copy_move_value}} 'value' 'i32'
+|           `-DeclRefExpr {{address}} <col:17, col:22> 'const CopyMove' lvalue ParmVar {{address:copy_parameter}} 'other' 'copy CopyMove'
+|-ConstructorDecl {{address:move_constructor}} <line:13:1, line:15:2> CopyMove target Struct {{address:copy_move}} 'CopyMove' 'func (move CopyMove) void'
+| |-ParmVarDecl {{address:move_parameter}} <line:13:15, col:34> other 'move CopyMove'
+| | `-ReferenceType {{address}} <col:21, col:34> 'move'
+| |   `-NamedType {{address}} <col:26, col:34> 'CopyMove'
+| `-CompoundStmt {{address}} <col:36, line:15:2>
+|   `-ExprStmt {{address}} <line:14:3, col:29>
+|     `-InitializationExpr {{address}} <col:3, col:28> 'void'
+|       |-MemberExpr {{address}} <col:3, col:13> 'i32' lvalue .value Field {{address:copy_move_value}} 'value' 'i32'
+|       | `-ThisExpr {{address}} <col:3, col:7> 'CopyMove' lvalue this
+|       `-ImplicitCastExpr {{address}} <col:17, col:28> 'i32' pure-rvalue <LValueToRValue>
+|         `-MemberExpr {{address}} <col:17, col:28> 'i32' lvalue .value Field {{address:copy_move_value}} 'value' 'i32'
+|           `-DeclRefExpr {{address}} <col:17, col:22> 'CopyMove' lvalue ParmVar {{address:move_parameter}} 'other' 'move CopyMove'
+|-DestructorDecl {{address}} <line:17:1, col:19> CopyMove target Struct {{address:copy_move}} 'CopyMove' 'func () void'
+| `-CompoundStmt {{address}} <col:17, col:19>
+|-FunctionDecl {{address:make}} <line:19:1, line:21:2> MakeCopyMove 'func () CopyMove'
+| |-ReturnVarDecl {{address:make_result}} <line:19:21, col:29> 'CopyMove'
+| | `-NamedType {{address}} <col:21, col:29> 'CopyMove'
+| `-CompoundStmt {{address}} <col:30, line:21:2>
+|   `-ImplicitResultInitializationExpr {{address}} <line:20:3, col:14> 'void' ReturnVar {{address:make_result}} 'CopyMove'
+|     `-ConstructionExpr {{address}} <col:3, col:14> 'CopyMove' pure-rvalue complete-object target <col:3, col:11> 'CopyMove' Constructor {{address:value_constructor}} 'CopyMove' 'func (i32) void'
+|       `-ImplicitCastExpr {{address}} <col:12, col:13> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|         `-IntegerLiteral {{address}} <col:12, col:13> 'comptime_int' 1
+|-FunctionDecl {{address}} <line:23:1, line:29:2> CopyMoveConstruction 'func (mut CopyMove, bool) CopyMove'
+| |-ParmVarDecl {{address:source}} <line:23:27, col:46> source 'mut CopyMove'
+| | `-ReferenceType {{address}} <col:34, col:46> 'mut'
+| |   `-NamedType {{address}} <col:38, col:46> 'CopyMove'
+| |-ParmVarDecl {{address:condition}} <col:48, col:62> condition 'bool'
+| | `-BuiltinType {{address}} <col:58, col:62> 'bool'
+| |-ReturnVarDecl {{address:result}} <col:64, col:72> 'CopyMove'
+| | `-NamedType {{address}} <col:64, col:72> 'CopyMove'
+| `-CompoundStmt {{address}} <col:73, line:29:2>
+|   |-DeclStmt {{address}} <line:24:3, col:33>
+|   | `-VarGroupDecl {{address}} <col:3, col:33>
+|   |   |-VarDecl {{address:copied}} <col:7, col:22> copied 'CopyMove'
+|   |   | `-NamedType {{address}} <col:14, col:22> 'CopyMove'
+|   |   `-ConstructionExpr {{address}} <col:26, col:32> 'CopyMove' pure-rvalue complete-object Constructor {{address:copy_constructor}} 'CopyMove' 'func (copy CopyMove) void'
+|   |     `-ImplicitCastExpr {{address}} <col:26, col:32> 'const CopyMove' lvalue <NoOp>
+|   |       `-DeclRefExpr {{address}} <col:26, col:32> 'CopyMove' lvalue ParmVar {{address:source}} 'source' 'mut CopyMove'
+|   |-DeclStmt {{address}} <line:25:3, col:37>
+|   | `-VarGroupDecl {{address}} <col:3, col:37>
+|   |   |-VarDecl {{address:moved}} <col:7, col:21> moved 'CopyMove'
+|   |   | `-NamedType {{address}} <col:13, col:21> 'CopyMove'
+|   |   `-ConstructionExpr {{address}} <col:25, col:36> 'CopyMove' pure-rvalue complete-object Constructor {{address:move_constructor}} 'CopyMove' 'func (move CopyMove) void'
+|   |     `-UnaryOperator {{address}} <col:25, col:36> 'CopyMove' move-lvalue 'move'
+|   |       `-DeclRefExpr {{address}} <col:30, col:36> 'CopyMove' lvalue ParmVar {{address:source}} 'source' 'mut CopyMove'
+|   |-DeclStmt {{address}} <line:26:3, col:41>
+|   | `-VarGroupDecl {{address}} <col:3, col:41>
+|   |   |-VarDecl {{address}} <col:7, col:22> direct 'CopyMove'
+|   |   | `-NamedType {{address}} <col:14, col:22> 'CopyMove'
+|   |   `-CallExpr {{address}} <col:26, col:40> 'CopyMove' pure-rvalue
+|   |     `-DeclRefExpr {{address}} <col:26, col:38> 'func () CopyMove' Function {{address:make}} 'MakeCopyMove' 'func () CopyMove'
+|   `-ReturnStmt {{address}} <line:28:3, col:42>
+|     `-ImplicitResultInitializationExpr {{address}} <col:10, col:41> 'void' ReturnVar {{address:result}} 'CopyMove'
+|       `-ConditionalOperator {{address}} <col:10, col:41> 'CopyMove' pure-rvalue
+|         |-ImplicitCastExpr {{address}} <col:10, col:19> 'bool' pure-rvalue <LValueToRValue>
+|         | `-DeclRefExpr {{address}} <col:10, col:19> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+|         |-ConstructionExpr {{address}} <col:22, col:28> 'CopyMove' pure-rvalue complete-object Constructor {{address:copy_constructor}} 'CopyMove' 'func (copy CopyMove) void'
+|         | `-ImplicitCastExpr {{address}} <col:22, col:28> 'const CopyMove' lvalue <NoOp>
+|         |   `-DeclRefExpr {{address}} <col:22, col:28> 'CopyMove' lvalue Var {{address:copied}} 'copied' 'CopyMove'
+|         `-ConstructionExpr {{address}} <col:31, col:41> 'CopyMove' pure-rvalue complete-object Constructor {{address:move_constructor}} 'CopyMove' 'func (move CopyMove) void'
+|           `-UnaryOperator {{address}} <col:31, col:41> 'CopyMove' move-lvalue 'move'
+|             `-DeclRefExpr {{address}} <col:36, col:41> 'CopyMove' lvalue Var {{address:moved}} 'moved' 'CopyMove'
+|-StructDecl {{address:copy_only}} <line:31:1, line:33:2> CopyOnly
+| `-FieldDecl {{address:copy_only_value}} <line:32:3, col:13> value 'i32'
+|   `-BuiltinType {{address}} <col:9, col:12> 'i32'
+|-ConstructorDecl {{address:copy_only_value_constructor}} <line:35:1, line:37:2> CopyOnly target Struct {{address:copy_only}} 'CopyOnly' 'func (i32) void'
+| |-ParmVarDecl {{address:copy_only_value_parameter}} <line:35:15, col:24> value 'i32'
+| | `-BuiltinType {{address}} <col:21, col:24> 'i32'
+| `-CompoundStmt {{address}} <col:26, line:37:2>
+|   `-ExprStmt {{address}} <line:36:3, col:23>
+|     `-InitializationExpr {{address}} <col:3, col:22> 'void'
+|       |-MemberExpr {{address}} <col:3, col:13> 'i32' lvalue .value Field {{address:copy_only_value}} 'value' 'i32'
+|       | `-ThisExpr {{address}} <col:3, col:7> 'CopyOnly' lvalue this
+|       `-ImplicitCastExpr {{address}} <col:17, col:22> 'i32' pure-rvalue <LValueToRValue>
+|         `-DeclRefExpr {{address}} <col:17, col:22> 'i32' lvalue ParmVar {{address:copy_only_value_parameter}} 'value' 'i32'
+|-ConstructorDecl {{address:copy_only_copy_constructor}} <line:39:1, line:41:2> CopyOnly target Struct {{address:copy_only}} 'CopyOnly' 'func (copy CopyOnly) void'
+| |-ParmVarDecl {{address:copy_only_copy_parameter}} <line:39:15, col:34> other 'copy CopyOnly'
+| | `-ReferenceType {{address}} <col:21, col:34> 'copy'
+| |   `-NamedType {{address}} <col:26, col:34> 'CopyOnly'
+| `-CompoundStmt {{address}} <col:36, line:41:2>
+|   `-ExprStmt {{address}} <line:40:3, col:29>
+|     `-InitializationExpr {{address}} <col:3, col:28> 'void'
+|       |-MemberExpr {{address}} <col:3, col:13> 'i32' lvalue .value Field {{address:copy_only_value}} 'value' 'i32'
+|       | `-ThisExpr {{address}} <col:3, col:7> 'CopyOnly' lvalue this
+|       `-ImplicitCastExpr {{address}} <col:17, col:28> 'i32' pure-rvalue <LValueToRValue>
+|         `-MemberExpr {{address}} <col:17, col:28> 'const i32' lvalue .value Field {{address:copy_only_value}} 'value' 'i32'
+|           `-DeclRefExpr {{address}} <col:17, col:22> 'const CopyOnly' lvalue ParmVar {{address:copy_only_copy_parameter}} 'other' 'copy CopyOnly'
+|-DestructorDecl {{address}} <line:43:1, col:19> CopyOnly target Struct {{address:copy_only}} 'CopyOnly' 'func () void'
+| `-CompoundStmt {{address}} <col:17, col:19>
+`-FunctionDecl {{address}} <line:45:1, line:47:2> CopyFallback 'func (mut CopyOnly) CopyOnly'
+  |-ParmVarDecl {{address:copy_only_source}} <line:45:19, col:38> source 'mut CopyOnly'
+  | `-ReferenceType {{address}} <col:26, col:38> 'mut'
+  |   `-NamedType {{address}} <col:30, col:38> 'CopyOnly'
+  |-ReturnVarDecl {{address:copy_only_result}} <col:40, col:48> 'CopyOnly'
+  | `-NamedType {{address}} <col:40, col:48> 'CopyOnly'
+  `-CompoundStmt {{address}} <col:49, line:47:2>
+    `-ReturnStmt {{address}} <line:46:3, col:22>
+      `-ImplicitResultInitializationExpr {{address}} <col:10, col:21> 'void' ReturnVar {{address:copy_only_result}} 'CopyOnly'
+        `-ConstructionExpr {{address}} <col:10, col:21> 'CopyOnly' pure-rvalue complete-object Constructor {{address:copy_only_copy_constructor}} 'CopyOnly' 'func (copy CopyOnly) void'
+          `-ImplicitCastExpr {{address}} <col:10, col:21> 'const CopyOnly' move-lvalue <NoOp>
+            `-UnaryOperator {{address}} <col:10, col:21> 'CopyOnly' move-lvalue 'move'
+              `-DeclRefExpr {{address}} <col:15, col:21> 'CopyOnly' lvalue ParmVar {{address:copy_only_source}} 'source' 'mut CopyOnly'

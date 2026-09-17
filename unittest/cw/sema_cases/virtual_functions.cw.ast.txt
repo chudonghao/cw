@@ -1,0 +1,33 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address}} <virtual_functions.cw:1:1, line:6:2> VirtualFunctions abstract
+| `-VirtualDecl {{address}} <line:2:3, line:5:4>
+|   |-VirtualFunctionDecl {{address:draw_interface}} <line:3:5, col:43> Draw 'func (copy VirtualFunctions) void' definition Function {{address:draw_definition}} 'Draw' 'func (copy VirtualFunctions) void'
+|   | `-ParmVarDecl {{address}} <col:15, col:41> this 'copy VirtualFunctions'
+|   |   `-ReferenceType {{address}} <col:20, col:41> 'copy'
+|   |     `-NamedType {{address}} <col:25, col:41> 'VirtualFunctions'
+|   `-VirtualFunctionDecl {{address:measure_interface}} <line:4:5, col:59> Measure 'func (copy VirtualFunctions) void' abstract
+|     `-ParmVarDecl {{address}} <col:27, col:57> receiver 'copy VirtualFunctions'
+|       `-ReferenceType {{address}} <col:36, col:57> 'copy'
+|         `-NamedType {{address}} <col:41, col:57> 'VirtualFunctions'
+|-FunctionDecl {{address:draw_definition}} <line:8:1, col:43> Draw 'func (copy VirtualFunctions) void' virtual-declaration VirtualFunction {{address:draw_interface}} 'Draw' 'func (copy VirtualFunctions) void'
+| |-ParmVarDecl {{address}} <col:11, col:39> object 'copy VirtualFunctions'
+| | `-ReferenceType {{address}} <col:18, col:39> 'copy'
+| |   `-NamedType {{address}} <col:23, col:39> 'VirtualFunctions'
+| `-CompoundStmt {{address}} <col:41, col:43>
+|-ConstructorDecl {{address}} <line:10:1, col:27> VirtualFunctions target Struct {{address}} 'VirtualFunctions' 'func () void'
+| `-CompoundStmt {{address}} <col:25, col:27>
+|-DestructorDecl {{address}} <line:12:1, col:27> VirtualFunctions target Struct {{address}} 'VirtualFunctions' 'func () void'
+| `-CompoundStmt {{address}} <col:25, col:27>
+`-FunctionDecl {{address}} <line:14:1, line:17:2> Use 'func (copy VirtualFunctions) void'
+  |-ParmVarDecl {{address:use_object}} <line:14:10, col:38> object 'copy VirtualFunctions'
+  | `-ReferenceType {{address}} <col:17, col:38> 'copy'
+  |   `-NamedType {{address}} <col:22, col:38> 'VirtualFunctions'
+  `-CompoundStmt {{address}} <col:40, line:17:2>
+    |-ExprStmt {{address}} <line:15:3, col:17>
+    | `-ReceiverCallExpr {{address}} <col:3, col:16> 'void' .
+    |   |-DeclRefExpr {{address}} <col:3, col:9> 'const VirtualFunctions' lvalue ParmVar {{address:use_object}} 'object' 'copy VirtualFunctions'
+    |   `-DeclRefExpr {{address}} <col:10, col:14> 'func (copy VirtualFunctions) void' VirtualFunction {{address:draw_interface}} 'Draw' 'func (copy VirtualFunctions) void'
+    `-ExprStmt {{address}} <line:16:3, col:20>
+      `-ReceiverCallExpr {{address}} <col:3, col:19> 'void' .
+        |-DeclRefExpr {{address}} <col:3, col:9> 'const VirtualFunctions' lvalue ParmVar {{address:use_object}} 'object' 'copy VirtualFunctions'
+        `-DeclRefExpr {{address}} <col:10, col:17> 'func (copy VirtualFunctions) void' VirtualFunction {{address:measure_interface}} 'Measure' 'func (copy VirtualFunctions) void'

@@ -1,0 +1,7 @@
+TranslationUnitDecl {{address}}
+`-StructDecl {{address}} <function_type.cw:1:1, line:3:2> FunctionType trivial
+  `-FieldDecl {{address}} <line:2:3, col:29> callback '*func (i32) void'
+    `-PointerType {{address}} <col:12, col:28>
+      `-FunctionType {{address}} <col:13, col:28>
+        |-BuiltinType {{address}} <col:19, col:22> 'i32'
+        `-BuiltinType {{address}} <col:24, col:28> 'void'

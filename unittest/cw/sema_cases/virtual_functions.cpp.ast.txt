@@ -1,0 +1,28 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address:1}} <virtual_functions.cpp:1:1, line:4:1> line:1:8 referenced struct VirtualFunctions definition
+| |-DefinitionData polymorphic abstract literal has_constexpr_non_copy_move_ctor can_const_default_init
+| | |-DefaultConstructor exists non_trivial constexpr needs_implicit defaulted_is_constexpr
+| | |-CopyConstructor simple non_trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple non_trivial needs_implicit
+| | |-CopyAssignment simple non_trivial has_const_param implicit_has_const_param
+| | |-MoveAssignment exists simple non_trivial
+| | `-Destructor simple irrelevant trivial
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct VirtualFunctions
+| |-CXXMethodDecl {{address:2}} <line:2:3, col:23> col:16 used Draw 'void () const' virtual
+| |-CXXMethodDecl {{address:3}} <line:3:3, col:34> col:16 referenced Measure 'void () const' virtual pure
+| |-CXXMethodDecl {{address:4}} <line:1:8> col:8 implicit constexpr operator= 'VirtualFunctions &(const VirtualFunctions &)' inline default noexcept-unevaluated {{address:4}}
+| | `-ParmVarDecl {{address}} <col:8> col:8 'const VirtualFunctions &'
+| |-CXXMethodDecl {{address:5}} <col:8> col:8 implicit constexpr operator= 'VirtualFunctions &(VirtualFunctions &&)' inline default noexcept-unevaluated {{address:5}}
+| | `-ParmVarDecl {{address}} <col:8> col:8 'VirtualFunctions &&'
+| `-CXXDestructorDecl {{address:6}} <col:8> col:8 implicit ~VirtualFunctions 'void ()' inline default trivial noexcept-unevaluated {{address:6}}
+|-CXXMethodDecl {{address:7}} parent {{address:1}} prev {{address:2}} <line:6:1, col:38> col:24 used Draw 'void () const'
+| `-CompoundStmt {{address}} <col:37, col:38>
+`-FunctionDecl {{address}} <line:8:1, line:11:1> line:8:6 Use 'void (const VirtualFunctions &)'
+  |-ParmVarDecl {{address:8}} <col:10, col:34> col:34 used object 'const VirtualFunctions &'
+  `-CompoundStmt {{address}} <col:42, line:11:1>
+    |-CXXMemberCallExpr {{address}} <line:9:3, col:15> 'void'
+    | `-MemberExpr {{address}} <col:3, col:10> '<bound member function type>' .Draw {{address:7}}
+    |   `-DeclRefExpr {{address}} <col:3> 'const VirtualFunctions' lvalue ParmVar {{address:8}} 'object' 'const VirtualFunctions &'
+    `-CXXMemberCallExpr {{address}} <line:10:3, col:18> 'void'
+      `-MemberExpr {{address}} <col:3, col:10> '<bound member function type>' .Measure {{address:3}}
+        `-DeclRefExpr {{address}} <col:3> 'const VirtualFunctions' lvalue ParmVar {{address:8}} 'object' 'const VirtualFunctions &'

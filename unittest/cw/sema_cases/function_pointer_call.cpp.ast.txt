@@ -1,0 +1,41 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address}} <function_pointer_call.cpp:1:1, line:4:1> line:1:8 referenced struct CallbackHolder definition
+| |-DefinitionData pass_in_registers aggregate standard_layout trivially_copyable pod trivial literal
+| | |-DefaultConstructor exists trivial needs_implicit
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial needs_implicit
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct CallbackHolder
+| |-FieldDecl {{address:1}} <line:2:3, col:24> col:9 referenced callback 'int (*)(short)'
+| `-FieldDecl {{address:2}} <line:3:3, col:28> col:11 referenced factory 'int (*(*)())(short)'
+`-FunctionDecl {{address}} <line:5:1, line:9:1> line:5:5 FunctionPointerCall 'int (CallbackHolder, int (*)(short), signed char)'
+  |-ParmVarDecl {{address:3}} <col:25, col:40> col:40 used holder 'CallbackHolder'
+  |-ParmVarDecl {{address:4}} <col:48, col:69> col:54 used callback 'int (*)(short)'
+  |-ParmVarDecl {{address:5}} <col:72, col:84> col:84 used value 'signed char'
+  `-CompoundStmt {{address}} <col:91, line:9:1>
+    |-CallExpr {{address}} <line:6:3, col:17> 'int'
+    | |-ImplicitCastExpr {{address}} <col:3> 'int (*)(short)' <LValueToRValue>
+    | | `-DeclRefExpr {{address}} <col:3> 'int (*)(short)' lvalue ParmVar {{address:4}} 'callback' 'int (*)(short)'
+    | `-ImplicitCastExpr {{address}} <col:12> 'short' <IntegralCast>
+    |   `-ImplicitCastExpr {{address}} <col:12> 'signed char' <LValueToRValue>
+    |     `-DeclRefExpr {{address}} <col:12> 'signed char' lvalue ParmVar {{address:5}} 'value' 'signed char'
+    |-CallExpr {{address}} <line:7:3, col:27> 'int'
+    | |-CallExpr {{address}} <col:3, col:20> 'int (*)(short)'
+    | | `-ImplicitCastExpr {{address}} <col:3, col:18> 'int (*(*)())(short)' <LValueToRValue>
+    | |   `-ParenExpr {{address}} <col:3, col:18> 'int (*(*)())(short)' lvalue
+    | |     `-MemberExpr {{address}} <col:4, col:11> 'int (*(*)())(short)' lvalue .factory {{address:2}}
+    | |       `-DeclRefExpr {{address}} <col:4> 'CallbackHolder' lvalue ParmVar {{address:3}} 'holder' 'CallbackHolder'
+    | `-ImplicitCastExpr {{address}} <col:22> 'short' <IntegralCast>
+    |   `-ImplicitCastExpr {{address}} <col:22> 'signed char' <LValueToRValue>
+    |     `-DeclRefExpr {{address}} <col:22> 'signed char' lvalue ParmVar {{address:5}} 'value' 'signed char'
+    `-ReturnStmt {{address}} <line:8:3, col:33>
+      `-CallExpr {{address}} <col:10, col:33> 'int'
+        |-ImplicitCastExpr {{address}} <col:10, col:26> 'int (*)(short)' <LValueToRValue>
+        | `-ParenExpr {{address}} <col:10, col:26> 'int (*)(short)' lvalue
+        |   `-MemberExpr {{address}} <col:11, col:18> 'int (*)(short)' lvalue .callback {{address:1}}
+        |     `-DeclRefExpr {{address}} <col:11> 'CallbackHolder' lvalue ParmVar {{address:3}} 'holder' 'CallbackHolder'
+        `-ImplicitCastExpr {{address}} <col:28> 'short' <IntegralCast>
+          `-ImplicitCastExpr {{address}} <col:28> 'signed char' <LValueToRValue>
+            `-DeclRefExpr {{address}} <col:28> 'signed char' lvalue ParmVar {{address:5}} 'value' 'signed char'

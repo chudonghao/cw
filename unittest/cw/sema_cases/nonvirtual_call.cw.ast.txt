@@ -1,0 +1,107 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:base}} <nonvirtual_call.cw:1:1, line:6:2> Base abstract
+| `-VirtualDecl {{address}} <line:2:3, line:5:4>
+|   |-VirtualFunctionDecl {{address:base_draw_interface}} <line:3:5, col:31> Draw 'func (copy Base) void' definition Function {{address:base_draw_definition}} 'Draw' 'func (copy Base) void'
+|   | `-ParmVarDecl {{address}} <col:15, col:29> this 'copy Base'
+|   |   `-ReferenceType {{address}} <col:20, col:29> 'copy'
+|   |     `-NamedType {{address}} <col:25, col:29> 'Base'
+|   `-VirtualFunctionDecl {{address:measure_interface}} <line:4:5, col:43> Measure 'func (copy Base) void' abstract definition Function {{address:measure_definition}} 'Measure' 'func (copy Base) void'
+|     `-ParmVarDecl {{address}} <col:27, col:41> this 'copy Base'
+|       `-ReferenceType {{address}} <col:32, col:41> 'copy'
+|         `-NamedType {{address}} <col:37, col:41> 'Base'
+|-FunctionDecl {{address:base_draw_definition}} <line:8:1, col:29> Draw 'func (copy Base) void' virtual-declaration VirtualFunction {{address:base_draw_interface}} 'Draw' 'func (copy Base) void'
+| |-ParmVarDecl {{address}} <col:11, col:25> this 'copy Base'
+| | `-ReferenceType {{address}} <col:16, col:25> 'copy'
+| |   `-NamedType {{address}} <col:21, col:25> 'Base'
+| `-CompoundStmt {{address}} <col:27, col:29>
+|-FunctionDecl {{address:measure_definition}} <line:10:1, col:32> Measure 'func (copy Base) void' virtual-declaration VirtualFunction {{address:measure_interface}} 'Measure' 'func (copy Base) void'
+| |-ParmVarDecl {{address}} <col:14, col:28> this 'copy Base'
+| | `-ReferenceType {{address}} <col:19, col:28> 'copy'
+| |   `-NamedType {{address}} <col:24, col:28> 'Base'
+| `-CompoundStmt {{address}} <col:30, col:32>
+|-ConstructorDecl {{address:base_constructor}} <line:12:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+| `-CompoundStmt {{address}} <col:13, col:15>
+|-DestructorDecl {{address}} <line:14:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+| `-CompoundStmt {{address}} <col:13, col:15>
+|-StructDecl {{address:derived}} <line:16:1, line:20:2> Derived abstract : 'Base'
+| |-BaseType 'Base' Struct {{address:base}} 'Base'
+| `-VirtualDecl {{address}} <line:17:3, line:19:4>
+|   `-VirtualFunctionDecl {{address:derived_draw_interface}} <line:18:5, col:43> Draw 'func (copy Derived) void' override overrides VirtualFunction {{address:base_draw_interface}} 'Draw' 'func (copy Base) void' definition Function {{address:derived_draw_definition}} 'Draw' 'func (copy Derived) void'
+|     `-ParmVarDecl {{address}} <col:24, col:41> this 'copy Derived'
+|       `-ReferenceType {{address}} <col:29, col:41> 'copy'
+|         `-NamedType {{address}} <col:34, col:41> 'Derived'
+|-FunctionDecl {{address:derived_draw_definition}} <line:22:1, col:32> Draw 'func (copy Derived) void' virtual-declaration VirtualFunction {{address:derived_draw_interface}} 'Draw' 'func (copy Derived) void'
+| |-ParmVarDecl {{address}} <col:11, col:28> this 'copy Derived'
+| | `-ReferenceType {{address}} <col:16, col:28> 'copy'
+| |   `-NamedType {{address}} <col:21, col:28> 'Derived'
+| `-CompoundStmt {{address}} <col:30, col:32>
+|-ConstructorDecl {{address}} <line:24:1, line:26:2> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+| `-CompoundStmt {{address}} <line:24:16, line:26:2>
+|   `-ExprStmt {{address}} <line:25:3, col:23>
+|     `-InitializationExpr {{address}} <col:3, col:22> 'void'
+|       |-BaseSubobjectExpr {{address}} <col:3, col:12> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|       | `-ThisExpr {{address}} <col:3, col:7> 'Derived' lvalue this
+|       `-ConstructionExpr {{address}} <col:16, col:22> 'Base' pure-rvalue base-subobject target <col:16, col:20> 'Base' Constructor {{address:base_constructor}} 'Base' 'func () void'
+|-DestructorDecl {{address}} <line:28:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+| `-CompoundStmt {{address}} <col:16, col:18>
+|-FunctionDecl {{address:ordinary}} <line:30:1, line:32:2> Ordinary 'func (i32) i32'
+| |-ParmVarDecl {{address:ordinary_value}} <line:30:15, col:24> value 'i32'
+| | `-BuiltinType {{address}} <col:21, col:24> 'i32'
+| |-ReturnVarDecl {{address:ordinary_result}} <col:26, col:29> 'i32'
+| | `-BuiltinType {{address}} <col:26, col:29> 'i32'
+| `-CompoundStmt {{address}} <col:30, line:32:2>
+|   `-ReturnStmt {{address}} <line:31:3, col:16>
+|     `-ImplicitResultInitializationExpr {{address}} <col:10, col:15> 'void' ReturnVar {{address:ordinary_result}} 'i32'
+|       `-ImplicitCastExpr {{address}} <col:10, col:15> 'i32' pure-rvalue <LValueToRValue>
+|         `-DeclRefExpr {{address}} <col:10, col:15> 'i32' lvalue ParmVar {{address:ordinary_value}} 'value' 'i32'
+`-FunctionDecl {{address}} <line:34:1, line:45:2> Use 'func (copy Base, copy Derived, *const Base) i32'
+  |-ParmVarDecl {{address:use_base}} <line:34:10, col:24> base 'copy Base'
+  | `-ReferenceType {{address}} <col:15, col:24> 'copy'
+  |   `-NamedType {{address}} <col:20, col:24> 'Base'
+  |-ParmVarDecl {{address:use_derived}} <col:26, col:46> derived 'copy Derived'
+  | `-ReferenceType {{address}} <col:34, col:46> 'copy'
+  |   `-NamedType {{address}} <col:39, col:46> 'Derived'
+  |-ParmVarDecl {{address:use_pointer}} <col:48, col:67> pointer '*const Base'
+  | `-PointerType {{address}} <col:56, col:67>
+  |   `-ConstType {{address}} <col:57, col:67>
+  |     `-NamedType {{address}} <col:63, col:67> 'Base'
+  |-ReturnVarDecl {{address:use_result}} <col:69, col:72> 'i32'
+  | `-BuiltinType {{address}} <col:69, col:72> 'i32'
+  `-CompoundStmt {{address}} <col:73, line:45:2>
+    |-ExprStmt {{address}} <line:35:3, col:15>
+    | `-ReceiverCallExpr {{address}} <col:3, col:14> 'void' .
+    |   |-DeclRefExpr {{address}} <col:3, col:7> 'const Base' lvalue ParmVar {{address:use_base}} 'base' 'copy Base'
+    |   `-DeclRefExpr {{address}} <col:8, col:12> 'func (copy Base) void' VirtualFunction {{address:base_draw_interface}} 'Draw' 'func (copy Base) void'
+    |-ExprStmt {{address}} <line:36:3, col:26>
+    | `-ReceiverCallExpr {{address}} <col:3, col:25> 'void' . nonvirtual
+    |   |-DeclRefExpr {{address}} <col:3, col:7> 'const Base' lvalue ParmVar {{address:use_base}} 'base' 'copy Base'
+    |   `-DeclRefExpr {{address}} <col:19, col:23> 'func (copy Base) void' Function {{address:base_draw_definition}} 'Draw' 'func (copy Base) void'
+    |-ExprStmt {{address}} <line:37:3, col:28>
+    | `-CallExpr {{address}} <col:3, col:27> 'void' nonvirtual
+    |   |-DeclRefExpr {{address}} <col:14, col:21> 'func (copy Base) void' Function {{address:measure_definition}} 'Measure' 'func (copy Base) void'
+    |   `-DeclRefExpr {{address}} <col:22, col:26> 'const Base' lvalue ParmVar {{address:use_base}} 'base' 'copy Base'
+    |-ExprStmt {{address}} <line:38:3, col:30>
+    | `-ReceiverCallExpr {{address}} <col:3, col:29> 'void' -> nonvirtual
+    |   |-UnaryOperator {{address}} <col:3, col:10> 'const Base' lvalue '*'
+    |   | `-ImplicitCastExpr {{address}} <col:3, col:10> '*const Base' pure-rvalue <LValueToRValue>
+    |   |   `-DeclRefExpr {{address}} <col:3, col:10> '*const Base' lvalue ParmVar {{address:use_pointer}} 'pointer' '*const Base'
+    |   `-DeclRefExpr {{address}} <col:23, col:27> 'func (copy Base) void' Function {{address:base_draw_definition}} 'Draw' 'func (copy Base) void'
+    |-ExprStmt {{address}} <line:40:3, col:18>
+    | `-ReceiverCallExpr {{address}} <col:3, col:17> 'void' .
+    |   |-DeclRefExpr {{address}} <col:3, col:10> 'const Derived' lvalue ParmVar {{address:use_derived}} 'derived' 'copy Derived'
+    |   `-DeclRefExpr {{address}} <col:11, col:15> 'func (copy Derived) void' VirtualFunction {{address:derived_draw_interface}} 'Draw' 'func (copy Derived) void'
+    |-ExprStmt {{address}} <line:41:3, col:29>
+    | `-ReceiverCallExpr {{address}} <col:3, col:28> 'void' . nonvirtual
+    |   |-DeclRefExpr {{address}} <col:3, col:10> 'const Derived' lvalue ParmVar {{address:use_derived}} 'derived' 'copy Derived'
+    |   `-DeclRefExpr {{address}} <col:22, col:26> 'func (copy Derived) void' Function {{address:derived_draw_definition}} 'Draw' 'func (copy Derived) void'
+    |-ExprStmt {{address}} <line:42:3, col:34>
+    | `-ReceiverCallExpr {{address}} <col:3, col:33> 'void' . nonvirtual
+    |   |-BaseSubobjectExpr {{address}} <col:3, col:15> 'const Base' lvalue .Base Struct {{address:base}} 'Base'
+    |   | `-DeclRefExpr {{address}} <col:3, col:10> 'const Derived' lvalue ParmVar {{address:use_derived}} 'derived' 'copy Derived'
+    |   `-DeclRefExpr {{address}} <col:27, col:31> 'func (copy Base) void' Function {{address:base_draw_definition}} 'Draw' 'func (copy Base) void'
+    `-ReturnStmt {{address}} <line:44:3, col:33>
+      `-ImplicitResultInitializationExpr {{address}} <col:10, col:32> 'void' ReturnVar {{address:use_result}} 'i32'
+        `-CallExpr {{address}} <col:10, col:32> 'i32' pure-rvalue nonvirtual
+          |-DeclRefExpr {{address}} <col:21, col:29> 'func (i32) i32' Function {{address:ordinary}} 'Ordinary' 'func (i32) i32'
+          `-ImplicitCastExpr {{address}} <col:30, col:31> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+            `-IntegerLiteral {{address}} <col:30, col:31> 'comptime_int' 1

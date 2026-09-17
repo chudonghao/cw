@@ -1,0 +1,56 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address:1}} <virtual_interface_pointer.cpp:1:1, line:3:1> line:1:8 referenced struct VirtualInterfacePointerTarget definition
+| |-DefinitionData polymorphic abstract literal has_constexpr_non_copy_move_ctor can_const_default_init
+| | |-DefaultConstructor exists non_trivial constexpr needs_implicit defaulted_is_constexpr
+| | |-CopyConstructor simple non_trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple non_trivial needs_implicit
+| | |-CopyAssignment simple non_trivial has_const_param implicit_has_const_param
+| | |-MoveAssignment exists simple non_trivial
+| | `-Destructor simple irrelevant trivial
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct VirtualInterfacePointerTarget
+| |-CXXMethodDecl {{address:2}} <line:2:3, col:39> col:15 Draw 'int (int) const' virtual pure
+| | `-ParmVarDecl {{address}} <col:20, col:24> col:24 value 'int'
+| |-CXXMethodDecl {{address:3}} <line:1:8> col:8 implicit constexpr operator= 'VirtualInterfacePointerTarget &(const VirtualInterfacePointerTarget &)' inline default noexcept-unevaluated {{address:3}}
+| | `-ParmVarDecl {{address}} <col:8> col:8 'const VirtualInterfacePointerTarget &'
+| |-CXXMethodDecl {{address:4}} <col:8> col:8 implicit constexpr operator= 'VirtualInterfacePointerTarget &(VirtualInterfacePointerTarget &&)' inline default noexcept-unevaluated {{address:4}}
+| | `-ParmVarDecl {{address}} <col:8> col:8 'VirtualInterfacePointerTarget &&'
+| `-CXXDestructorDecl {{address:5}} <col:8> col:8 implicit ~VirtualInterfacePointerTarget 'void ()' inline default trivial noexcept-unevaluated {{address:5}}
+|-CXXMethodDecl {{address:6}} parent {{address:1}} prev {{address:2}} <line:5:1, col:74> col:36 referenced Draw 'int (int) const' pure
+| |-ParmVarDecl {{address:7}} <col:41, col:45> col:45 used value 'int'
+| `-CompoundStmt {{address}} <col:58, col:74>
+|   `-ReturnStmt {{address}} <col:60, col:67>
+|     `-ImplicitCastExpr {{address}} <col:67> 'int' <LValueToRValue>
+|       `-DeclRefExpr {{address}} <col:67> 'int' lvalue ParmVar {{address:7}} 'value' 'int'
+|-FunctionDecl {{address:8}} <line:7:1, col:75> col:5 used Draw 'int (const VirtualInterfacePointerTarget &, int)'
+| |-ParmVarDecl {{address}} <col:10, col:45> col:46 'const VirtualInterfacePointerTarget &'
+| |-ParmVarDecl {{address:9}} <col:48, col:52> col:52 used value 'int'
+| `-CompoundStmt {{address}} <col:59, col:75>
+|   `-ReturnStmt {{address}} <col:61, col:68>
+|     `-ImplicitCastExpr {{address}} <col:68> 'int' <LValueToRValue>
+|       `-DeclRefExpr {{address}} <col:68> 'int' lvalue ParmVar {{address:9}} 'value' 'int'
+`-FunctionDecl {{address}} <line:9:1, line:13:1> line:9:5 VirtualInterfacePointer 'int (const VirtualInterfacePointerTarget &)'
+  |-ParmVarDecl {{address:10}} <col:29, col:66> col:66 used object 'const VirtualInterfacePointerTarget &'
+  `-CompoundStmt {{address}} <col:74, line:13:1>
+    |-DeclStmt {{address}} <line:10:3, col:67>
+    | `-VarDecl {{address:11}} <col:3, col:63> col:9 used direct 'int (*)(const VirtualInterfacePointerTarget &, int)' cinit
+    |   `-UnaryOperator {{address}} <col:62, col:63> 'int (*)(const VirtualInterfacePointerTarget &, int)' prefix '&' cannot overflow
+    |     `-DeclRefExpr {{address}} <col:63> 'int (const VirtualInterfacePointerTarget &, int)' lvalue Function {{address:8}} 'Draw' 'int (const VirtualInterfacePointerTarget &, int)'
+    |-DeclStmt {{address}} <line:11:3, col:95>
+    | `-VarDecl {{address:12}} <col:3, col:91> col:40 used slot 'int (VirtualInterfacePointerTarget::*)(int) const' cinit
+    |   `-UnaryOperator {{address}} <col:59, col:91> 'int (VirtualInterfacePointerTarget::*)(int) const' prefix '&' cannot overflow
+    |     `-DeclRefExpr {{address}} <col:60, col:91> 'int (int) const' CXXMethod {{address:6}} 'Draw' 'int (int) const'
+    |       `-NestedNameSpecifier TypeSpec 'VirtualInterfacePointerTarget'
+    `-ReturnStmt {{address}} <line:12:3, col:46>
+      `-BinaryOperator {{address}} <col:10, col:46> 'int' '+'
+        |-CallExpr {{address}} <col:10, col:26> 'int'
+        | |-ImplicitCastExpr {{address}} <col:10> 'int (*)(const VirtualInterfacePointerTarget &, int)' <LValueToRValue>
+        | | `-DeclRefExpr {{address}} <col:10> 'int (*)(const VirtualInterfacePointerTarget &, int)' lvalue Var {{address:11}} 'direct' 'int (*)(const VirtualInterfacePointerTarget &, int)'
+        | |-DeclRefExpr {{address}} <col:17> 'const VirtualInterfacePointerTarget' lvalue ParmVar {{address:10}} 'object' 'const VirtualInterfacePointerTarget &'
+        | `-IntegerLiteral {{address}} <col:25> 'int' 1
+        `-CXXMemberCallExpr {{address}} <col:30, col:46> 'int'
+          |-ParenExpr {{address}} <col:30, col:43> '<bound member function type>'
+          | `-BinaryOperator {{address}} <col:31, col:39> '<bound member function type>' '.*'
+          |   |-DeclRefExpr {{address}} <col:31> 'const VirtualInterfacePointerTarget' lvalue ParmVar {{address:10}} 'object' 'const VirtualInterfacePointerTarget &'
+          |   `-ImplicitCastExpr {{address}} <col:39> 'int (VirtualInterfacePointerTarget::*)(int) const' <LValueToRValue>
+          |     `-DeclRefExpr {{address}} <col:39> 'int (VirtualInterfacePointerTarget::*)(int) const' lvalue Var {{address:12}} 'slot' 'int (VirtualInterfacePointerTarget::*)(int) const'
+          `-IntegerLiteral {{address}} <col:45> 'int' 2

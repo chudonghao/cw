@@ -1,0 +1,11 @@
+TranslationUnitDecl {{address}}
+`-StructDecl {{address}} <struct_fields.cw:1:1, line:5:2> StructFields trivial
+  |-FieldDecl {{address}} <line:2:3, col:13> value 'i32'
+  | `-BuiltinType {{address}} <col:9, col:12> 'i32'
+  |-FieldDecl {{address}} <line:3:3, col:22> next '*StructFields'
+  | `-PointerType {{address}} <col:8, col:21>
+  |   `-NamedType {{address}} <col:9, col:21> 'StructFields'
+  `-FieldDecl {{address}} <line:4:3, col:27> indirect '**StructFields'
+    `-PointerType {{address}} <col:12, col:26>
+      `-PointerType {{address}} <col:13, col:26>
+        `-NamedType {{address}} <col:14, col:26> 'StructFields'

@@ -1,0 +1,44 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address}} <operator_expression.cw:1:1, col:32> OperatorValue trivial
+|-FunctionDecl {{address:operator_minus}} <line:3:1, line:5:2> operator- 'func (copy OperatorValue) copy OperatorValue'
+| |-ParmVarDecl {{address:minus_value}} <line:3:16, col:39> this 'copy OperatorValue'
+| | `-ReferenceType {{address}} <col:21, col:39> 'copy'
+| |   `-NamedType {{address}} <col:26, col:39> 'OperatorValue'
+| |-ReturnVarDecl {{address:minus_return}} <col:41, col:59> 'copy OperatorValue'
+| | `-ReferenceType {{address}} <col:41, col:59> 'copy'
+| |   `-NamedType {{address}} <col:46, col:59> 'OperatorValue'
+| `-CompoundStmt {{address}} <col:60, line:5:2>
+|   `-ImplicitResultInitializationExpr {{address}} <line:4:3, col:7> 'void' ReturnVar {{address:minus_return}} 'copy OperatorValue'
+|     `-DeclRefExpr {{address}} <col:3, col:7> 'const OperatorValue' lvalue ParmVar {{address:minus_value}} 'this' 'copy OperatorValue'
+|-FunctionDecl {{address:operator_plus}} <line:7:1, line:9:2> operator+ 'func (copy OperatorValue, copy OperatorValue) copy OperatorValue'
+| |-ParmVarDecl {{address:plus_left}} <line:7:16, col:39> left 'copy OperatorValue'
+| | `-ReferenceType {{address}} <col:21, col:39> 'copy'
+| |   `-NamedType {{address}} <col:26, col:39> 'OperatorValue'
+| |-ParmVarDecl {{address}} <col:41, col:65> right 'copy OperatorValue'
+| | `-ReferenceType {{address}} <col:47, col:65> 'copy'
+| |   `-NamedType {{address}} <col:52, col:65> 'OperatorValue'
+| |-ReturnVarDecl {{address:plus_return}} <col:67, col:85> 'copy OperatorValue'
+| | `-ReferenceType {{address}} <col:67, col:85> 'copy'
+| |   `-NamedType {{address}} <col:72, col:85> 'OperatorValue'
+| `-CompoundStmt {{address}} <col:86, line:9:2>
+|   `-ImplicitResultInitializationExpr {{address}} <line:8:3, col:7> 'void' ReturnVar {{address:plus_return}} 'copy OperatorValue'
+|     `-DeclRefExpr {{address}} <col:3, col:7> 'const OperatorValue' lvalue ParmVar {{address:plus_left}} 'left' 'copy OperatorValue'
+`-FunctionDecl {{address}} <line:11:1, line:14:2> OperatorExpression 'func (copy OperatorValue, copy OperatorValue) void'
+  |-ParmVarDecl {{address:expression_left}} <line:11:25, col:48> left 'copy OperatorValue'
+  | `-ReferenceType {{address}} <col:30, col:48> 'copy'
+  |   `-NamedType {{address}} <col:35, col:48> 'OperatorValue'
+  |-ParmVarDecl {{address:expression_right}} <col:50, col:74> right 'copy OperatorValue'
+  | `-ReferenceType {{address}} <col:56, col:74> 'copy'
+  |   `-NamedType {{address}} <col:61, col:74> 'OperatorValue'
+  |-ReturnVarDecl {{address}} <col:76, col:80> 'void'
+  | `-BuiltinType {{address}} <col:76, col:80> 'void'
+  `-CompoundStmt {{address}} <col:81, line:14:2>
+    |-ExprStmt {{address}} <line:12:3, col:9>
+    | `-OperatorCallExpr {{address}} <col:3, col:8> 'const OperatorValue' lvalue
+    |   |-DeclRefExpr {{address}} <col:3, col:4> 'func (copy OperatorValue) copy OperatorValue' Function {{address:operator_minus}} 'operator-' 'func (copy OperatorValue) copy OperatorValue'
+    |   `-DeclRefExpr {{address}} <col:4, col:8> 'const OperatorValue' lvalue ParmVar {{address:expression_left}} 'left' 'copy OperatorValue'
+    `-ExprStmt {{address}} <line:13:3, col:16>
+      `-OperatorCallExpr {{address}} <col:3, col:15> 'const OperatorValue' lvalue
+        |-DeclRefExpr {{address}} <col:8, col:9> 'func (copy OperatorValue, copy OperatorValue) copy OperatorValue' Function {{address:operator_plus}} 'operator+' 'func (copy OperatorValue, copy OperatorValue) copy OperatorValue'
+        |-DeclRefExpr {{address}} <col:3, col:7> 'const OperatorValue' lvalue ParmVar {{address:expression_left}} 'left' 'copy OperatorValue'
+        `-DeclRefExpr {{address}} <col:10, col:15> 'const OperatorValue' lvalue ParmVar {{address:expression_right}} 'right' 'copy OperatorValue'

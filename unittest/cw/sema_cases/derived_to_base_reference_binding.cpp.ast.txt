@@ -1,0 +1,83 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address}} <derived_to_base_reference_binding.cpp:1:1, line:3:1> line:1:8 referenced struct Base definition
+| |-DefinitionData pass_in_registers empty aggregate standard_layout trivially_copyable pod trivial literal has_constexpr_non_copy_move_ctor can_const_default_init
+| | |-DefaultConstructor exists trivial constexpr needs_implicit defaulted_is_constexpr
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial needs_implicit
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct Base
+| `-CXXMethodDecl {{address:1}} <line:2:3, col:25> col:8 used Receive 'void () const' implicit-inline
+|   `-CompoundStmt {{address}} <col:24, col:25>
+|-CXXRecordDecl {{address}} <line:4:1, col:23> col:8 referenced struct Middle definition
+| |-DefinitionData pass_in_registers empty aggregate standard_layout trivially_copyable trivial literal has_constexpr_non_copy_move_ctor can_const_default_init
+| | |-DefaultConstructor exists trivial constexpr needs_implicit defaulted_is_constexpr
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial needs_implicit
+| |-public 'Base'
+| `-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct Middle
+|-CXXRecordDecl {{address}} <line:5:1, col:26> col:8 referenced struct Derived definition
+| |-DefinitionData pass_in_registers empty aggregate standard_layout trivially_copyable trivial literal has_constexpr_non_copy_move_ctor can_const_default_init
+| | |-DefaultConstructor exists trivial constexpr needs_implicit defaulted_is_constexpr
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial needs_implicit
+| |-public 'Middle'
+| `-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct Derived
+|-FunctionDecl {{address}} <line:6:1, col:26> col:6 Exact 'void (const Base &)'
+| |-ParmVarDecl {{address}} <col:12, col:22> col:23 'const Base &'
+| `-CompoundStmt {{address}} <col:25, col:26>
+|-FunctionDecl {{address:2}} <line:7:1, col:29> col:6 used Exact 'void (const Derived &)'
+| |-ParmVarDecl {{address}} <col:12, col:25> col:26 'const Derived &'
+| `-CompoundStmt {{address}} <col:28, col:29>
+|-FunctionDecl {{address}} <line:8:1, col:25> col:6 Near 'void (const Base &)'
+| |-ParmVarDecl {{address}} <col:11, col:21> col:22 'const Base &'
+| `-CompoundStmt {{address}} <col:24, col:25>
+|-FunctionDecl {{address:3}} <line:9:1, col:27> col:6 used Near 'void (const Middle &)'
+| |-ParmVarDecl {{address}} <col:11, col:23> col:24 'const Middle &'
+| `-CompoundStmt {{address}} <col:26, col:27>
+|-FunctionDecl {{address:4}} <line:10:1, col:62> col:13 used ReturnBase 'const Base &(const Derived &)'
+| |-ParmVarDecl {{address:5}} <col:24, col:39> col:39 used value 'const Derived &'
+| `-CompoundStmt {{address}} <col:46, col:62>
+|   `-ReturnStmt {{address}} <col:48, col:55>
+|     `-ImplicitCastExpr {{address}} <col:55> 'const Base' lvalue <DerivedToBase (Middle -> Base)>
+|       `-DeclRefExpr {{address}} <col:55> 'const Derived' lvalue ParmVar {{address:5}} 'value' 'const Derived &'
+`-FunctionDecl {{address}} <line:11:1, line:18:1> line:11:6 DerivedToBaseReferenceBinding 'void (Derived &, Derived *)'
+  |-ParmVarDecl {{address:6}} <col:36, col:45> col:45 used value 'Derived &'
+  |-ParmVarDecl {{address:7}} <col:52, col:61> col:61 used pointer 'Derived *'
+  `-CompoundStmt {{address}} <col:70, line:18:1>
+    |-DeclStmt {{address}} <line:12:3, col:21>
+    | `-VarDecl {{address}} <col:3, col:16> col:9 base 'Base &' cinit
+    |   `-ImplicitCastExpr {{address}} <col:16> 'Base' lvalue <DerivedToBase (Middle -> Base)>
+    |     `-DeclRefExpr {{address}} <col:16> 'Derived' lvalue ParmVar {{address:6}} 'value' 'Derived &'
+    |-CallExpr {{address}} <line:13:3, col:14> 'void'
+    | |-ImplicitCastExpr {{address}} <col:3> 'void (*)(const Derived &)' <FunctionToPointerDecay>
+    | | `-DeclRefExpr {{address}} <col:3> 'void (const Derived &)' lvalue Function {{address:2}} 'Exact' 'void (const Derived &)'
+    | `-ImplicitCastExpr {{address}} <col:9> 'const Derived' lvalue <NoOp>
+    |   `-DeclRefExpr {{address}} <col:9> 'Derived' lvalue ParmVar {{address:6}} 'value' 'Derived &'
+    |-CallExpr {{address}} <line:14:3, col:13> 'void'
+    | |-ImplicitCastExpr {{address}} <col:3> 'void (*)(const Middle &)' <FunctionToPointerDecay>
+    | | `-DeclRefExpr {{address}} <col:3> 'void (const Middle &)' lvalue Function {{address:3}} 'Near' 'void (const Middle &)'
+    | `-ImplicitCastExpr {{address}} <col:8> 'const Middle' lvalue <DerivedToBase (Middle)>
+    |   `-ImplicitCastExpr {{address}} <col:8> 'const Derived' lvalue <NoOp>
+    |     `-DeclRefExpr {{address}} <col:8> 'Derived' lvalue ParmVar {{address:6}} 'value' 'Derived &'
+    |-CXXMemberCallExpr {{address}} <line:15:3, col:17> 'void'
+    | `-MemberExpr {{address}} <col:3, col:9> '<bound member function type>' .Receive {{address:1}}
+    |   `-ImplicitCastExpr {{address}} <col:3> 'const Base' lvalue <UncheckedDerivedToBase (Middle -> Base)>
+    |     `-DeclRefExpr {{address}} <col:3> 'Derived' lvalue ParmVar {{address:6}} 'value' 'Derived &'
+    |-CXXMemberCallExpr {{address}} <line:16:3, col:20> 'void'
+    | `-MemberExpr {{address}} <col:3, col:12> '<bound member function type>' ->Receive {{address:1}}
+    |   `-ImplicitCastExpr {{address}} <col:3> 'const Base *' <UncheckedDerivedToBase (Middle -> Base)>
+    |     `-ImplicitCastExpr {{address}} <col:3> 'Derived *' <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:3> 'Derived *' lvalue ParmVar {{address:7}} 'pointer' 'Derived *'
+    `-CallExpr {{address}} <line:17:3, col:19> 'const Base' lvalue
+      |-ImplicitCastExpr {{address}} <col:3> 'const Base &(*)(const Derived &)' <FunctionToPointerDecay>
+      | `-DeclRefExpr {{address}} <col:3> 'const Base &(const Derived &)' lvalue Function {{address:4}} 'ReturnBase' 'const Base &(const Derived &)'
+      `-ImplicitCastExpr {{address}} <col:14> 'const Derived' lvalue <NoOp>
+        `-DeclRefExpr {{address}} <col:14> 'Derived' lvalue ParmVar {{address:6}} 'value' 'Derived &'

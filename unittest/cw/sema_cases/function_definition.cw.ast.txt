@@ -1,0 +1,9 @@
+TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <function_definition.cw:1:1, col:55> FunctionDefinition 'func (i32, i32) void'
+  |-ParmVarDecl {{address}} <col:25, col:34> first 'i32'
+  | `-BuiltinType {{address}} <col:31, col:34> 'i32'
+  |-ParmVarDecl {{address}} <col:36, col:46> second 'i32'
+  | `-BuiltinType {{address}} <col:43, col:46> 'i32'
+  |-ReturnVarDecl {{address}} <col:48, col:52> 'void'
+  | `-BuiltinType {{address}} <col:48, col:52> 'void'
+  `-CompoundStmt {{address}} <col:53, col:55>

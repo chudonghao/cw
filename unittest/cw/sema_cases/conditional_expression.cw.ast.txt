@@ -1,0 +1,77 @@
+TranslationUnitDecl {{address}}
+|-FunctionDecl {{address:observe}} <conditional_expression.cw:1:1, col:18> Observe 'func () void'
+| `-CompoundStmt {{address}} <col:16, col:18>
+`-FunctionDecl {{address}} <line:3:1, line:11:2> ConditionalExpression 'func (bool, i16, i32, u32, f32, f64) void'
+  |-ParmVarDecl {{address:condition}} <line:3:28, col:42> condition 'bool'
+  | `-BuiltinType {{address}} <col:38, col:42> 'bool'
+  |-ParmVarDecl {{address:signed16}} <col:44, col:56> signed16 'i16'
+  | `-BuiltinType {{address}} <col:53, col:56> 'i16'
+  |-ParmVarDecl {{address:signed32}} <col:58, col:70> signed32 'i32'
+  | `-BuiltinType {{address}} <col:67, col:70> 'i32'
+  |-ParmVarDecl {{address:unsigned32}} <col:72, col:86> unsigned32 'u32'
+  | `-BuiltinType {{address}} <col:83, col:86> 'u32'
+  |-ParmVarDecl {{address:single}} <col:88, col:98> single 'f32'
+  | `-BuiltinType {{address}} <col:95, col:98> 'f32'
+  |-ParmVarDecl {{address:wide}} <col:100, col:108> wide 'f64'
+  | `-BuiltinType {{address}} <col:105, col:108> 'f64'
+  `-CompoundStmt {{address}} <col:110, line:11:2>
+    |-DeclStmt {{address}} <line:4:3, col:45>
+    | `-VarGroupDecl {{address}} <col:3, col:45>
+    |   |-VarDecl {{address}} <col:7, col:16> same_bool 'bool'
+    |   `-ConditionalOperator {{address}} <col:20, col:44> 'bool' pure-rvalue
+    |     |-ImplicitCastExpr {{address}} <col:20, col:29> 'bool' pure-rvalue <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:20, col:29> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+    |     |-BoolLiteral {{address}} <col:32, col:36> 'bool' pure-rvalue true
+    |     `-BoolLiteral {{address}} <col:39, col:44> 'bool' pure-rvalue false
+    |-DeclStmt {{address}} <line:5:3, col:56>
+    | `-VarGroupDecl {{address}} <col:3, col:56>
+    |   |-VarDecl {{address}} <col:7, col:20> wider_integer 'i32'
+    |   `-ConditionalOperator {{address}} <col:24, col:55> 'i32' pure-rvalue
+    |     |-ImplicitCastExpr {{address}} <col:24, col:33> 'bool' pure-rvalue <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:24, col:33> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+    |     |-ImplicitCastExpr {{address}} <col:36, col:44> 'i32' pure-rvalue <IntegerToInteger>
+    |     | `-ImplicitCastExpr {{address}} <col:36, col:44> 'i16' pure-rvalue <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:36, col:44> 'i16' lvalue ParmVar {{address:signed16}} 'signed16' 'i16'
+    |     `-ImplicitCastExpr {{address}} <col:47, col:55> 'i32' pure-rvalue <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:47, col:55> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |-DeclStmt {{address}} <line:6:3, col:55>
+    | `-VarGroupDecl {{address}} <col:3, col:55>
+    |   |-VarDecl {{address}} <col:7, col:17> mixed_sign 'u32'
+    |   `-ConditionalOperator {{address}} <col:21, col:54> 'u32' pure-rvalue
+    |     |-ImplicitCastExpr {{address}} <col:21, col:30> 'bool' pure-rvalue <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:21, col:30> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+    |     |-ImplicitCastExpr {{address}} <col:33, col:41> 'u32' pure-rvalue <IntegerToInteger>
+    |     | `-ImplicitCastExpr {{address}} <col:33, col:41> 'i32' pure-rvalue <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:33, col:41> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |     `-ImplicitCastExpr {{address}} <col:44, col:54> 'u32' pure-rvalue <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:44, col:54> 'u32' lvalue ParmVar {{address:unsigned32}} 'unsigned32' 'u32'
+    |-DeclStmt {{address}} <line:7:3, col:52>
+    | `-VarGroupDecl {{address}} <col:3, col:52>
+    |   |-VarDecl {{address}} <col:7, col:18> mixed_float 'f32'
+    |   `-ConditionalOperator {{address}} <col:22, col:51> 'f32' pure-rvalue
+    |     |-ImplicitCastExpr {{address}} <col:22, col:31> 'bool' pure-rvalue <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:22, col:31> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+    |     |-ImplicitCastExpr {{address}} <col:34, col:42> 'f32' pure-rvalue <IntegerToFloat>
+    |     | `-ImplicitCastExpr {{address}} <col:34, col:42> 'i16' pure-rvalue <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:34, col:42> 'i16' lvalue ParmVar {{address:signed16}} 'signed16' 'i16'
+    |     `-ImplicitCastExpr {{address}} <col:45, col:51> 'f32' pure-rvalue <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:45, col:51> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32'
+    |-DeclStmt {{address}} <line:8:3, col:48>
+    | `-VarGroupDecl {{address}} <col:3, col:48>
+    |   |-VarDecl {{address}} <col:7, col:18> wider_float 'f64'
+    |   `-ConditionalOperator {{address}} <col:22, col:47> 'f64' pure-rvalue
+    |     |-ImplicitCastExpr {{address}} <col:22, col:31> 'bool' pure-rvalue <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:22, col:31> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+    |     |-ImplicitCastExpr {{address}} <col:34, col:40> 'f64' pure-rvalue <FloatToFloat>
+    |     | `-ImplicitCastExpr {{address}} <col:34, col:40> 'f32' pure-rvalue <LValueToRValue>
+    |     |   `-DeclRefExpr {{address}} <col:34, col:40> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32'
+    |     `-ImplicitCastExpr {{address}} <col:43, col:47> 'f64' pure-rvalue <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:43, col:47> 'f64' lvalue ParmVar {{address:wide}} 'wide' 'f64'
+    `-ExprStmt {{address}} <line:10:3, col:37>
+      `-ConditionalOperator {{address}} <col:3, col:36> 'void'
+        |-ImplicitCastExpr {{address}} <col:3, col:12> 'bool' pure-rvalue <LValueToRValue>
+        | `-DeclRefExpr {{address}} <col:3, col:12> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+        |-CallExpr {{address}} <col:15, col:24> 'void'
+        | `-DeclRefExpr {{address}} <col:15, col:22> 'func () void' Function {{address:observe}} 'Observe' 'func () void'
+        `-CallExpr {{address}} <col:27, col:36> 'void'
+          `-DeclRefExpr {{address}} <col:27, col:34> 'func () void' Function {{address:observe}} 'Observe' 'func () void'

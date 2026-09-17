@@ -1,0 +1,25 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:destruction_value}} <explicit_destruction.cw:1:1, col:27> DestructionValue
+|-ConstructorDecl {{address}} <line:3:1, col:27> DestructionValue target Struct {{address:destruction_value}} 'DestructionValue' 'func () void'
+| `-CompoundStmt {{address}} <col:25, col:27>
+|-DestructorDecl {{address:destructor}} <line:5:1, col:27> DestructionValue target Struct {{address:destruction_value}} 'DestructionValue' 'func () void'
+| `-CompoundStmt {{address}} <col:25, col:27>
+`-FunctionDecl {{address}} <line:7:1, line:10:2> ExplicitDestruction 'func (*DestructionValue, *const DestructionValue) void'
+  |-ParmVarDecl {{address:address}} <line:7:26, col:51> address '*DestructionValue'
+  | `-PointerType {{address}} <col:34, col:51>
+  |   `-NamedType {{address}} <col:35, col:51> 'DestructionValue'
+  |-ParmVarDecl {{address:const_address}} <col:53, col:90> const_address '*const DestructionValue'
+  | `-PointerType {{address}} <col:67, col:90>
+  |   `-ConstType {{address}} <col:68, col:90>
+  |     `-NamedType {{address}} <col:74, col:90> 'DestructionValue'
+  `-CompoundStmt {{address}} <col:92, line:10:2>
+    |-ExprStmt {{address}} <line:8:3, col:37>
+    | `-DestructorCallExpr {{address}} <col:3, col:36> 'void'
+    |   |-ImplicitCastExpr {{address}} <col:9, col:16> '*DestructionValue' pure-rvalue <LValueToRValue>
+    |   | `-DeclRefExpr {{address}} <col:9, col:16> '*DestructionValue' lvalue ParmVar {{address:address}} 'address' '*DestructionValue'
+    |   `-DeclRefExpr {{address}} <col:18, col:34> 'func () void' Destructor {{address:destructor}} 'DestructionValue' 'func () void'
+    `-ExprStmt {{address}} <line:9:3, col:43>
+      `-DestructorCallExpr {{address}} <col:3, col:42> 'void'
+        |-ImplicitCastExpr {{address}} <col:9, col:22> '*const DestructionValue' pure-rvalue <LValueToRValue>
+        | `-DeclRefExpr {{address}} <col:9, col:22> '*const DestructionValue' lvalue ParmVar {{address:const_address}} 'const_address' '*const DestructionValue'
+        `-DeclRefExpr {{address}} <col:24, col:40> 'func () void' Destructor {{address:destructor}} 'DestructionValue' 'func () void'

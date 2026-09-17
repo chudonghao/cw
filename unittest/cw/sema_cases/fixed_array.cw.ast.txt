@@ -1,0 +1,29 @@
+TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <fixed_array.cw:1:1, line:5:2> FixedArray 'func (usize) i32'
+  |-ParmVarDecl {{address:index}} <line:1:17, col:28> index 'usize'
+  | `-BuiltinType {{address}} <col:23, col:28> 'usize'
+  |-ReturnVarDecl {{address:return}} <col:30, col:33> 'i32'
+  | `-BuiltinType {{address}} <col:30, col:33> 'i32'
+  `-CompoundStmt {{address}} <col:34, line:5:2>
+    |-DeclStmt {{address}} <line:2:3, col:43>
+    | `-VarGroupDecl {{address}} <col:3, col:43>
+    |   |-VarDecl {{address:values}} <col:7, col:21> values '[3] i32'
+    |   | `-ArrayType {{address}} <col:14, col:21>
+    |   |   |-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' 3
+    |   |   `-BuiltinType {{address}} <col:18, col:21> 'i32'
+    |   `-ArrayValueExpr {{address}} <col:25, col:42> '[3] i32' pure-rvalue
+    |     |-ArrayType {{address}} <col:25, col:32>
+    |     | |-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' 3
+    |     | `-BuiltinType {{address}} <col:29, col:32> 'i32'
+    |     |-ImplicitCastExpr {{address}} <col:34, col:35> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    |     | `-IntegerLiteral {{address}} <col:34, col:35> 'comptime_int' 1
+    |     |-ImplicitCastExpr {{address}} <col:37, col:38> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    |     | `-IntegerLiteral {{address}} <col:37, col:38> 'comptime_int' 2
+    |     `-ImplicitCastExpr {{address}} <col:40, col:41> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    |       `-IntegerLiteral {{address}} <col:40, col:41> 'comptime_int' 3
+    `-ImplicitResultInitializationExpr {{address}} <line:4:3, col:16> 'void' ReturnVar {{address:return}} 'i32'
+      `-ImplicitCastExpr {{address}} <col:3, col:16> 'i32' pure-rvalue <LValueToRValue>
+        `-SubscriptExpr {{address}} <col:3, col:16> 'i32' lvalue
+          |-DeclRefExpr {{address}} <col:3, col:9> '[3] i32' lvalue Var {{address:values}} 'values' '[3] i32'
+          `-ImplicitCastExpr {{address}} <col:10, col:15> 'usize' pure-rvalue <LValueToRValue>
+            `-DeclRefExpr {{address}} <col:10, col:15> 'usize' lvalue ParmVar {{address:index}} 'index' 'usize'

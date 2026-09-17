@@ -1,0 +1,17 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+`-FunctionDecl {{address}} <fixed_array.cpp:1:1, line:4:1> line:1:5 FixedArray 'int (unsigned long)'
+  |-ParmVarDecl {{address:1}} <col:16, col:30> col:30 used index 'unsigned long'
+  `-CompoundStmt {{address}} <col:37, line:4:1>
+    |-DeclStmt {{address}} <line:2:3, col:25>
+    | `-VarDecl {{address:2}} <col:3, col:24> col:7 used values 'int[3]' listinit
+    |   `-InitListExpr {{address}} <col:16, col:24> 'int[3]'
+    |     |-IntegerLiteral {{address}} <col:17> 'int' 1
+    |     |-IntegerLiteral {{address}} <col:20> 'int' 2
+    |     `-IntegerLiteral {{address}} <col:23> 'int' 3
+    `-ReturnStmt {{address}} <line:3:3, col:22>
+      `-ImplicitCastExpr {{address}} <col:10, col:22> 'int' <LValueToRValue>
+        `-ArraySubscriptExpr {{address}} <col:10, col:22> 'int' lvalue
+          |-ImplicitCastExpr {{address}} <col:10> 'int *' <ArrayToPointerDecay>
+          | `-DeclRefExpr {{address}} <col:10> 'int[3]' lvalue Var {{address:2}} 'values' 'int[3]'
+          `-ImplicitCastExpr {{address}} <col:17> 'unsigned long' <LValueToRValue>
+            `-DeclRefExpr {{address}} <col:17> 'unsigned long' lvalue ParmVar {{address:1}} 'index' 'unsigned long'

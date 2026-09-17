@@ -1,0 +1,162 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:product}} <covariant_return.cw:1:1, col:26> Product trivial
+|-StructDecl {{address:special_product}} <line:3:1, col:43> SpecialProduct trivial : 'Product'
+| `-BaseType 'Product' Struct {{address:product}} 'Product'
+|-StructDecl {{address:factory}} <line:5:1, line:12:2> Factory abstract
+| `-VirtualDecl {{address}} <line:6:3, line:11:4>
+|   |-VirtualFunctionDecl {{address:factory_pointer}} <line:7:5, col:55> Pointer 'func (copy Factory) *Product' abstract
+|   | |-ParmVarDecl {{address}} <col:27, col:44> this 'copy Factory'
+|   | | `-ReferenceType {{address}} <col:32, col:44> 'copy'
+|   | |   `-NamedType {{address}} <col:37, col:44> 'Factory'
+|   | `-ReturnVarDecl {{address}} <col:46, col:54> '*Product'
+|   |   `-PointerType {{address}} <col:46, col:54>
+|   |     `-NamedType {{address}} <col:47, col:54> 'Product'
+|   |-VirtualFunctionDecl {{address:factory_mutable}} <line:8:5, col:58> Mutable 'func (copy Factory) mut Product' abstract
+|   | |-ParmVarDecl {{address}} <col:27, col:44> this 'copy Factory'
+|   | | `-ReferenceType {{address}} <col:32, col:44> 'copy'
+|   | |   `-NamedType {{address}} <col:37, col:44> 'Factory'
+|   | `-ReturnVarDecl {{address}} <col:46, col:57> 'mut Product'
+|   |   `-ReferenceType {{address}} <col:46, col:57> 'mut'
+|   |     `-NamedType {{address}} <col:50, col:57> 'Product'
+|   |-VirtualFunctionDecl {{address:factory_copyable}} <line:9:5, col:60> Copyable 'func (copy Factory) copy Product' abstract
+|   | |-ParmVarDecl {{address}} <col:28, col:45> this 'copy Factory'
+|   | | `-ReferenceType {{address}} <col:33, col:45> 'copy'
+|   | |   `-NamedType {{address}} <col:38, col:45> 'Factory'
+|   | `-ReturnVarDecl {{address}} <col:47, col:59> 'copy Product'
+|   |   `-ReferenceType {{address}} <col:47, col:59> 'copy'
+|   |     `-NamedType {{address}} <col:52, col:59> 'Product'
+|   `-VirtualFunctionDecl {{address:factory_movable}} <line:10:5, col:59> Movable 'func (copy Factory) move Product' abstract
+|     |-ParmVarDecl {{address}} <col:27, col:44> this 'copy Factory'
+|     | `-ReferenceType {{address}} <col:32, col:44> 'copy'
+|     |   `-NamedType {{address}} <col:37, col:44> 'Factory'
+|     `-ReturnVarDecl {{address}} <col:46, col:58> 'move Product'
+|       `-ReferenceType {{address}} <col:46, col:58> 'move'
+|         `-NamedType {{address}} <col:51, col:58> 'Product'
+|-StructDecl {{address:special_factory}} <line:14:1, line:21:2> SpecialFactory abstract : 'Factory'
+| |-BaseType 'Factory' Struct {{address:factory}} 'Factory'
+| `-VirtualDecl {{address}} <line:15:3, line:20:4>
+|   |-VirtualFunctionDecl {{address:special_pointer}} <line:16:5, col:78> Pointer 'func (copy SpecialFactory) *SpecialProduct' override abstract overrides VirtualFunction {{address:factory_pointer}} 'Pointer' 'func (copy Factory) *Product'
+|   | |-ParmVarDecl {{address}} <col:36, col:60> this 'copy SpecialFactory'
+|   | | `-ReferenceType {{address}} <col:41, col:60> 'copy'
+|   | |   `-NamedType {{address}} <col:46, col:60> 'SpecialFactory'
+|   | `-ReturnVarDecl {{address}} <col:62, col:77> '*SpecialProduct'
+|   |   `-PointerType {{address}} <col:62, col:77>
+|   |     `-NamedType {{address}} <col:63, col:77> 'SpecialProduct'
+|   |-VirtualFunctionDecl {{address:special_mutable}} <line:17:5, col:81> Mutable 'func (copy SpecialFactory) mut SpecialProduct' override abstract overrides VirtualFunction {{address:factory_mutable}} 'Mutable' 'func (copy Factory) mut Product'
+|   | |-ParmVarDecl {{address}} <col:36, col:60> this 'copy SpecialFactory'
+|   | | `-ReferenceType {{address}} <col:41, col:60> 'copy'
+|   | |   `-NamedType {{address}} <col:46, col:60> 'SpecialFactory'
+|   | `-ReturnVarDecl {{address}} <col:62, col:80> 'mut SpecialProduct'
+|   |   `-ReferenceType {{address}} <col:62, col:80> 'mut'
+|   |     `-NamedType {{address}} <col:66, col:80> 'SpecialProduct'
+|   |-VirtualFunctionDecl {{address:special_copyable}} <line:18:5, col:83> Copyable 'func (copy SpecialFactory) copy SpecialProduct' override abstract overrides VirtualFunction {{address:factory_copyable}} 'Copyable' 'func (copy Factory) copy Product'
+|   | |-ParmVarDecl {{address}} <col:37, col:61> this 'copy SpecialFactory'
+|   | | `-ReferenceType {{address}} <col:42, col:61> 'copy'
+|   | |   `-NamedType {{address}} <col:47, col:61> 'SpecialFactory'
+|   | `-ReturnVarDecl {{address}} <col:63, col:82> 'copy SpecialProduct'
+|   |   `-ReferenceType {{address}} <col:63, col:82> 'copy'
+|   |     `-NamedType {{address}} <col:68, col:82> 'SpecialProduct'
+|   `-VirtualFunctionDecl {{address:special_movable}} <line:19:5, col:82> Movable 'func (copy SpecialFactory) move SpecialProduct' override abstract overrides VirtualFunction {{address:factory_movable}} 'Movable' 'func (copy Factory) move Product'
+|     |-ParmVarDecl {{address}} <col:36, col:60> this 'copy SpecialFactory'
+|     | `-ReferenceType {{address}} <col:41, col:60> 'copy'
+|     |   `-NamedType {{address}} <col:46, col:60> 'SpecialFactory'
+|     `-ReturnVarDecl {{address}} <col:62, col:81> 'move SpecialProduct'
+|       `-ReferenceType {{address}} <col:62, col:81> 'move'
+|         `-NamedType {{address}} <col:67, col:81> 'SpecialProduct'
+|-ConstructorDecl {{address:factory_constructor}} <line:23:1, col:18> Factory target Struct {{address:factory}} 'Factory' 'func () void'
+| `-CompoundStmt {{address}} <col:16, col:18>
+|-DestructorDecl {{address}} <line:25:1, col:18> Factory target Struct {{address:factory}} 'Factory' 'func () void'
+| `-CompoundStmt {{address}} <col:16, col:18>
+|-ConstructorDecl {{address}} <line:27:1, line:29:2> SpecialFactory target Struct {{address:special_factory}} 'SpecialFactory' 'func () void'
+| `-CompoundStmt {{address}} <line:27:23, line:29:2>
+|   `-ExprStmt {{address}} <line:28:3, col:29>
+|     `-InitializationExpr {{address}} <col:3, col:28> 'void'
+|       |-BaseSubobjectExpr {{address}} <col:3, col:15> 'Factory' lvalue .Factory Struct {{address:factory}} 'Factory'
+|       | `-ThisExpr {{address}} <col:3, col:7> 'SpecialFactory' lvalue this
+|       `-ConstructionExpr {{address}} <col:19, col:28> 'Factory' pure-rvalue base-subobject target <col:19, col:26> 'Factory' Constructor {{address:factory_constructor}} 'Factory' 'func () void'
+|-DestructorDecl {{address}} <line:31:1, col:25> SpecialFactory target Struct {{address:special_factory}} 'SpecialFactory' 'func () void'
+| `-CompoundStmt {{address}} <col:23, col:25>
+|-FunctionDecl {{address:observe_copy}} <line:33:1, col:36> Observe 'func (copy Product) void'
+| |-ParmVarDecl {{address}} <col:14, col:32> value 'copy Product'
+| | `-ReferenceType {{address}} <col:20, col:32> 'copy'
+| |   `-NamedType {{address}} <col:25, col:32> 'Product'
+| `-CompoundStmt {{address}} <col:34, col:36>
+|-FunctionDecl {{address:observe_special}} <line:35:1, col:43> Observe 'func (copy SpecialProduct) void'
+| |-ParmVarDecl {{address}} <col:14, col:39> value 'copy SpecialProduct'
+| | `-ReferenceType {{address}} <col:20, col:39> 'copy'
+| |   `-NamedType {{address}} <col:25, col:39> 'SpecialProduct'
+| `-CompoundStmt {{address}} <col:41, col:43>
+|-FunctionDecl {{address:consume_product}} <line:37:1, col:36> Consume 'func (move Product) void'
+| |-ParmVarDecl {{address}} <col:14, col:32> value 'move Product'
+| | `-ReferenceType {{address}} <col:20, col:32> 'move'
+| |   `-NamedType {{address}} <col:25, col:32> 'Product'
+| `-CompoundStmt {{address}} <col:34, col:36>
+|-FunctionDecl {{address:consume_special}} <line:39:1, col:43> Consume 'func (move SpecialProduct) void'
+| |-ParmVarDecl {{address}} <col:14, col:39> value 'move SpecialProduct'
+| | `-ReferenceType {{address}} <col:20, col:39> 'move'
+| |   `-NamedType {{address}} <col:25, col:39> 'SpecialProduct'
+| `-CompoundStmt {{address}} <col:41, col:43>
+`-FunctionDecl {{address}} <line:41:1, line:51:2> Use 'func (copy Factory, copy SpecialFactory) void'
+  |-ParmVarDecl {{address:use_factory}} <line:41:10, col:30> factory 'copy Factory'
+  | `-ReferenceType {{address}} <col:18, col:30> 'copy'
+  |   `-NamedType {{address}} <col:23, col:30> 'Factory'
+  |-ParmVarDecl {{address:use_special}} <col:32, col:59> special 'copy SpecialFactory'
+  | `-ReferenceType {{address}} <col:40, col:59> 'copy'
+  |   `-NamedType {{address}} <col:45, col:59> 'SpecialFactory'
+  `-CompoundStmt {{address}} <col:61, line:51:2>
+    |-DeclStmt {{address}} <line:42:3, col:50>
+    | `-VarGroupDecl {{address}} <col:3, col:50>
+    |   |-VarDecl {{address}} <col:7, col:28> base_pointer '*Product'
+    |   | `-PointerType {{address}} <col:20, col:28>
+    |   |   `-NamedType {{address}} <col:21, col:28> 'Product'
+    |   `-ReceiverCallExpr {{address}} <col:32, col:49> '*Product' pure-rvalue .
+    |     |-DeclRefExpr {{address}} <col:32, col:39> 'const Factory' lvalue ParmVar {{address:use_factory}} 'factory' 'copy Factory'
+    |     `-DeclRefExpr {{address}} <col:40, col:47> 'func (copy Factory) *Product' VirtualFunction {{address:factory_pointer}} 'Pointer' 'func (copy Factory) *Product'
+    |-DeclStmt {{address}} <line:43:3, col:60>
+    | `-VarGroupDecl {{address}} <col:3, col:60>
+    |   |-VarDecl {{address}} <col:7, col:38> special_pointer '*SpecialProduct'
+    |   | `-PointerType {{address}} <col:23, col:38>
+    |   |   `-NamedType {{address}} <col:24, col:38> 'SpecialProduct'
+    |   `-ReceiverCallExpr {{address}} <col:42, col:59> '*SpecialProduct' pure-rvalue .
+    |     |-DeclRefExpr {{address}} <col:42, col:49> 'const SpecialFactory' lvalue ParmVar {{address:use_special}} 'special' 'copy SpecialFactory'
+    |     `-DeclRefExpr {{address}} <col:50, col:57> 'func (copy SpecialFactory) *SpecialProduct' VirtualFunction {{address:special_pointer}} 'Pointer' 'func (copy SpecialFactory) *SpecialProduct'
+    |-DeclStmt {{address}} <line:44:3, col:53>
+    | `-VarGroupDecl {{address}} <col:3, col:53>
+    |   |-VarDecl {{address}} <col:7, col:31> base_mutable 'mut Product'
+    |   | `-ReferenceType {{address}} <col:20, col:31> 'mut'
+    |   |   `-NamedType {{address}} <col:24, col:31> 'Product'
+    |   `-ReceiverCallExpr {{address}} <col:35, col:52> 'Product' lvalue .
+    |     |-DeclRefExpr {{address}} <col:35, col:42> 'const Factory' lvalue ParmVar {{address:use_factory}} 'factory' 'copy Factory'
+    |     `-DeclRefExpr {{address}} <col:43, col:50> 'func (copy Factory) mut Product' VirtualFunction {{address:factory_mutable}} 'Mutable' 'func (copy Factory) mut Product'
+    |-DeclStmt {{address}} <line:45:3, col:63>
+    | `-VarGroupDecl {{address}} <col:3, col:63>
+    |   |-VarDecl {{address}} <col:7, col:41> special_mutable 'mut SpecialProduct'
+    |   | `-ReferenceType {{address}} <col:23, col:41> 'mut'
+    |   |   `-NamedType {{address}} <col:27, col:41> 'SpecialProduct'
+    |   `-ReceiverCallExpr {{address}} <col:45, col:62> 'SpecialProduct' lvalue .
+    |     |-DeclRefExpr {{address}} <col:45, col:52> 'const SpecialFactory' lvalue ParmVar {{address:use_special}} 'special' 'copy SpecialFactory'
+    |     `-DeclRefExpr {{address}} <col:53, col:60> 'func (copy SpecialFactory) mut SpecialProduct' VirtualFunction {{address:special_mutable}} 'Mutable' 'func (copy SpecialFactory) mut SpecialProduct'
+    |-ExprStmt {{address}} <line:47:3, col:31>
+    | `-CallExpr {{address}} <col:3, col:30> 'void'
+    |   |-DeclRefExpr {{address}} <col:3, col:10> 'func (copy Product) void' Function {{address:observe_copy}} 'Observe' 'func (copy Product) void'
+    |   `-ReceiverCallExpr {{address}} <col:11, col:29> 'const Product' lvalue .
+    |     |-DeclRefExpr {{address}} <col:11, col:18> 'const Factory' lvalue ParmVar {{address:use_factory}} 'factory' 'copy Factory'
+    |     `-DeclRefExpr {{address}} <col:19, col:27> 'func (copy Factory) copy Product' VirtualFunction {{address:factory_copyable}} 'Copyable' 'func (copy Factory) copy Product'
+    |-ExprStmt {{address}} <line:48:3, col:31>
+    | `-CallExpr {{address}} <col:3, col:30> 'void'
+    |   |-DeclRefExpr {{address}} <col:3, col:10> 'func (copy SpecialProduct) void' Function {{address:observe_special}} 'Observe' 'func (copy SpecialProduct) void'
+    |   `-ReceiverCallExpr {{address}} <col:11, col:29> 'const SpecialProduct' lvalue .
+    |     |-DeclRefExpr {{address}} <col:11, col:18> 'const SpecialFactory' lvalue ParmVar {{address:use_special}} 'special' 'copy SpecialFactory'
+    |     `-DeclRefExpr {{address}} <col:19, col:27> 'func (copy SpecialFactory) copy SpecialProduct' VirtualFunction {{address:special_copyable}} 'Copyable' 'func (copy SpecialFactory) copy SpecialProduct'
+    |-ExprStmt {{address}} <line:49:3, col:30>
+    | `-CallExpr {{address}} <col:3, col:29> 'void'
+    |   |-DeclRefExpr {{address}} <col:3, col:10> 'func (move Product) void' Function {{address:consume_product}} 'Consume' 'func (move Product) void'
+    |   `-ReceiverCallExpr {{address}} <col:11, col:28> 'Product' move-lvalue .
+    |     |-DeclRefExpr {{address}} <col:11, col:18> 'const Factory' lvalue ParmVar {{address:use_factory}} 'factory' 'copy Factory'
+    |     `-DeclRefExpr {{address}} <col:19, col:26> 'func (copy Factory) move Product' VirtualFunction {{address:factory_movable}} 'Movable' 'func (copy Factory) move Product'
+    `-ExprStmt {{address}} <line:50:3, col:30>
+      `-CallExpr {{address}} <col:3, col:29> 'void'
+        |-DeclRefExpr {{address}} <col:3, col:10> 'func (move SpecialProduct) void' Function {{address:consume_special}} 'Consume' 'func (move SpecialProduct) void'
+        `-ReceiverCallExpr {{address}} <col:11, col:28> 'SpecialProduct' move-lvalue .
+          |-DeclRefExpr {{address}} <col:11, col:18> 'const SpecialFactory' lvalue ParmVar {{address:use_special}} 'special' 'copy SpecialFactory'
+          `-DeclRefExpr {{address}} <col:19, col:26> 'func (copy SpecialFactory) move SpecialProduct' VirtualFunction {{address:special_movable}} 'Movable' 'func (copy SpecialFactory) move SpecialProduct'
