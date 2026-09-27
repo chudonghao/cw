@@ -10,8 +10,7 @@ English | [中文](README.zh.md)
 
 ## Language Documentation
 
-- [Language reference manual (Chinese)](LANGUAGE_REFERENCE_MANUAL.zh.md) — normative language rules
-- [EBNF grammar overview](EBNF.md) — auxiliary syntax documentation
+- [Language reference manual (Chinese)](LANGUAGE_REFERENCE_MANUAL.zh.md) — normative syntax and semantics
 
 ## Design Philosophy
 

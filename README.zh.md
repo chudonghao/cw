@@ -10,8 +10,7 @@
 
 ## 语言文档
 
-- [语言参考手册](LANGUAGE_REFERENCE_MANUAL.zh.md)（规范性语言规则）
-- [EBNF 语法概览](EBNF.md)（辅助语法文档）
+- [语言参考手册](LANGUAGE_REFERENCE_MANUAL.zh.md)（统一说明规范性语法与语义）
 
 ## 设计理念
 
