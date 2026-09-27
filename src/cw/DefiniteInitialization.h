@@ -8,7 +8,6 @@
 #include <cstddef>
 #include <vector>
 
-#include "ABI.h"
 #include "CFG.h"
 
 namespace cw {
@@ -37,16 +36,23 @@ struct DefiniteInitializationFinding {
   std::size_t intra_program_order{};  ///< Stable diagnostic order inside one source-level CFG region.
 };
 
+/// \brief Stable diagnostics and constructor completion boundaries, without AST mutation.
+/// Delegating constructors update initialization state but report no local completion boundaries.
+struct DefiniteInitializationResult {
+  std::vector<DefiniteInitializationFinding> findings;
+  std::vector<const ExprStmt*> this_initialization_completions;
+  bool this_complete_at_entry{};
+};
+
 /// \brief Performs fixed-point definite-initialization analysis over an execution-body CFG.
 class DefiniteInitializationAnalysis {
  public:
-  /// \brief Solves the CFG and returns stable findings in program-point order.
+  /// \brief Solves the CFG and returns stable diagnostics and constructor completion boundaries.
   ///
   /// The analysis neither emits diagnostics nor mutates the Semantic AST.
-  static std::vector<DefiniteInitializationFinding> Run(const FunctionDecl& function, const CFG& cfg, ABIKind abi);
+  static DefiniteInitializationResult Run(const FunctionDecl& function, const CFG& cfg);
   /// \brief Analyzes ordered global initialization without ending global object lifetimes at its exit.
-  static std::vector<DefiniteInitializationFinding> Run(const TranslationUnitDecl& translation_unit, const CFG& cfg,
-                                                        ABIKind abi);
+  static DefiniteInitializationResult Run(const TranslationUnitDecl& translation_unit, const CFG& cfg);
 };
 
 }  // namespace cw

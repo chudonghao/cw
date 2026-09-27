@@ -55,15 +55,16 @@ The cases, in registration order, are:
 24. `copy_move_construction`
 25. `explicit_destruction`
 26. `constructor_this`
-27. `operator_expression`
-28. `operator_function_address`
-29. `operator_function_call`
-30. `virtual_functions`
-31. `covariant_return`
-32. `virtual_interface_pointer`
-33. `nonvirtual_call`
-34. `callable_object`
-35. `fixed_array`
+27. `base_result_initialization`
+28. `operator_expression`
+29. `operator_function_address`
+30. `operator_function_call`
+31. `virtual_functions`
+32. `covariant_return`
+33. `virtual_interface_pointer`
+34. `nonvirtual_call`
+35. `callable_object`
+36. `fixed_array`
 
 ## Generating Clang References
 
@@ -79,7 +80,9 @@ Or generate all references:
 cmake --build build/default --target sema_case_clang_ast_all
 ```
 
-These non-default targets require Clang and Python 3 and are not run by normal builds or CI. CMake invokes Clang to dump the complete translation unit, writes the raw `.ast`, and runs `normalize_ast.py` to update `.ast.txt`. The script only normalizes an existing AST file and never reads CW files.
+These non-default targets require Clang and Python 3 and are not run by normal builds or tests.
+
+CMake invokes Clang to dump the complete translation unit, writes the raw `.ast`, and runs `normalize_ast.py` to update `.ast.txt`. The script only normalizes an existing AST file and never reads CW files.
 
 The normalizer removes top-level implicit built-in declarations while preserving source declarations and their nested implicit nodes. It replaces an address that occurs once with `{{address}}`. Repeated addresses receive numbered `{{address:N}}` placeholders in first-use order, and every later reference reuses the same placeholder. It replaces the absolute case source path with a stable relative path. Normalization writes atomically, so a failure does not overwrite an existing reference.
 

@@ -12,9 +12,7 @@ namespace cw::sema_detail {
 
 namespace {
 
-using boost::multiprecision::cpp_int;
-
-bool FitsType(const cpp_int& value, QualType type, const ASTContext& ast_context) {
+bool ConvertToType(llvm::APSInt& value, QualType type, const ASTContext& ast_context) {
   if (!type || type.GetTypePtr()->GetKind() == TypeKind::ComptimeInt) {
     return true;
   }
@@ -23,11 +21,25 @@ bool FitsType(const cpp_int& value, QualType type, const ASTContext& ast_context
     return false;
   }
   const unsigned width = ast_context.GetIntegerBitWidth(*integer);
-  if (integer->IsSignedInteger()) {
-    const cpp_int boundary = cpp_int{1} << (width - 1);
-    return value >= -boundary && value < boundary;
+  const bool is_signed = integer->IsSignedInteger();
+  const bool fits = is_signed ? (value.isSigned() ? value.isSignedIntN(width) : value.isIntN(width - 1))
+                              : (value.isNonNegative() && value.isIntN(width));
+  if (!fits) {
+    return false;
   }
-  return value >= 0 && value < (cpp_int{1} << width);
+  // Check the value before truncating or changing how its sign bit is interpreted.
+  value = value.extOrTrunc(width);
+  value.setIsSigned(is_signed);
+  return true;
+}
+
+void NegateExactInteger(llvm::APSInt& value) {
+  // An untyped sign must preserve the mathematical value, including the signed minimum.
+  const unsigned width = (value.isSigned() ? value.getSignificantBits() : value.getActiveBits()) + 1;
+  value = value.extOrTrunc(width);
+  value.setIsSigned(true);
+  value.negate();
+  value = value.trunc(value.getSignificantBits());
 }
 
 ConstantIntegerResult Failure(ConstantIntegerFailureKind kind, const Expr& expression) {
@@ -57,12 +69,23 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       if (const auto* failure = std::get_if<ConstantIntegerFailure>(&operand)) {
         return *failure;
       }
-      cpp_int value = std::get<cpp_int>(std::move(operand));
-      if (unary.op == expr::minus) {
-        value = -value;
+      auto value = std::get<llvm::APSInt>(std::move(operand));
+      if (!expression.type || expression.type.GetTypePtr()->GetKind() == TypeKind::ComptimeInt) {
+        if (unary.op == expr::minus) {
+          NegateExactInteger(value);
+        }
+        return value;
       }
-      if (!FitsType(value, expression.type, ast_context)) {
+      if (!ConvertToType(value, expression.type, ast_context)) {
         return Failure(ConstantIntegerFailureKind::NotRepresentable, expression);
+      }
+      if (unary.op == expr::minus) {
+        bool overflow = false;
+        const llvm::APInt zero(value.getBitWidth(), 0);
+        value = value.isSigned() ? zero.ssub_ov(value, overflow) : zero.usub_ov(value, overflow);
+        if (overflow) {
+          return Failure(ConstantIntegerFailureKind::NotRepresentable, expression);
+        }
       }
       return value;
     }
@@ -82,16 +105,30 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       if (const auto* failure = std::get_if<ConstantIntegerFailure>(&right)) {
         return *failure;
       }
-      // Compute exactly before checking the typed result; host overflow must not affect folding.
-      cpp_int value;
-      if (binary.op == expr::plus) {
-        value = std::get<cpp_int>(left) + std::get<cpp_int>(right);
-      } else if (binary.op == expr::minus) {
-        value = std::get<cpp_int>(left) - std::get<cpp_int>(right);
-      } else {
-        value = std::get<cpp_int>(left) * std::get<cpp_int>(right);
+      const auto* integer = expression.type ? expression.type.GetTypePtr()->AsBuiltinType() : nullptr;
+      if (!integer || !integer->IsInteger()) {
+        return Failure(ConstantIntegerFailureKind::NotInteger, expression);
       }
-      if (!FitsType(value, expression.type, ast_context)) {
+      auto left_value = std::get<llvm::APSInt>(std::move(left));
+      auto right_value = std::get<llvm::APSInt>(std::move(right));
+      if (!ConvertToType(left_value, expression.type, ast_context) ||
+          !ConvertToType(right_value, expression.type, ast_context)) {
+        return Failure(ConstantIntegerFailureKind::NotRepresentable, expression);
+      }
+      // Required constant evaluation rejects each overflow before evaluating its parent.
+      llvm::APSInt value(left_value.getBitWidth(), left_value.isUnsigned());
+      bool overflow = false;
+      if (binary.op == expr::plus) {
+        value =
+            value.isSigned() ? left_value.sadd_ov(right_value, overflow) : left_value.uadd_ov(right_value, overflow);
+      } else if (binary.op == expr::minus) {
+        value =
+            value.isSigned() ? left_value.ssub_ov(right_value, overflow) : left_value.usub_ov(right_value, overflow);
+      } else {
+        value =
+            value.isSigned() ? left_value.smul_ov(right_value, overflow) : left_value.umul_ov(right_value, overflow);
+      }
+      if (overflow) {
         return Failure(ConstantIntegerFailureKind::NotRepresentable, expression);
       }
       return value;
@@ -114,8 +151,8 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       if (const auto* failure = std::get_if<ConstantIntegerFailure>(&result)) {
         return *failure;
       }
-      const cpp_int& value = std::get<cpp_int>(result);
-      if (!FitsType(value, expression.type, ast_context)) {
+      auto value = std::get<llvm::APSInt>(std::move(result));
+      if (!ConvertToType(value, expression.type, ast_context)) {
         return Failure(ConstantIntegerFailureKind::NotRepresentable, expression);
       }
       return value;

@@ -59,6 +59,7 @@ class ASTDumper : public ASTVisitor {
   // Stmt
   void Visit(CompoundStmt& n) override;
   void Visit(ExprStmt& n) override;
+  void Visit(ImplicitThisInitializationCompleteStmt& n) override;
   void Visit(DeclStmt& n) override;
   void Visit(IfStmt& n) override;
   void Visit(WhileStmt& n) override;

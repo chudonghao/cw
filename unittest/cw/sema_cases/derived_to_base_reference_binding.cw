@@ -4,22 +4,22 @@ trivial struct Middle : Base {}
 
 trivial struct Derived : Middle {}
 
-func Exact(value copy Base) {}
+func Exact(value &copy Base) {}
 
-func Exact(value copy Derived) {}
+func Exact(value &copy Derived) {}
 
-func Near(value copy Base) {}
+func Near(value &copy Base) {}
 
-func Near(value copy Middle) {}
+func Near(value &copy Middle) {}
 
-func Receive(this copy Base) {}
+func Receive(this &copy Base) {}
 
-func ReturnBase(value copy Derived) copy Base {
+func ReturnBase(value &copy Derived) &copy Base {
   value
 }
 
-func DerivedToBaseReferenceBinding(value mut Derived, pointer *Derived) {
-  var base mut Base := value;
+func DerivedToBaseReferenceBinding(value &mut Derived, pointer *Derived) {
+  var base &mut Base := value;
 
   Exact(value);
   Near(value);

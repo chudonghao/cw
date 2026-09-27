@@ -1,0 +1,79 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address}} <base_result_initialization.cpp:1:1, line:5:1> line:1:8 referenced struct Base definition external-linkage
+| |-DefinitionData empty standard_layout has_user_declared_ctor can_const_default_init
+| | |-DefaultConstructor exists non_trivial user_provided defaulted_is_constexpr
+| | |-CopyConstructor trivial has_const_param needs_overload_resolution implicit_has_const_param
+| | |-MoveConstructor exists non_trivial user_declared
+| | |-CopyAssignment trivial has_const_param needs_overload_resolution implicit_has_const_param
+| | |-MoveAssignment
+| | `-Destructor non_trivial user_declared
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit referenced struct Base
+| |-CXXConstructorDecl {{address}} <line:2:3, col:11> col:3 used Base 'void ()' implicit-inline external-linkage
+| | `-CompoundStmt {{address}} <col:10, col:11>
+| |-CXXConstructorDecl {{address}} <line:3:3, col:17> col:3 used Base 'void (Base &&)' implicit-inline external-linkage
+| | |-ParmVarDecl {{address}} <col:8, col:12> col:14 'Base &&'
+| | `-CompoundStmt {{address}} <col:16, col:17>
+| |-CXXDestructorDecl {{address}} <line:4:3, col:12> col:3 used ~Base 'void () noexcept' implicit-inline external-linkage
+| | `-CompoundStmt {{address}} <col:11, col:12>
+| |-CXXConstructorDecl {{address:1}} <line:1:8> col:8 implicit constexpr Base 'void (const Base &)' inline default_delete trivial noexcept-unevaluated {{address:1}} external-linkage
+| | `-ParmVarDecl {{address}} <col:8> col:8 'const Base &'
+| `-CXXMethodDecl {{address:2}} <col:8> col:8 implicit operator= 'Base &(const Base &)' inline default_delete trivial noexcept-unevaluated {{address:2}} external-linkage
+|   `-ParmVarDecl {{address}} <col:8> col:8 'const Base &'
+|-FunctionDecl {{address:3}} <line:6:1, col:30> col:6 used Make 'Base ()' external-linkage
+| `-CompoundStmt {{address}} <col:13, col:30>
+|   `-ReturnStmt {{address}} <col:15, col:27>
+|     `-ExprWithCleanups {{address}} <col:22, col:27> 'Base'
+|       `-CXXBindTemporaryExpr {{address:4}} <col:22, col:27> 'Base' (CXXTemporary {{address:4}})
+|         `-CXXTemporaryObjectExpr {{address}} <col:22, col:27> 'Base' 'void ()'
+|-CXXRecordDecl {{address:5}} <line:7:1, line:12:1> line:7:8 referenced struct Derived definition external-linkage
+| |-DefinitionData empty standard_layout has_user_declared_ctor can_const_default_init
+| | |-DefaultConstructor exists non_trivial user_provided
+| | |-CopyConstructor trivial has_const_param needs_overload_resolution implicit_has_const_param
+| | |-MoveConstructor needs_overload_resolution
+| | |-CopyAssignment trivial has_const_param needs_overload_resolution implicit_has_const_param
+| | |-MoveAssignment needs_overload_resolution
+| | `-Destructor non_trivial user_declared needs_overload_resolution
+| |-public 'Base'
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit referenced struct Derived
+| |-CXXConstructorDecl {{address:6}} <line:8:3, col:11> col:3 Derived 'void ()' external-linkage
+| |-CXXConstructorDecl {{address:7}} <line:9:3, col:14> col:3 Derived 'void (int)' external-linkage
+| | `-ParmVarDecl {{address}} <col:11> col:14 'int'
+| |-CXXConstructorDecl {{address:8}} <line:10:3, col:15> col:3 Derived 'void (bool)' external-linkage
+| | `-ParmVarDecl {{address}} <col:11> col:15 'bool'
+| |-CXXDestructorDecl {{address}} <line:11:3, col:15> col:3 ~Derived 'void () noexcept' implicit-inline external-linkage
+| | `-CompoundStmt {{address}} <col:14, col:15>
+| |-CXXConstructorDecl {{address:9}} <line:7:8> col:8 implicit constexpr Derived 'void (const Derived &)' inline default_delete trivial noexcept-unevaluated {{address:9}} external-linkage
+| | `-ParmVarDecl {{address}} <col:8> col:8 'const Derived &'
+| `-CXXMethodDecl {{address:10}} <col:8> col:8 implicit operator= 'Derived &(const Derived &)' inline default_delete trivial noexcept-unevaluated {{address:10}} external-linkage
+|   `-ParmVarDecl {{address}} <col:8> col:8 'const Derived &'
+|-CXXConstructorDecl {{address}} parent {{address:5}} prev {{address:6}} <line:14:1, col:30> col:10 Derived 'void ()' external-linkage
+| |-CXXCtorInitializer 'Base'
+| | `-CXXConstructExpr {{address}} <col:22, col:27> 'Base' 'void ()'
+| `-CompoundStmt {{address}} <col:29, col:30>
+|-CXXConstructorDecl {{address}} parent {{address:5}} prev {{address:7}} <line:15:1, col:39> col:10 Derived 'void (int)' external-linkage
+| |-ParmVarDecl {{address}} <col:18> col:21 'int'
+| |-CXXCtorInitializer 'Base'
+| | `-ExprWithCleanups {{address}} <col:25, col:36> 'Base'
+| |   `-CXXConstructExpr {{address}} <col:25, col:36> 'Base' 'void (Base &&)'
+| |     `-MaterializeTemporaryExpr {{address}} <col:30, col:35> 'Base' xvalue
+| |       `-CXXBindTemporaryExpr {{address:11}} <col:30, col:35> 'Base' (CXXTemporary {{address:11}})
+| |         `-CallExpr {{address}} <col:30, col:35> 'Base'
+| |           `-ImplicitCastExpr {{address}} <col:30> 'Base (*)()' <FunctionToPointerDecay>
+| |             `-DeclRefExpr {{address}} <col:30> 'Base ()' lvalue Function {{address:3}} 'Make' 'Base ()'
+| `-CompoundStmt {{address}} <col:38, col:39>
+`-CXXConstructorDecl {{address}} parent {{address:5}} prev {{address:8}} <line:16:1, col:71> col:10 Derived 'void (bool)' external-linkage
+  |-ParmVarDecl {{address:12}} <col:18, col:23> col:23 used condition 'bool'
+  |-CXXCtorInitializer 'Base'
+  | `-ExprWithCleanups {{address}} <col:36, col:68> 'Base'
+  |   `-CXXConstructExpr {{address}} <col:36, col:68> 'Base' 'void (Base &&)'
+  |     `-MaterializeTemporaryExpr {{address}} <col:41, col:67> 'Base' xvalue
+  |       `-ConditionalOperator {{address}} <col:41, col:67> 'Base'
+  |         |-ImplicitCastExpr {{address}} <col:41> 'bool' <LValueToRValue>
+  |         | `-DeclRefExpr {{address}} <col:41> 'bool' lvalue ParmVar {{address:12}} 'condition' 'bool'
+  |         |-CXXBindTemporaryExpr {{address:13}} <col:53, col:58> 'Base' (CXXTemporary {{address:13}})
+  |         | `-CXXTemporaryObjectExpr {{address}} <col:53, col:58> 'Base' 'void ()'
+  |         `-CXXBindTemporaryExpr {{address:14}} <col:62, col:67> 'Base' (CXXTemporary {{address:14}})
+  |           `-CallExpr {{address}} <col:62, col:67> 'Base'
+  |             `-ImplicitCastExpr {{address}} <col:62> 'Base (*)()' <FunctionToPointerDecay>
+  |               `-DeclRefExpr {{address}} <col:62> 'Base ()' lvalue Function {{address:3}} 'Make' 'Base ()'
+  `-CompoundStmt {{address}} <col:70, col:71>

@@ -2,7 +2,8 @@ struct Base {
   int inherited;
   short hidden;
 };
-struct Value : Base {
+struct Middle : Base {};
+struct Value : Middle {
   unsigned int own;
   long long hidden;
 };
@@ -15,4 +16,12 @@ void MemberAccess(Value value, Value* pointer, const Value* const_pointer) {
   Make().own;
   pointer->own;
   const_pointer->own;
+  static_cast<Value&&>(value).inherited;
+  Make().inherited;
+  pointer->inherited;
+  const_pointer->inherited;
+}
+void ReadOnly(const Value& value) {
+  value.inherited;
+  static_cast<const Value&&>(value).inherited;
 }

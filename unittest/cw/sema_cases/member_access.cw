@@ -3,7 +3,9 @@ trivial struct Base {
   hidden i16;
 }
 
-trivial struct Value : Base {
+trivial struct Middle : Base {}
+
+trivial struct Value : Middle {
   own u32;
   hidden i64;
 }
@@ -20,4 +22,13 @@ func MemberAccess(value Value, pointer *Value, const_pointer *const Value) {
   Make().own;
   pointer->own;
   const_pointer->own;
+  (move value).inherited;
+  Make().inherited;
+  pointer->inherited;
+  const_pointer->inherited;
+}
+
+func ReadOnly(value &copy Value) {
+  value.inherited;
+  (move value).inherited;
 }

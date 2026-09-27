@@ -403,9 +403,8 @@ TEST(Lexer, TokenProperty) {
   EXPECT_EQ(lexer.Token().get<cw::IntegerProperty>().value, 0xAB);
   lexer.Advance();
   // 2^64 remains exact rather than overflowing uint64_t.
-  boost::multiprecision::cpp_int two_to_64 = 1;
-  two_to_64 <<= 64;
-  EXPECT_EQ(lexer.Token().get<cw::IntegerProperty>().value, two_to_64);
+  EXPECT_TRUE(
+      llvm::APSInt::isSameValue(lexer.Token().get<cw::IntegerProperty>().value, llvm::APSInt("18446744073709551616")));
   lexer.Advance();
   // 'a' (char) -> uint8_t character property
   EXPECT_EQ(lexer.Token().get<cw::CharacterProperty>().value, 'a');
@@ -421,29 +420,29 @@ TEST(Lexer, TokenProperty) {
   // 3.14 (double)
   {
     auto& prop = lexer.Token().get<cw::FloatProperty>();
-    EXPECT_TRUE(std::holds_alternative<double>(prop.value));
-    EXPECT_DOUBLE_EQ(std::get<double>(prop.value), 3.14);
+    EXPECT_EQ(&prop.value.getSemantics(), &llvm::APFloat::IEEEdouble());
+    EXPECT_EQ(prop.value.bitcastToAPInt().getZExtValue(), 0x40091eb851eb851fULL);
   }
   lexer.Advance();
   // 1.0f (float)
   {
     auto& prop = lexer.Token().get<cw::FloatProperty>();
-    EXPECT_TRUE(std::holds_alternative<float>(prop.value));
-    EXPECT_FLOAT_EQ(std::get<float>(prop.value), 1.0f);
+    EXPECT_EQ(&prop.value.getSemantics(), &llvm::APFloat::IEEEsingle());
+    EXPECT_EQ(prop.value.bitcastToAPInt().getZExtValue(), 0x3f800000U);
   }
   lexer.Advance();
   // 2.5e10 (double with exponent)
   {
     auto& prop = lexer.Token().get<cw::FloatProperty>();
-    EXPECT_TRUE(std::holds_alternative<double>(prop.value));
-    EXPECT_DOUBLE_EQ(std::get<double>(prop.value), 2.5e10);
+    EXPECT_EQ(&prop.value.getSemantics(), &llvm::APFloat::IEEEdouble());
+    EXPECT_EQ(prop.value.bitcastToAPInt().getZExtValue(), 0x42174876e8000000ULL);
   }
   lexer.Advance();
   // 1.5e-3F (float with exponent)
   {
     auto& prop = lexer.Token().get<cw::FloatProperty>();
-    EXPECT_TRUE(std::holds_alternative<float>(prop.value));
-    EXPECT_FLOAT_EQ(std::get<float>(prop.value), 1.5e-3f);
+    EXPECT_EQ(&prop.value.getSemantics(), &llvm::APFloat::IEEEsingle());
+    EXPECT_EQ(prop.value.bitcastToAPInt().getZExtValue(), 0x3ac49ba6U);
   }
   lexer.Advance();
 

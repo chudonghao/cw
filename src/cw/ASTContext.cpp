@@ -5,7 +5,6 @@
 
 #include "ASTContext.h"
 
-#include <climits>
 #include <memory>
 #include <utility>
 
@@ -31,7 +30,7 @@ unsigned ASTContext::GetIntegerBitWidth(const BuiltinType& type) const {
       return 64;
     case BuiltinTypeKind::ISize:
     case BuiltinTypeKind::USize:
-      return static_cast<unsigned>(sizeof(void*) * CHAR_BIT);
+      return target_info_.GetPointerBitWidth();
     default:
       BOOST_ASSERT(false && "type is not a built-in integer");
       return 0;
@@ -46,9 +45,37 @@ FloatingPointProperties ASTContext::GetFloatingPointProperties(const BuiltinType
   return {64, 53, 1024, -1074};
 }
 
-ASTContext::ASTContext(ABIKind abi) : abi_(abi), translation_unit_(std::make_unique<TranslationUnitDecl>()) {}
+ASTContext::ASTContext(TargetInfo target_info)
+    : target_info_(std::move(target_info)), translation_unit_(std::make_unique<TranslationUnitDecl>()) {}
 
 ASTContext::~ASTContext() = default;
+
+TypeLayoutResult ASTContext::GetTypeLayout(const Type& type) const {
+  const auto it = type_layouts_.find(&type);
+  if (it != type_layouts_.end()) {
+    return it->second;
+  }
+  return type_layouts_.emplace(&type, layout_detail::ComputeTypeLayout(*this, type)).first->second;
+}
+
+StructLayoutResult ASTContext::GetStructLayout(const StructDecl& declaration) const {
+  auto it = struct_layouts_.find(&declaration);
+  if (it == struct_layouts_.end()) {
+    it = struct_layouts_.emplace(&declaration, layout_detail::ComputeStructLayout(*this, declaration)).first;
+  }
+  if (const auto* failure = std::get_if<LayoutFailure>(&it->second)) {
+    return *failure;
+  }
+  return &std::get<StructLayout>(it->second);
+}
+
+const VTableLayout& ASTContext::GetVTableLayout(const StructDecl& declaration) const {
+  auto it = vtable_layouts_.find(&declaration);
+  if (it == vtable_layouts_.end()) {
+    it = vtable_layouts_.emplace(&declaration, layout_detail::ComputeVTableLayout(*this, declaration)).first;
+  }
+  return it->second;
+}
 
 TranslationUnitDecl* ASTContext::GetTranslationUnitDecl() { return translation_unit_.get(); }
 

@@ -18,39 +18,16 @@ bool IsLogicalOperator(const BinaryOperator& expression) {
   return expression.op == expr::ampamp || expression.op == expr::pipepipe;
 }
 
-bool IsAssignmentOperatorCall(const OperatorCallExpr& expression) {
-  if (expression.Args.size() != 2 || !expression.Args[0] || !expression.Args[1] || !expression.Callee ||
-      expression.Callee->GetKind() != NodeKind::DeclRefExpr) {
-    return false;
-  }
-  const ValueDecl* declaration = static_cast<const DeclRefExpr&>(*expression.Callee).declaration;
-  if (!declaration) {
-    return false;
-  }
-  switch (declaration->GetKind()) {
-    case NodeKind::FunctionDecl:
-    case NodeKind::VirtualFunctionDecl:
-      return static_cast<const FunctionDecl*>(declaration)->name == "=";
-    default:
-      return false;
-  }
-}
-
 void AppendChild(const std::unique_ptr<Expr>& child, std::vector<const Expr*>& children) {
   if (child) {
     children.push_back(child.get());
   }
 }
 
-std::vector<const Expr*> ExpressionChildren(const Expr& expression, ABIKind abi = ABIKind::Itanium) {
+std::vector<const Expr*> ExpressionChildren(const Expr& expression) {
   std::vector<const Expr*> children;
   auto append_arguments = [&](const auto& arguments) {
-    if (AreArgumentsEvaluatedRightToLeft(abi)) {
-      for (auto argument = arguments.rbegin(); argument != arguments.rend(); ++argument)
-        AppendChild(*argument, children);
-    } else {
-      for (const auto& argument : arguments) AppendChild(argument, children);
-    }
+    for (const auto& argument : arguments) AppendChild(argument, children);
   };
 
   switch (expression.GetKind()) {
@@ -110,13 +87,8 @@ std::vector<const Expr*> ExpressionChildren(const Expr& expression, ABIKind abi 
       const auto& call = static_cast<const ReceiverCallExpr&>(expression);
       // Sema has already made arrow dereference part of the receiver subtree.
       AppendChild(call.Callee, children);
-      if (!AreArgumentsEvaluatedRightToLeft(abi)) {
-        AppendChild(call.Receiver, children);
-      }
+      AppendChild(call.Receiver, children);
       append_arguments(call.Args);
-      if (AreArgumentsEvaluatedRightToLeft(abi)) {
-        AppendChild(call.Receiver, children);
-      }
       break;
     }
     case NodeKind::ConstructionExpr: {
@@ -179,19 +151,18 @@ bool RequiresSeparateCFGEvent(const Expr& expression) { return ContainsControlFl
 
 }  // namespace
 
-std::unique_ptr<CFG> CFGBuilder::Build(const FunctionDecl& function, ABIKind abi) {
+std::unique_ptr<CFG> CFGBuilder::Build(const FunctionDecl& function) {
   if (!function.Body) {
     return nullptr;
   }
-  return CFGBuilder(&function, abi).BuildFunction();
+  return CFGBuilder(&function).BuildFunction();
 }
 
-std::unique_ptr<CFG> CFGBuilder::Build(const TranslationUnitDecl& translation_unit, ABIKind abi) {
-  return CFGBuilder(nullptr, abi).BuildGlobals(translation_unit);
+std::unique_ptr<CFG> CFGBuilder::Build(const TranslationUnitDecl& translation_unit) {
+  return CFGBuilder(nullptr).BuildGlobals(translation_unit);
 }
 
-CFGBuilder::CFGBuilder(const FunctionDecl* function, ABIKind abi)
-    : function_(function), abi_(abi), cfg_(std::make_unique<CFG>()) {}
+CFGBuilder::CFGBuilder(const FunctionDecl* function) : function_(function), cfg_(std::make_unique<CFG>()) {}
 
 std::unique_ptr<CFG> CFGBuilder::BuildFunction() {
   BOOST_ASSERT(function_);
@@ -375,6 +346,8 @@ CFGBlock* CFGBuilder::BuildStatement(const Stmt& statement, CFGBlock& current) {
   switch (statement.GetKind()) {
     case NodeKind::CompoundStmt:
       return BuildCompound(static_cast<const CompoundStmt&>(statement), current);
+    case NodeKind::ImplicitThisInitializationCompleteStmt:
+      return &current;
     case NodeKind::ExprStmt: {
       const auto& expression_statement = static_cast<const ExprStmt&>(statement);
       if (!expression_statement.Expr) {
@@ -586,7 +559,7 @@ CFGBlock* CFGBuilder::BuildExpression(const Expr& expression, CFGBlock& current,
     }
     case NodeKind::OperatorCallExpr: {
       const auto& call = static_cast<const OperatorCallExpr&>(expression);
-      if (IsAssignmentOperatorCall(call)) {
+      if (call.IsSimpleAssignment()) {
         return BuildAssignmentOperatorCall(call, current);
       }
       break;
@@ -604,19 +577,41 @@ CFGBlock* CFGBuilder::BuildExpression(const Expr& expression, CFGBlock& current,
 CFGBlock* CFGBuilder::BuildGenericExpression(const Expr& expression, CFGBlock& current, CFGExpressionContext context) {
   CFGBlock* block = &current;
   std::vector<const Expr*> excluded_subexpressions;
-  const std::vector<const Expr*> children = ExpressionChildren(expression, abi_);
-  const bool ordered_call =
-      expression.GetKind() == NodeKind::CallExpr || expression.GetKind() == NodeKind::ReceiverCallExpr ||
-      expression.GetKind() == NodeKind::OperatorCallExpr || expression.GetKind() == NodeKind::ConstructionExpr ||
-      expression.GetKind() == NodeKind::DestructorCallExpr;
+  const std::vector<const Expr*> children = ExpressionChildren(expression);
   // Splitting every sibling preserves the evaluation before and after a branch.
-  // Other multi-operand forms retain their existing source-level region.
-  if ((children.size() == 1 || ordered_call) && std::any_of(children.begin(), children.end(), [](const Expr* child) {
-        return RequiresSeparateCFGEvent(*child);
-      })) {
+  // Expressions without internal control flow remain a single source-level region.
+  if (std::any_of(children.begin(), children.end(),
+                  [](const Expr* child) { return RequiresSeparateCFGEvent(*child); })) {
     for (const Expr* child : children) {
-      const CFGExpressionContext child_context =
-          expression.GetKind() == NodeKind::ParenExpr ? context : CFGExpressionContext::Ordinary;
+      CFGExpressionContext child_context = CFGExpressionContext::Ordinary;
+      switch (expression.GetKind()) {
+        case NodeKind::ParenExpr:
+          child_context = context;
+          break;
+        case NodeKind::MemberExpr:
+          if (static_cast<const MemberExpr&>(expression).op != expr::arrow) {
+            child_context = CFGExpressionContext::ObjectLocation;
+          }
+          break;
+        case NodeKind::BaseSubobjectExpr:
+          if (static_cast<const BaseSubobjectExpr&>(expression).op != expr::arrow) {
+            child_context = CFGExpressionContext::ObjectLocation;
+          }
+          break;
+        case NodeKind::SubscriptExpr:
+          if (child == static_cast<const SubscriptExpr&>(expression).Base.get()) {
+            child_context = CFGExpressionContext::ObjectLocation;
+          }
+          break;
+        case NodeKind::ImplicitCastExpr:
+        case NodeKind::MaterializeTemporaryExpr:
+          if (context == CFGExpressionContext::ObjectLocation) {
+            child_context = context;
+          }
+          break;
+        default:
+          break;
+      }
       block = BuildExpression(*child, *block, child_context);
       excluded_subexpressions.push_back(child);
     }
@@ -640,13 +635,16 @@ CFGBlock* CFGBuilder::BuildConditionalExpression(const ConditionalOperator& expr
   cfg_->Connect(*condition, then_entry, CFGEdgeKind::True);
   cfg_->Connect(*condition, else_entry, CFGEdgeKind::False);
 
+  // Locating a base still evaluates the selected conditional operand normally.
+  const CFGExpressionContext branch_context =
+      context == CFGExpressionContext::ObjectLocation ? CFGExpressionContext::Ordinary : context;
   CFGBlock* then_exit = &then_entry;
   if (expression.Then) {
-    then_exit = BuildExpression(*expression.Then, *then_exit, context);
+    then_exit = BuildExpression(*expression.Then, *then_exit, branch_context);
   }
   CFGBlock* else_exit = &else_entry;
   if (expression.Else) {
-    else_exit = BuildExpression(*expression.Else, *else_exit, context);
+    else_exit = BuildExpression(*expression.Else, *else_exit, branch_context);
   }
   cfg_->Connect(*then_exit, join, CFGEdgeKind::Unconditional);
   cfg_->Connect(*else_exit, join, CFGEdgeKind::Unconditional);
@@ -728,7 +726,7 @@ CFGBlock* CFGBuilder::BuildArrayValue(const ArrayValueExpr& expression, CFGBlock
 }
 
 CFGBlock* CFGBuilder::BuildAssignmentOperatorCall(const OperatorCallExpr& expression, CFGBlock& current) {
-  BOOST_ASSERT(IsAssignmentOperatorCall(expression));
+  BOOST_ASSERT(expression.IsSimpleAssignment());
   CFGBlock* block = &current;
   std::vector<const Expr*> operands;
 

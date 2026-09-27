@@ -55,9 +55,10 @@ class ASTVisitor {
   virtual void Visit(ReturnVarDecl& n);
   virtual void Visit(FieldDecl& n);
 
-  // Concrete Stmt (8)
+  // Concrete Stmt
   virtual void Visit(CompoundStmt& n);
   virtual void Visit(ExprStmt& n);
+  virtual void Visit(ImplicitThisInitializationCompleteStmt& n);
   virtual void Visit(DeclStmt& n);
   virtual void Visit(IfStmt& n);
   virtual void Visit(WhileStmt& n);

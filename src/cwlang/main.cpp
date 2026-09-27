@@ -7,12 +7,20 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <system_error>
 
 #include <boost/program_options.hpp>
 
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/ToolOutputFile.h>
+#include <llvm/Target/TargetMachine.h>
+
 #include "cw/ASTContext.h"
+#include "cw/CodeGen.h"
 #include "cw/Diagnostic.h"
 #include "cw/Lexer.h"
 #include "cw/Parser.h"
@@ -23,31 +31,76 @@ namespace fs = std::filesystem;
 namespace po = boost::program_options;
 
 class Compiler {
-  cw::Lexer lexer;
-  cw::Parser parser;
-  cw::Sema sema;
-  cw::DiagnosticEngine diagnostic_engine;
-
  public:
-  void Compile(const std::vector<cw::Source>* sources) {
-    cw::ASTContext ast_context;
+  bool Compile(const std::vector<cw::Source>& sources, const std::string& output_path) {
+    cw::DiagnosticEngine diagnostics;
+    diagnostics.SetSources(&sources);
+    auto target_info = cw::TargetInfo::CreateNative();
+    if (!target_info) {
+      diagnostics.Add(cw::kErrorDiagnostic, "compilation currently supports only native macOS arm64");
+      diagnostics.Dump(std::cerr);
+      return false;
+    }
+    auto target = cw::CodeGen::CreateTarget(*target_info, diagnostics);
+    llvm::LLVMContext llvm_context;
+    auto module = target ? Generate(sources, diagnostics, llvm_context, *target_info, *target) : nullptr;
+    if (module) {
+      std::error_code error;
+      llvm::ToolOutputFile output(output_path, error, llvm::sys::fs::OF_None);
+      if (error) {
+        diagnostics.Add(cw::kErrorDiagnostic, "cannot open output '" + output_path + "': " + error.message());
+      } else {
+        module->print(output.os(), nullptr);
+        output.os().close();
+        if (output.os().has_error()) {
+          diagnostics.Add(cw::kErrorDiagnostic,
+                          "cannot write output '" + output_path + "': " + output.os().error().message());
+          output.os().clear_error();
+        } else {
+          output.keep();
+        }
+      }
+    }
+    diagnostics.Dump(std::cerr);
+    return module && !diagnostics.HasErrors();
+  }
 
-    lexer.Reset(sources);
+ private:
+  std::unique_ptr<llvm::Module> Generate(const std::vector<cw::Source>& sources, cw::DiagnosticEngine& diagnostics,
+                                         llvm::LLVMContext& llvm_context, const cw::TargetInfo& target_info,
+                                         const llvm::TargetMachine& target) {
+    cw::ASTContext ast_context(target_info);
+    cw::Lexer lexer;
+    cw::Parser parser;
+    cw::Sema sema;
+
+    lexer.Reset(&sources);
     parser.SetLexer(&lexer);
     parser.SetASTContext(&ast_context);
-    parser.SetDiagnosticEngine(&diagnostic_engine);
+    parser.SetDiagnosticEngine(&diagnostics);
     parser();
+    if (diagnostics.HasErrors()) {
+      return nullptr;
+    }
 
-    sema.SetDiagnosticEngine(&diagnostic_engine);
-    sema.SetSources(sources);
+    sema.SetDiagnosticEngine(&diagnostics);
     sema.SetASTContext(&ast_context);
     sema();
+    if (diagnostics.HasErrors()) {
+      return nullptr;
+    }
+    cw::CodeGen codegen;
+    codegen.SetASTContext(&ast_context);
+    codegen.SetDiagnosticEngine(&diagnostics);
+    codegen.SetLLVMContext(&llvm_context);
+    codegen.SetTargetMachine(&target);
+    return codegen(sources.empty() ? "cw" : sources.front().path.string());
   }
 };
 
 class Machine {
-  std::vector<cw::Source> sources;
-  Compiler compiler;
+  std::vector<cw::Source> sources_;
+  Compiler compiler_;
 
  public:
   Machine() {}
@@ -70,7 +123,7 @@ class Machine {
       return false;
     }
 
-    sources.push_back({path, content});
+    sources_.push_back({path, content});
     return true;
   }
 
@@ -82,6 +135,9 @@ class Machine {
       if (!ReadSource(input, ec)) {
         return false;
       }
+    }
+    if (!inputs_from_args.empty()) {
+      return true;
     }
     std::string input;
     while (std::getline(std::cin, input)) {
@@ -99,8 +155,7 @@ class Machine {
     if (!CollectSources(inputs_from_args, ec)) {
       return false;
     }
-    compiler.Compile(&sources);
-    return true;
+    return compiler_.Compile(sources_, output_path);
   }
 };
 
@@ -147,7 +202,9 @@ int main(int argc, char* argv[]) {
   Machine machine;
   std::error_code ec;
   if (!machine.Run(files_from_args, output_path, ec)) {
-    std::cerr << "error: " << ec.message() << "\n";
+    if (ec) {
+      std::cerr << "error: " << ec.message() << "\n";
+    }
     return -1;
   }
   return 0;

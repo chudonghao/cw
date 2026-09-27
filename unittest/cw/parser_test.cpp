@@ -21,7 +21,7 @@
 class ParserTest : public ::testing::Test {
   std::vector<cw::Source> sources_;
   cw::Lexer lexer_;
-  cw::ASTContext ast_context_;
+  cw::ASTContext ast_context_{cw::TargetInfo::CreateNative().value()};
   cw::Parser parser_;
   cw::DiagnosticEngine diagnostic_engine_;
   std::size_t next_diagnostic_ = 0;
@@ -35,6 +35,7 @@ class ParserTest : public ::testing::Test {
     parsed_ = true;
 
     sources_ = std::move(sources);
+    diagnostic_engine_.SetSources(&sources_);
     lexer_.Reset(&sources_);
     parser_.SetLexer(&lexer_);
     parser_.SetASTContext(&ast_context_);
@@ -48,9 +49,11 @@ class ParserTest : public ::testing::Test {
 
     const auto& actual = diagnostics[next_diagnostic_++];
     EXPECT_EQ(actual.severity, severity);
-    EXPECT_EQ(actual.line, line);
-    EXPECT_EQ(actual.column, column);
     EXPECT_EQ(actual.message, std::string(message));
+    ASSERT_TRUE(actual.location.has_value());
+    const auto& location = *actual.location;
+    EXPECT_EQ(location.line, line);
+    EXPECT_EQ(location.column, column);
   }
 
   void ExpectError(int line, int column, std::string_view message) {
@@ -82,7 +85,7 @@ TEST_F(ParserTest, ProducesNoDiagnosticsForDeclarations) {
   Parse(R"(struct Base {}
 struct S : Base {
 virtual {
-func vf(this mut S, value i32) i32;
+func vf(this &mut S, value i32) i32;
 }
 field i32;
 next **S;
@@ -94,10 +97,10 @@ func operator()(callable *S) i32 {}
 ctor S() {}
 dtor S() {}
 func vf(owner *S) i32 {}
-func receiver(this copy S) {}
-func prefixed(var this copy S) {}
-func attributed(var(tag) this copy S) {}
-func operator-(this copy S) copy S { this }
+func receiver(this &copy S) {}
+func prefixed(var this &copy S) {}
+func attributed(var(tag) this &copy S) {}
+func operator-(this &copy S) &copy S { this }
 var x *S;
 var y, z := 1, 2;
 var block i32 := { 3 }
@@ -107,11 +110,11 @@ var block i32 := { 3 }
 TEST_F(ParserTest, ParsesVirtualInterfaceModifiers) {
   Parse(R"(struct S {
 virtual {
-func Concrete(this mut S);
-abstract func Abstract(this copy S);
-override func Override(this mut S);
-override abstract func Reabstract(this move S);
-abstract override func ReabstractReversed(this move S);
+func Concrete(this &mut S);
+abstract func Abstract(this &copy S);
+override func Override(this &mut S);
+override abstract func Reabstract(this &move S);
+abstract override func ReabstractReversed(this &move S);
 }
 })");
 }
@@ -119,9 +122,9 @@ abstract override func ReabstractReversed(this move S);
 TEST_F(ParserTest, RecoversDuplicateVirtualModifiersWithoutDiscardingTheBlock) {
   Parse(R"(struct S {
 virtual {
-abstract abstract func Bad(this mut S);
-override override func Bad(this mut S);
-abstract func Good(this mut S);
+abstract abstract func Bad(this &mut S);
+override override func Bad(this &mut S);
+abstract func Good(this &mut S);
 }
 field i32;
 })");
@@ -131,18 +134,18 @@ field i32;
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-StructDecl {{address}} <test.cw:1:1, line:8:2> S contains-errors
   |-VirtualDecl {{address}} <line:2:1, line:6:2> contains-errors
-  | |-VirtualFunctionDecl {{address}} <line:3:1, col:40> Bad abstract contains-errors
-  | | `-ParmVarDecl {{address}} <col:28, col:38> this
-  | |   `-ReferenceType {{address}} <col:33, col:38> 'mut'
-  | |     `-NamedType {{address}} <col:37, col:38> 'S'
-  | |-VirtualFunctionDecl {{address}} <line:4:1, col:40> Bad override contains-errors
-  | | `-ParmVarDecl {{address}} <col:28, col:38> this
-  | |   `-ReferenceType {{address}} <col:33, col:38> 'mut'
-  | |     `-NamedType {{address}} <col:37, col:38> 'S'
-  | `-VirtualFunctionDecl {{address}} <line:5:1, col:32> Good abstract
-  |   `-ParmVarDecl {{address}} <col:20, col:30> this
-  |     `-ReferenceType {{address}} <col:25, col:30> 'mut'
-  |       `-NamedType {{address}} <col:29, col:30> 'S'
+  | |-VirtualFunctionDecl {{address}} <line:3:1, col:41> Bad abstract contains-errors
+  | | `-ParmVarDecl {{address}} <col:28, col:39> this
+  | |   `-ReferenceType {{address}} <col:33, col:39> '&mut'
+  | |     `-NamedType {{address}} <col:38, col:39> 'S'
+  | |-VirtualFunctionDecl {{address}} <line:4:1, col:41> Bad override contains-errors
+  | | `-ParmVarDecl {{address}} <col:28, col:39> this
+  | |   `-ReferenceType {{address}} <col:33, col:39> '&mut'
+  | |     `-NamedType {{address}} <col:38, col:39> 'S'
+  | `-VirtualFunctionDecl {{address}} <line:5:1, col:33> Good abstract
+  |   `-ParmVarDecl {{address}} <col:20, col:31> this
+  |     `-ReferenceType {{address}} <col:25, col:31> '&mut'
+  |       `-NamedType {{address}} <col:30, col:31> 'S'
   `-FieldDecl {{address}} <line:7:1, col:11> field
     `-BuiltinType {{address}} <col:7, col:10> 'i32')");
 }
@@ -232,8 +235,8 @@ func higher(callback func (i32) void) func () *S {})");
 
 TEST_F(ParserTest, DumpsQualifiedAndReferenceTypeNodes) {
   Parse(R"(var pointer const *const i32;
-var signature *func (copy i32, *const i32) move i32;
-func refs(value mut *const i32, read copy i32, sink move i32) move i32 {}
+var signature *func (&copy i32, *const i32) &move i32;
+func refs(value &mut *const i32, read &copy i32, sink &move i32) &move i32 {}
 var duplicate const const i32;)");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
@@ -243,33 +246,33 @@ var duplicate const const i32;)");
 |     `-PointerType {{address}} <col:19, col:29>
 |       `-ConstType {{address}} <col:20, col:29>
 |         `-BuiltinType {{address}} <col:26, col:29> 'i32'
-|-VarGroupDecl {{address}} <line:2:1, col:53>
-| `-VarDecl {{address}} <col:5, col:52> signature
-|   `-PointerType {{address}} <col:15, col:52>
-|     `-FunctionType {{address}} <col:16, col:52>
-|       |-ReferenceType {{address}} <col:22, col:30> 'copy'
-|       | `-BuiltinType {{address}} <col:27, col:30> 'i32'
-|       |-PointerType {{address}} <col:32, col:42>
-|       | `-ConstType {{address}} <col:33, col:42>
-|       |   `-BuiltinType {{address}} <col:39, col:42> 'i32'
-|       `-ReferenceType {{address}} <col:44, col:52> 'move'
-|         `-BuiltinType {{address}} <col:49, col:52> 'i32'
-|-FunctionDecl {{address}} <line:3:1, col:74> refs
-| |-ParmVarDecl {{address}} <col:11, col:31> value
-| | `-ReferenceType {{address}} <col:17, col:31> 'mut'
-| |   `-PointerType {{address}} <col:21, col:31>
-| |     `-ConstType {{address}} <col:22, col:31>
-| |       `-BuiltinType {{address}} <col:28, col:31> 'i32'
-| |-ParmVarDecl {{address}} <col:33, col:46> read
-| | `-ReferenceType {{address}} <col:38, col:46> 'copy'
-| |   `-BuiltinType {{address}} <col:43, col:46> 'i32'
-| |-ParmVarDecl {{address}} <col:48, col:61> sink
-| | `-ReferenceType {{address}} <col:53, col:61> 'move'
-| |   `-BuiltinType {{address}} <col:58, col:61> 'i32'
-| |-ReturnVarDecl {{address}} <col:63, col:71>
-| | `-ReferenceType {{address}} <col:63, col:71> 'move'
-| |   `-BuiltinType {{address}} <col:68, col:71> 'i32'
-| `-CompoundStmt {{address}} <col:72, col:74>
+|-VarGroupDecl {{address}} <line:2:1, col:55>
+| `-VarDecl {{address}} <col:5, col:54> signature
+|   `-PointerType {{address}} <col:15, col:54>
+|     `-FunctionType {{address}} <col:16, col:54>
+|       |-ReferenceType {{address}} <col:22, col:31> '&copy'
+|       | `-BuiltinType {{address}} <col:28, col:31> 'i32'
+|       |-PointerType {{address}} <col:33, col:43>
+|       | `-ConstType {{address}} <col:34, col:43>
+|       |   `-BuiltinType {{address}} <col:40, col:43> 'i32'
+|       `-ReferenceType {{address}} <col:45, col:54> '&move'
+|         `-BuiltinType {{address}} <col:51, col:54> 'i32'
+|-FunctionDecl {{address}} <line:3:1, col:78> refs
+| |-ParmVarDecl {{address}} <col:11, col:32> value
+| | `-ReferenceType {{address}} <col:17, col:32> '&mut'
+| |   `-PointerType {{address}} <col:22, col:32>
+| |     `-ConstType {{address}} <col:23, col:32>
+| |       `-BuiltinType {{address}} <col:29, col:32> 'i32'
+| |-ParmVarDecl {{address}} <col:34, col:48> read
+| | `-ReferenceType {{address}} <col:39, col:48> '&copy'
+| |   `-BuiltinType {{address}} <col:45, col:48> 'i32'
+| |-ParmVarDecl {{address}} <col:50, col:64> sink
+| | `-ReferenceType {{address}} <col:55, col:64> '&move'
+| |   `-BuiltinType {{address}} <col:61, col:64> 'i32'
+| |-ReturnVarDecl {{address}} <col:66, col:75>
+| | `-ReferenceType {{address}} <col:66, col:75> '&move'
+| |   `-BuiltinType {{address}} <col:72, col:75> 'i32'
+| `-CompoundStmt {{address}} <col:76, col:78>
 `-VarGroupDecl {{address}} <line:4:1, col:31>
   `-VarDecl {{address}} <col:5, col:30> duplicate
     `-ConstType {{address}} <col:15, col:30>
@@ -278,18 +281,76 @@ var duplicate const const i32;)");
 }
 
 TEST_F(ParserTest, PreservesIncompleteQualifiedTypePrefixes) {
-  Parse("var broken const mut; var next i32;");
+  Parse("var broken const &mut; var next i32;");
 
-  ExpectError(0, 20,
-              "expected one of '[', 'virtual', 'const', 'mut', 'copy', 'move', '*', 'func', built-in type, identifier");
+  ExpectError(0, 21, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
-|-VarGroupDecl {{address}} <test.cw:1:1, col:21> contains-errors
-| `-VarDecl {{address}} <col:5, col:21> broken contains-errors
-|   `-ConstType {{address}} <col:12, col:21> contains-errors
-|     `-ReferenceType {{address}} <col:18, col:21> 'mut' contains-errors
-`-VarGroupDecl {{address}} <col:23, col:36>
-  `-VarDecl {{address}} <col:27, col:35> next
-    `-BuiltinType {{address}} <col:32, col:35> 'i32')");
+|-VarGroupDecl {{address}} <test.cw:1:1, col:22> contains-errors
+| `-VarDecl {{address}} <col:5, col:22> broken contains-errors
+|   `-ConstType {{address}} <col:12, col:22> contains-errors
+|     `-ReferenceType {{address}} <col:18, col:22> '&mut' contains-errors
+`-VarGroupDecl {{address}} <col:24, col:37>
+  `-VarDecl {{address}} <col:28, col:36> next
+    `-BuiltinType {{address}} <col:33, col:36> 'i32')");
+}
+
+TEST_F(ParserTest, AllowsWhitespaceAndCommentsBeforeReferenceModes) {
+  Parse(R"(var a & mut i32;
+var b &
+copy i32;
+var c & // reference mode
+move i32;)");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+|-VarGroupDecl {{address}} <test.cw:1:1, col:17>
+| `-VarDecl {{address}} <col:5, col:16> a
+|   `-ReferenceType {{address}} <col:7, col:16> '&mut'
+|     `-BuiltinType {{address}} <col:13, col:16> 'i32'
+|-VarGroupDecl {{address}} <line:2:1, line:3:10>
+| `-VarDecl {{address}} <line:2:5, line:3:9> b
+|   `-ReferenceType {{address}} <line:2:7, line:3:9> '&copy'
+|     `-BuiltinType {{address}} <col:6, col:9> 'i32'
+`-VarGroupDecl {{address}} <line:4:1, line:5:10>
+  `-VarDecl {{address}} <line:4:5, line:5:9> c
+    `-ReferenceType {{address}} <line:4:7, line:5:9> '&move'
+      `-BuiltinType {{address}} <col:6, col:9> 'i32')");
+}
+
+TEST_F(ParserTest, RequiresAnExplicitReferenceModeAndRecovers) {
+  Parse(R"(struct S {
+bare &i32;
+qualified &const i32;
+missing &;
+valid i32;
+}
+var tail &)");
+
+  ExpectError(1, 6, "expected one of 'mut', 'copy', 'move'");
+  ExpectError(2, 11, "expected one of 'mut', 'copy', 'move'");
+  ExpectError(3, 9, "expected one of 'mut', 'copy', 'move'");
+  ExpectError(6, 10, "expected one of 'mut', 'copy', 'move'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-StructDecl {{address}} <test.cw:1:1, line:6:2> S contains-errors
+| |-FieldDecl {{address}} <line:2:1, col:5> bare contains-errors
+| |-FieldDecl {{address}} <line:3:1, col:10> qualified contains-errors
+| |-FieldDecl {{address}} <line:4:1, col:8> missing contains-errors
+| `-FieldDecl {{address}} <line:5:1, col:11> valid
+|   `-BuiltinType {{address}} <col:7, col:10> 'i32'
+`-VarGroupDecl {{address}} <line:7:1, col:9> contains-errors
+  `-VarDecl {{address}} <col:5, col:9> tail contains-errors)");
+}
+
+TEST_F(ParserTest, RejectsReferenceModesWithoutAmpersands) {
+  Parse(R"(func Mut(value mut i32) {}
+func Copy(value copy i32) {}
+func Move(value move i32) {}
+var old mut i32;
+func Good(value &mut i32) {})");
+
+  ExpectError(0, 15, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(1, 16, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(2, 16, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(3, 8, "expected ':=' or ';'");
 }
 
 TEST_F(ParserTest, ProducesNoDiagnosticsForStatementsAndExpressions) {
@@ -451,11 +512,9 @@ var missing_return func ();
 var valid func () void;)");
 
   ExpectError(0, 22, "expected '('");
-  ExpectError(1, 23,
-              "expected one of '[', 'virtual', 'const', 'mut', 'copy', 'move', '*', 'func', built-in type, identifier");
+  ExpectError(1, 23, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
   ExpectError(2, 28, "expected ',' or ')'");
-  ExpectError(3, 26,
-              "expected one of '[', 'virtual', 'const', 'mut', 'copy', 'move', '*', 'func', built-in type, identifier");
+  ExpectError(3, 26, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-VarGroupDecl {{address}} <test.cw:1:1, col:22> contains-errors
@@ -506,10 +565,8 @@ bad ;
 good i32;
 worse **;
 })");
-  ExpectError(1, 4,
-              "expected one of '[', 'virtual', 'const', 'mut', 'copy', 'move', '*', 'func', built-in type, identifier");
-  ExpectError(3, 8,
-              "expected one of '[', 'virtual', 'const', 'mut', 'copy', 'move', '*', 'func', built-in type, identifier");
+  ExpectError(1, 4, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(3, 8, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
 }
 
 TEST_F(ParserTest, ReportsMissingFieldSemicolon) {
@@ -529,14 +586,12 @@ TEST_F(ParserTest, RecoversAtParameterSeparator) {
 
 TEST_F(ParserTest, ReportsMissingParameterType) {
   Parse("func f(x, y i32) {}");
-  ExpectError(0, 8,
-              "expected one of '[', 'virtual', 'const', 'mut', 'copy', 'move', '*', 'func', built-in type, identifier");
+  ExpectError(0, 8, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
 }
 
 TEST_F(ParserTest, ReportsMissingReturnPointee) {
   Parse("func f() * {}");
-  ExpectError(0, 11,
-              "expected one of '[', 'virtual', 'const', 'mut', 'copy', 'move', '*', 'func', built-in type, identifier");
+  ExpectError(0, 11, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
 }
 
 TEST_F(ParserTest, RequiresNamesForVarReturnDeclarationsAndRecoversAtDeclarationBoundaries) {
@@ -544,14 +599,14 @@ TEST_F(ParserTest, RequiresNamesForVarReturnDeclarationsAndRecoversAtDeclaration
 func Recovered() {}
 struct S {
 virtual {
-abstract func Bad(this mut S) var i32;
-func Recovered(this mut S);
+abstract func Bad(this &mut S) var i32;
+func Recovered(this &mut S);
 }
 field i32;
 })");
 
   ExpectError(0, 15, "expected identifier");
-  ExpectError(4, 34, "expected identifier");
+  ExpectError(4, 35, "expected identifier");
 }
 
 TEST_F(ParserTest, ReportsMissingVariableSemicolon) {
@@ -592,41 +647,41 @@ var ;)");
 
 TEST_F(ParserTest, DumpsDeclarationAndTypeNodes) {
   Parse(
-      "struct S : B { virtual { func vf(this mut S, p i32) i32; } field **Name; } "
+      "struct S : B { virtual { func vf(this &mut S, p i32) i32; } field **Name; } "
       "func f(x i32) i32 {} ctor S() {} dtor S() {} func v() {} var a, b := 1, 2;");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
-|-StructDecl {{address}} <test.cw:1:1, col:75> S : 'B'
-| |-VirtualDecl {{address}} <col:16, col:59>
-| | `-VirtualFunctionDecl {{address}} <col:26, col:57> vf
-| |   |-ParmVarDecl {{address}} <col:34, col:44> this
-| |   | `-ReferenceType {{address}} <col:39, col:44> 'mut'
-| |   |   `-NamedType {{address}} <col:43, col:44> 'S'
-| |   |-ParmVarDecl {{address}} <col:46, col:51> p
-| |   | `-BuiltinType {{address}} <col:48, col:51> 'i32'
-| |   `-ReturnVarDecl {{address}} <col:53, col:56>
-| |     `-BuiltinType {{address}} <col:53, col:56> 'i32'
-| `-FieldDecl {{address}} <col:60, col:73> field
-|   `-PointerType {{address}} <col:66, col:72>
-|     `-PointerType {{address}} <col:67, col:72>
-|       `-NamedType {{address}} <col:68, col:72> 'Name'
-|-FunctionDecl {{address}} <col:76, col:96> f
-| |-ParmVarDecl {{address}} <col:83, col:88> x
-| | `-BuiltinType {{address}} <col:85, col:88> 'i32'
-| |-ReturnVarDecl {{address}} <col:90, col:93>
-| | `-BuiltinType {{address}} <col:90, col:93> 'i32'
-| `-CompoundStmt {{address}} <col:94, col:96>
-|-ConstructorDecl {{address}} <col:97, col:108> S
-| `-CompoundStmt {{address}} <col:106, col:108>
-|-DestructorDecl {{address}} <col:109, col:120> S
-| `-CompoundStmt {{address}} <col:118, col:120>
-|-FunctionDecl {{address}} <col:121, col:132> v
-| `-CompoundStmt {{address}} <col:130, col:132>
-`-VarGroupDecl {{address}} <col:133, col:150>
-  |-VarDecl {{address}} <col:137, col:138> a
-  |-VarDecl {{address}} <col:140, col:141> b
-  |-IntegerLiteral {{address}} <col:145, col:146> 1
-  `-IntegerLiteral {{address}} <col:148, col:149> 2)");
+|-StructDecl {{address}} <test.cw:1:1, col:76> S : 'B'
+| |-VirtualDecl {{address}} <col:16, col:60>
+| | `-VirtualFunctionDecl {{address}} <col:26, col:58> vf
+| |   |-ParmVarDecl {{address}} <col:34, col:45> this
+| |   | `-ReferenceType {{address}} <col:39, col:45> '&mut'
+| |   |   `-NamedType {{address}} <col:44, col:45> 'S'
+| |   |-ParmVarDecl {{address}} <col:47, col:52> p
+| |   | `-BuiltinType {{address}} <col:49, col:52> 'i32'
+| |   `-ReturnVarDecl {{address}} <col:54, col:57>
+| |     `-BuiltinType {{address}} <col:54, col:57> 'i32'
+| `-FieldDecl {{address}} <col:61, col:74> field
+|   `-PointerType {{address}} <col:67, col:73>
+|     `-PointerType {{address}} <col:68, col:73>
+|       `-NamedType {{address}} <col:69, col:73> 'Name'
+|-FunctionDecl {{address}} <col:77, col:97> f
+| |-ParmVarDecl {{address}} <col:84, col:89> x
+| | `-BuiltinType {{address}} <col:86, col:89> 'i32'
+| |-ReturnVarDecl {{address}} <col:91, col:94>
+| | `-BuiltinType {{address}} <col:91, col:94> 'i32'
+| `-CompoundStmt {{address}} <col:95, col:97>
+|-ConstructorDecl {{address}} <col:98, col:109> S
+| `-CompoundStmt {{address}} <col:107, col:109>
+|-DestructorDecl {{address}} <col:110, col:121> S
+| `-CompoundStmt {{address}} <col:119, col:121>
+|-FunctionDecl {{address}} <col:122, col:133> v
+| `-CompoundStmt {{address}} <col:131, col:133>
+`-VarGroupDecl {{address}} <col:134, col:151>
+  |-VarDecl {{address}} <col:138, col:139> a
+  |-VarDecl {{address}} <col:141, col:142> b
+  |-IntegerLiteral {{address}} <col:146, col:147> 1
+  `-IntegerLiteral {{address}} <col:149, col:150> 2)");
 }
 
 TEST_F(ParserTest, PreservesVariableAttributesAndPerVariableOptionalType) {
@@ -818,7 +873,7 @@ TEST_F(ParserTest, ReservesThisFromDeclarationNames) {
 }
 
 TEST_F(ParserTest, RejectsAnonymousFirstParameters) {
-  Parse("func f(mut S) {}");
+  Parse("func f(&mut S) {}");
 
   ExpectError(0, 7, "expected one of 'var', identifier, 'this'");
 }
@@ -967,11 +1022,11 @@ func Use() { Empty(); })");
 TEST_F(ParserTest, RejectsSuffixVirtualModifiersAsOrdinarySyntaxErrors) {
   Parse(R"(struct Object {
 virtual {
-func Old(this mut Object) void override;
-abstract func Good(this copy Object) void;
+func Old(this &mut Object) void override;
+abstract func Good(this &copy Object) void;
 }
 })");
-  ExpectError(2, 31, "expected ';'");
+  ExpectError(2, 32, "expected ';'");
 }
 
 TEST_F(ParserTest, RestrictsTrivialModifierToStructDeclarations) {

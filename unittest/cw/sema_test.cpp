@@ -26,7 +26,7 @@
 class SemaTest : public ::testing::Test {
   std::vector<cw::Source> sources_;
   cw::Lexer lexer_;
-  cw::ASTContext ast_context_;
+  cw::ASTContext ast_context_{cw::TargetInfo::CreateNative().value()};
   cw::Parser parser_;
   cw::Sema sema_;
   cw::DiagnosticEngine diagnostic_engine_;
@@ -34,13 +34,12 @@ class SemaTest : public ::testing::Test {
   bool analyzed_ = false;
 
  protected:
-  explicit SemaTest(cw::ABIKind abi = cw::ABIKind::Itanium) : ast_context_(abi) {}
-
   void Analyze(std::string content, std::string path = "test.cw") {
     ASSERT_FALSE(analyzed_);
     analyzed_ = true;
 
     sources_ = {{std::move(path), std::move(content)}};
+    diagnostic_engine_.SetSources(&sources_);
     lexer_.Reset(&sources_);
     parser_.SetLexer(&lexer_);
     parser_.SetASTContext(&ast_context_);
@@ -48,7 +47,6 @@ class SemaTest : public ::testing::Test {
     parser_();
 
     sema_.SetDiagnosticEngine(&diagnostic_engine_);
-    sema_.SetSources(&sources_);
     sema_.SetASTContext(&ast_context_);
     sema_();
   }
@@ -60,12 +58,14 @@ class SemaTest : public ::testing::Test {
 
     const auto& actual = diagnostics[next_diagnostic_++];
     EXPECT_EQ(actual.severity, severity);
-    EXPECT_EQ(actual.line, line);
-    EXPECT_EQ(actual.column, column);
     EXPECT_EQ(actual.message, std::string(message));
-    ASSERT_EQ(actual.highlights.size(), 1);
-    EXPECT_EQ(actual.highlights.front().column, column);
-    EXPECT_EQ(actual.highlights.front().size, highlight_size);
+    ASSERT_TRUE(actual.location.has_value());
+    const auto& location = *actual.location;
+    EXPECT_EQ(location.line, line);
+    EXPECT_EQ(location.column, column);
+    ASSERT_EQ(location.highlights.size(), 1);
+    EXPECT_EQ(location.highlights.front().column, column);
+    EXPECT_EQ(location.highlights.front().size, highlight_size);
   }
 
   void ExpectError(int line, int column, std::string_view message, int highlight_size) {
@@ -105,20 +105,16 @@ class SemaTest : public ::testing::Test {
     std::string unexpected;
     for (std::size_t index = next_diagnostic_; index < diagnostics.size(); ++index) {
       const auto& diagnostic = diagnostics[index];
-      unexpected +=
-          "\n" + std::to_string(diagnostic.line) + ":" + std::to_string(diagnostic.column) + " " + diagnostic.message;
+      unexpected += "\n";
+      if (diagnostic.location) {
+        const auto& location = *diagnostic.location;
+        unexpected += std::to_string(location.line) + ":" + std::to_string(location.column) + " ";
+      }
+      unexpected += diagnostic.message;
     }
     EXPECT_EQ(next_diagnostic_, diagnostics.size()) << "unexpected diagnostic" << unexpected;
   }
 };
-
-class ConfiguredSemaTest : public SemaTest, public ::testing::WithParamInterface<cw::ABIKind> {
- protected:
-  ConfiguredSemaTest() : SemaTest(GetParam()) {}
-};
-
-INSTANTIATE_TEST_SUITE_P(ABIs, ConfiguredSemaTest, ::testing::Values(cw::ABIKind::Itanium, cw::ABIKind::Microsoft),
-                         [](const auto& info) { return info.param == cw::ABIKind::Itanium ? "Itanium" : "Microsoft"; });
 
 /// \brief Metadata for one external language feature case.
 struct LanguageFeatureCase {
@@ -162,6 +158,7 @@ INSTANTIATE_TEST_SUITE_P(
         LanguageFeatureCase{"copy_move_construction", "CopyMoveConstruction"},
         LanguageFeatureCase{"explicit_destruction", "ExplicitDestruction"},
         LanguageFeatureCase{"constructor_this", "ConstructorThis"},
+        LanguageFeatureCase{"base_result_initialization", "BaseResultInitialization"},
         LanguageFeatureCase{"operator_expression", "OperatorExpression"},
         LanguageFeatureCase{"operator_function_address", "OperatorFunctionAddress"},
         LanguageFeatureCase{"operator_function_call", "OperatorFunctionCall"},
@@ -173,6 +170,155 @@ INSTANTIATE_TEST_SUITE_P(
     LanguageFeatureCaseName);
 
 // Declarations, name conflicts, and type formation.
+
+TEST_F(SemaTest, RejectsObjectSizeBeyondTargetLimit) {
+  Analyze(R"(func Use(value &copy [2305843009213693952] u8) {})");
+  ExpectError(0, 21,
+              "array of 2305843009213693952 elements of type 'u8' is too large; maximum object size is "
+              "2305843009213693951 bytes",
+              24);
+}
+
+TEST_F(SemaTest, RejectsArrayLayoutMultiplicationOverflow) {
+  Analyze(R"(func Use(value &copy [4294967296] [4294967296] u8) {})");
+  ExpectError(0, 21,
+              "array of 4294967296 elements of type '[4294967296] u8' is too large; maximum object size is "
+              "2305843009213693951 bytes",
+              28);
+}
+
+TEST_F(SemaTest, ChecksElementLayoutInsideZeroLengthArrays) {
+  Analyze(R"(func Use(value &copy [0] [2305843009213693952] u8) {})");
+  ExpectError(0, 25,
+              "array of 2305843009213693952 elements of type 'u8' is too large; maximum object size is "
+              "2305843009213693951 bytes",
+              24);
+}
+
+TEST_F(SemaTest, ChecksLayoutInsideFunctionPointerSignatures) {
+  Analyze(R"(func Use(callback *func () &mut [2305843009213693952] u8) {})");
+  ExpectError(0, 32,
+              "array of 2305843009213693952 elements of type 'u8' is too large; maximum object size is "
+              "2305843009213693951 bytes",
+              24);
+}
+
+TEST_F(SemaTest, CountsCompleteEmptyObjectsInArrayLayout) {
+  Analyze(R"(trivial struct Empty {}
+func Use(value &copy [2305843009213693952] Empty) {})");
+  ExpectError(1, 21,
+              "array of 2305843009213693952 elements of type 'Empty' is too large; maximum object size is "
+              "2305843009213693951 bytes",
+              27);
+}
+
+TEST_F(SemaTest, ChecksUnusedStructLayoutAddition) {
+  Analyze(R"(trivial struct Huge {
+  first [1152921504606846976] u8;
+  second [1152921504606846976] u8;
+})");
+  ExpectError(2, 2, "structure 'Huge' is too large; maximum object size is 2305843009213693951 bytes", 32);
+}
+
+TEST_F(SemaTest, ChecksStructFieldPaddingInLayout) {
+  Analyze(R"(trivial struct Huge {
+  bytes [2305843009213693951] u8;
+  aligned [0] i64;
+})");
+  ExpectError(2, 2, "structure 'Huge' is too large; maximum object size is 2305843009213693951 bytes", 16);
+}
+
+TEST_F(SemaTest, ChecksStructTailPaddingInLayout) {
+  Analyze(R"(trivial struct Huge {
+  first i64;
+  tail [2305843009213693943] u8;
+})");
+  ExpectError(0, 15, "structure 'Huge' is too large; maximum object size is 2305843009213693951 bytes", 4);
+}
+
+TEST_F(SemaTest, ChecksInheritedFieldLayoutOverflow) {
+  Analyze(R"(trivial struct Base { bytes [2305843009213693951] u8; }
+trivial struct Derived : Base { tail u8; })");
+  ExpectError(1, 32, "structure 'Derived' is too large; maximum object size is 2305843009213693951 bytes", 8);
+}
+
+TEST_F(SemaTest, AcceptsTargetSizeBoundaryAndZeroLengthElementArrays) {
+  Analyze(R"(trivial struct Node { next *Node; }
+trivial struct Zero { values [0] i64; }
+func Use(bytes &copy [2305843009213693951] u8,
+         zero &copy [18446744073709551615] Zero,
+         next *Node) {})");
+}
+
+TEST_F(SemaTest, CountsVptrStorageAndReusesDynamicPrimaryBase) {
+  Analyze(R"(struct V { virtual { func F(this &copy V); } }
+func F(value &copy V) {}
+ctor V() {}
+dtor V() {}
+struct D : V {}
+ctor D() { this.V := V(); }
+dtor D() {}
+func Accept(a &copy [288230376151711743] V, b &copy [288230376151711743] D) {}
+func RejectV(value &copy [288230376151711744] V) {}
+func RejectD(value &copy [288230376151711744] D) {})");
+  ExpectError(8, 25,
+              "array of 288230376151711744 elements of type 'V' is too large; maximum object size is "
+              "2305843009213693951 bytes",
+              22);
+  ExpectError(9, 25,
+              "array of 288230376151711744 elements of type 'D' is too large; maximum object size is "
+              "2305843009213693951 bytes",
+              22);
+}
+
+TEST_F(SemaTest, CountsVptrBeforeOrdinaryBase) {
+  Analyze(R"(struct Base { number i32; }
+ctor Base() { this.number := 0; }
+dtor Base() {}
+struct Dynamic : Base { virtual { func F(this &copy Dynamic); } }
+func F(value &copy Dynamic) {}
+ctor Dynamic() { this.Base := Base(); }
+dtor Dynamic() {}
+func Accept(value &copy [144115188075855871] Dynamic) {}
+func Reject(value &copy [144115188075855872] Dynamic) {})");
+  ExpectError(8, 24,
+              "array of 144115188075855872 elements of type 'Dynamic' is too large; maximum object size is "
+              "2305843009213693951 bytes",
+              28);
+}
+
+TEST_F(SemaTest, CountsVirtualInterfacePointerStorage) {
+  Analyze(R"(trivial struct Object {}
+func Accept(value &copy [144115188075855871] virtual *func(&copy Object) void) {}
+func Reject(value &copy [144115188075855872] virtual *func(&copy Object) void) {})");
+  ExpectError(2, 24,
+              "array of 144115188075855872 elements of type 'virtual *func (&copy Object) void' is too large; "
+              "maximum object size is 2305843009213693951 bytes",
+              53);
+}
+
+TEST_F(SemaTest, RequiresCopyOrMoveForFactoryBaseInitialization) {
+  Analyze(R"(struct Base {}
+ctor Base() {}
+dtor Base() {}
+func Make() Base { Base() }
+func Complete() Base { Make() }
+struct Derived : Base {}
+ctor Derived() { this.Base := Make(); }
+dtor Derived() {})");
+  ExpectError(6, 30, "cannot initialize base subobject 'Base': no move or copy constructor is available for 'Base'", 6);
+}
+
+TEST_F(SemaTest, RequiresCopyOrMoveForConditionalBaseInitialization) {
+  Analyze(R"(struct Base {}
+ctor Base() {}
+dtor Base() {}
+struct Derived : Base {}
+ctor Derived(condition bool) { this.Base := condition ? Base() : Base(); }
+dtor Derived() {})");
+  ExpectError(4, 44, "cannot initialize base subobject 'Base': no move or copy constructor is available for 'Base'",
+              27);
+}
 
 TEST_F(SemaTest, ReportsDuplicateTypesWithPreviousDeclarationNote) {
   Analyze(R"(trivial struct S {}
@@ -393,32 +539,50 @@ func higher(callback *func (i32) void) *func () *S { null })");
 
 TEST_F(SemaTest, PreservesNestedConstAndReferenceFunctionTypes) {
   Analyze(R"(trivial struct S {}
-func qualified(value *const S, callback *func (copy S, *const S) move S) *const S {})");
+func qualified(value *const S, callback *func (&copy S, *const S) &move S) *const S {})");
 
-  ExpectError(1, 82, "function return object is not initialized on this path", 2);
+  ExpectError(1, 84, "function return object is not initialized on this path", 2);
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address}} <test.cw:1:1, col:20> S trivial
-`-FunctionDecl {{address}} <line:2:1, col:85> qualified 'func (*const S, *func (copy S, *const S) move S) *const S' contains-errors
+`-FunctionDecl {{address}} <line:2:1, col:87> qualified 'func (*const S, *func (&copy S, *const S) &move S) *const S' contains-errors
   |-ParmVarDecl {{address}} <col:16, col:30> value '*const S'
   | `-PointerType {{address}} <col:22, col:30>
   |   `-ConstType {{address}} <col:23, col:30>
   |     `-NamedType {{address}} <col:29, col:30> 'S'
-  |-ParmVarDecl {{address}} <col:32, col:72> callback '*func (copy S, *const S) move S'
-  | `-PointerType {{address}} <col:41, col:72>
-  |   `-FunctionType {{address}} <col:42, col:72>
-  |     |-ReferenceType {{address}} <col:48, col:54> 'copy'
-  |     | `-NamedType {{address}} <col:53, col:54> 'S'
-  |     |-PointerType {{address}} <col:56, col:64>
-  |     | `-ConstType {{address}} <col:57, col:64>
-  |     |   `-NamedType {{address}} <col:63, col:64> 'S'
-  |     `-ReferenceType {{address}} <col:66, col:72> 'move'
-  |       `-NamedType {{address}} <col:71, col:72> 'S'
-  |-ReturnVarDecl {{address}} <col:74, col:82> '*const S'
-  | `-PointerType {{address}} <col:74, col:82>
-  |   `-ConstType {{address}} <col:75, col:82>
-  |     `-NamedType {{address}} <col:81, col:82> 'S'
-  `-CompoundStmt {{address}} <col:83, col:85> contains-errors)");
+  |-ParmVarDecl {{address}} <col:32, col:74> callback '*func (&copy S, *const S) &move S'
+  | `-PointerType {{address}} <col:41, col:74>
+  |   `-FunctionType {{address}} <col:42, col:74>
+  |     |-ReferenceType {{address}} <col:48, col:55> '&copy'
+  |     | `-NamedType {{address}} <col:54, col:55> 'S'
+  |     |-PointerType {{address}} <col:57, col:65>
+  |     | `-ConstType {{address}} <col:58, col:65>
+  |     |   `-NamedType {{address}} <col:64, col:65> 'S'
+  |     `-ReferenceType {{address}} <col:67, col:74> '&move'
+  |       `-NamedType {{address}} <col:73, col:74> 'S'
+  |-ReturnVarDecl {{address}} <col:76, col:84> '*const S'
+  | `-PointerType {{address}} <col:76, col:84>
+  |   `-ConstType {{address}} <col:77, col:84>
+  |     `-NamedType {{address}} <col:83, col:84> 'S'
+  `-CompoundStmt {{address}} <col:85, col:87> contains-errors)");
+}
+
+TEST_F(SemaTest, TreatsSeparatedReferenceModesAsTheSameFunctionSignature) {
+  Analyze(R"(func Mut(value &mut i32) {}
+func Mut(value & mut i32) {}
+func Copy(value &copy i32) {}
+func Copy(value &
+copy i32) {}
+func Move(value &move i32) {}
+func Move(value & // reference mode
+move i32) {})");
+
+  ExpectError(1, 5, "redefinition of function 'Mut'", 0);
+  ExpectNote(0, 5, "previous declaration is here", 0);
+  ExpectError(3, 5, "redefinition of function 'Copy'", 0);
+  ExpectNote(2, 5, "previous declaration is here", 0);
+  ExpectError(6, 5, "redefinition of function 'Move'", 0);
+  ExpectNote(5, 5, "previous declaration is here", 0);
 }
 
 TEST_F(SemaTest, ReportsAllUnknownTypesInsideFunctionTypes) {
@@ -448,23 +612,23 @@ var pointer *func (MissingPointee) void;)");
 }
 
 TEST_F(SemaTest, RejectsInvalidReferenceStructuresAndUses) {
-  Analyze(R"(trivial struct S { field mut i32; }
-var global mut i32;
-func invalid(a const const i32, b mut const i32, c const mut i32, d mut copy i32, e *mut i32, f copy void, g move func () void) {}
+  Analyze(R"(trivial struct S { field &mut i32; }
+var global &mut i32;
+func invalid(a const const i32, b &mut const i32, c const &mut i32, d &mut &copy i32, e *&mut i32, f &copy void, g &move func () void) {}
 func interfaces(a const i32) const i32 {})");
 
-  ExpectError(0, 25, "field type 'mut i32' is not an object type", 7);
+  ExpectError(0, 25, "field type '&mut i32' is not an object type", 8);
   ExpectError(2, 15, "duplicate 'const' qualifier on the same object layer", 15);
-  ExpectError(2, 34, "reference referent must not be const-qualified", 13);
-  ExpectError(2, 51, "a reference type cannot be const-qualified", 13);
-  ExpectError(2, 68, "a reference cannot refer to another reference type", 12);
-  ExpectError(2, 84, "pointer type cannot have a reference pointee", 8);
-  ExpectError(2, 96, "reference referent 'void' is not an object type", 9);
-  ExpectError(2, 109, "reference referent 'func () void' is not an object type", 17);
+  ExpectError(2, 34, "reference referent must not be const-qualified", 14);
+  ExpectError(2, 52, "a reference type cannot be const-qualified", 14);
+  ExpectError(2, 70, "a reference cannot refer to another reference type", 14);
+  ExpectError(2, 88, "pointer type cannot have a reference pointee", 9);
+  ExpectError(2, 101, "reference referent 'void' is not an object type", 10);
+  ExpectError(2, 115, "reference referent 'func () void' is not an object type", 18);
   ExpectError(3, 18, "by-value parameter type cannot be top-level const-qualified", 9);
   ExpectError(3, 29, "by-value return type cannot be top-level const-qualified", 9);
   ExpectError(1, 4, "global variable declaration requires an initializer", 0);
-  ExpectError(1, 11, "global reference variables are not currently supported", 7);
+  ExpectError(1, 11, "global reference variables are not currently supported", 8);
 }
 
 TEST_F(SemaTest, RejectsBareVoidObjectDeclarations) {
@@ -487,9 +651,9 @@ TEST_F(SemaTest, AcceptsWellFormedFunctionLikeDeclarations) {
   Analyze(R"(struct S {}
 struct T {}
 func f() {}
-func operator+(value copy S) {}
+func operator+(value &copy S) {}
 func operator[](base *S, index i32) i32 { 0 }
-func operator()(callable copy S) i32 { 0 }
+func operator()(callable &copy S) i32 { 0 }
 ctor S(value i32) {}
 ctor S() {}
 dtor S() {}
@@ -542,14 +706,14 @@ TEST_F(SemaTest, AllowsDirectFieldsToHideIndirectBaseProjections) {
   Analyze(R"(trivial struct Root { value i32; }
 trivial struct Middle : Root {}
 trivial struct Derived : Middle { Root i32; }
-func Check(value copy Derived) { value.Root; value.Middle.Root.value; })");
+func Check(value &copy Derived) { value.Root; value.Middle.Root.value; })");
 }
 
 TEST_F(SemaTest, TracksInitializationThroughAnIndirectBaseProjection) {
   Analyze(R"(trivial struct Root { value i32; }
 trivial struct Middle : Root {}
 trivial struct Derived : Middle {}
-func Initialize(source copy Root) {
+func Initialize(source &copy Root) {
   var value Derived;
   value.Root := source;
   value;
@@ -561,13 +725,13 @@ TEST_F(SemaTest, RejectsDuplicateAndNonObjectFieldsAndInheritanceCycles) {
 trivial struct Self : Self {}
 trivial struct A : B {}
 trivial struct B : A {}
-trivial struct BadFields { nothing void; callable func () void; link mut i32; callback *func () void; })");
+trivial struct BadFields { nothing void; callable func () void; link &mut i32; callback *func () void; })");
 
   ExpectError(0, 34, "duplicate field 'x' in struct 'Duplicate'", 0);
   ExpectNote(0, 27, "previous field declaration is here", 0);
   ExpectError(4, 35, "field type 'void' is not an object type", 4);
   ExpectError(4, 50, "field type 'func () void' is not an object type", 12);
-  ExpectError(4, 69, "field type 'mut i32' is not an object type", 7);
+  ExpectError(4, 69, "field type '&mut i32' is not an object type", 8);
   ExpectError(1, 22, "inheritance cycle involving struct 'Self'", 4);
   ExpectError(3, 19, "inheritance cycle involving struct 'A'", 1);
 }
@@ -598,150 +762,154 @@ func later(value i32) { value; })");
 // Virtual interfaces, overrides, and abstract types.
 
 TEST_F(SemaTest, AssociatesVirtualDefinitionsAndSelectsVirtualInterfacesForCalls) {
-  Analyze(R"(func Draw(object copy Base) {}
-func Measure(receiver copy Base) {}
+  Analyze(R"(func Draw(object &copy Base) {}
+func Measure(receiver &copy Base) {}
 struct Base {
   virtual {
-    func Draw(this copy Base);
-    abstract func Measure(receiver copy Base);
+    func Draw(this &copy Base);
+    abstract func Measure(receiver &copy Base);
   }
 }
 ctor Base() {}
 dtor Base() {}
-func Use(value copy Base) {
+func Use(value &copy Base) {
   Draw(value);
   value.Measure();
 })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
-|-FunctionDecl {{address:draw_definition}} <test.cw:1:1, col:31> Draw 'func (copy Base) void' virtual-declaration VirtualFunction {{address:draw_interface}} 'Draw' 'func (copy Base) void'
-| |-ParmVarDecl {{address}} <col:11, col:27> object 'copy Base'
-| | `-ReferenceType {{address}} <col:18, col:27> 'copy'
-| |   `-NamedType {{address}} <col:23, col:27> 'Base'
-| `-CompoundStmt {{address}} <col:29, col:31>
-|-FunctionDecl {{address:measure_definition}} <line:2:1, col:36> Measure 'func (copy Base) void' virtual-declaration VirtualFunction {{address:measure_interface}} 'Measure' 'func (copy Base) void'
-| |-ParmVarDecl {{address}} <col:14, col:32> receiver 'copy Base'
-| | `-ReferenceType {{address}} <col:23, col:32> 'copy'
-| |   `-NamedType {{address}} <col:28, col:32> 'Base'
-| `-CompoundStmt {{address}} <col:34, col:36>
+|-FunctionDecl {{address:draw_definition}} <test.cw:1:1, col:32> Draw 'func (&copy Base) void' virtual-declaration VirtualFunction {{address:draw_interface}} 'Draw' 'func (&copy Base) void'
+| |-ParmVarDecl {{address}} <col:11, col:28> object '&copy Base'
+| | `-ReferenceType {{address}} <col:18, col:28> '&copy'
+| |   `-NamedType {{address}} <col:24, col:28> 'Base'
+| `-CompoundStmt {{address}} <col:30, col:32>
+|-FunctionDecl {{address:measure_definition}} <line:2:1, col:37> Measure 'func (&copy Base) void' virtual-declaration VirtualFunction {{address:measure_interface}} 'Measure' 'func (&copy Base) void'
+| |-ParmVarDecl {{address}} <col:14, col:33> receiver '&copy Base'
+| | `-ReferenceType {{address}} <col:23, col:33> '&copy'
+| |   `-NamedType {{address}} <col:29, col:33> 'Base'
+| `-CompoundStmt {{address}} <col:35, col:37>
 |-StructDecl {{address:base}} <line:3:1, line:8:2> Base abstract
 | `-VirtualDecl {{address}} <line:4:3, line:7:4>
-|   |-VirtualFunctionDecl {{address:draw_interface}} <line:5:5, col:31> Draw 'func (copy Base) void' definition Function {{address:draw_definition}} 'Draw' 'func (copy Base) void'
-|   | `-ParmVarDecl {{address}} <col:15, col:29> this 'copy Base'
-|   |   `-ReferenceType {{address}} <col:20, col:29> 'copy'
-|   |     `-NamedType {{address}} <col:25, col:29> 'Base'
-|   `-VirtualFunctionDecl {{address:measure_interface}} <line:6:5, col:47> Measure 'func (copy Base) void' abstract definition Function {{address:measure_definition}} 'Measure' 'func (copy Base) void'
-|     `-ParmVarDecl {{address}} <col:27, col:45> receiver 'copy Base'
-|       `-ReferenceType {{address}} <col:36, col:45> 'copy'
-|         `-NamedType {{address}} <col:41, col:45> 'Base'
+|   |-VirtualFunctionDecl {{address:draw_interface}} <line:5:5, col:32> Draw 'func (&copy Base) void' definition Function {{address:draw_definition}} 'Draw' 'func (&copy Base) void'
+|   | `-ParmVarDecl {{address}} <col:15, col:30> this '&copy Base'
+|   |   `-ReferenceType {{address}} <col:20, col:30> '&copy'
+|   |     `-NamedType {{address}} <col:26, col:30> 'Base'
+|   `-VirtualFunctionDecl {{address:measure_interface}} <line:6:5, col:48> Measure 'func (&copy Base) void' abstract definition Function {{address:measure_definition}} 'Measure' 'func (&copy Base) void'
+|     `-ParmVarDecl {{address}} <col:27, col:46> receiver '&copy Base'
+|       `-ReferenceType {{address}} <col:36, col:46> '&copy'
+|         `-NamedType {{address}} <col:42, col:46> 'Base'
 |-ConstructorDecl {{address}} <line:9:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
 | `-CompoundStmt {{address}} <col:13, col:15>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <line:10:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
 | `-CompoundStmt {{address}} <col:13, col:15>
-`-FunctionDecl {{address}} <line:11:1, line:14:2> Use 'func (copy Base) void'
-  |-ParmVarDecl {{address:value}} <line:11:10, col:25> value 'copy Base'
-  | `-ReferenceType {{address}} <col:16, col:25> 'copy'
-  |   `-NamedType {{address}} <col:21, col:25> 'Base'
-  `-CompoundStmt {{address}} <col:27, line:14:2>
+`-FunctionDecl {{address}} <line:11:1, line:14:2> Use 'func (&copy Base) void'
+  |-ParmVarDecl {{address:value}} <line:11:10, col:26> value '&copy Base'
+  | `-ReferenceType {{address}} <col:16, col:26> '&copy'
+  |   `-NamedType {{address}} <col:22, col:26> 'Base'
+  `-CompoundStmt {{address}} <col:28, line:14:2>
     |-ExprStmt {{address}} <line:12:3, col:15>
     | `-CallExpr {{address}} <col:3, col:14> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (copy Base) void' VirtualFunction {{address:draw_interface}} 'Draw' 'func (copy Base) void'
-    |   `-DeclRefExpr {{address}} <col:8, col:13> 'const Base' lvalue ParmVar {{address:value}} 'value' 'copy Base'
+    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy Base) void' VirtualFunction {{address:draw_interface}} 'Draw' 'func (&copy Base) void'
+    |   `-DeclRefExpr {{address}} <col:8, col:13> 'const Base' lvalue ParmVar {{address:value}} 'value' '&copy Base'
     `-ExprStmt {{address}} <line:13:3, col:19>
       `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' .
-        |-DeclRefExpr {{address}} <col:3, col:8> 'const Base' lvalue ParmVar {{address:value}} 'value' 'copy Base'
-        `-DeclRefExpr {{address}} <col:9, col:16> 'func (copy Base) void' VirtualFunction {{address:measure_interface}} 'Measure' 'func (copy Base) void')");
+        |-DeclRefExpr {{address}} <col:3, col:8> 'const Base' lvalue ParmVar {{address:value}} 'value' '&copy Base'
+        `-DeclRefExpr {{address}} <col:9, col:16> 'func (&copy Base) void' VirtualFunction {{address:measure_interface}} 'Measure' 'func (&copy Base) void'
+)");
 }
 
 TEST_F(SemaTest, RejectsVirtualDeclarationParameterAndReturnNameConflicts) {
   Analyze(R"(struct S {
   virtual {
-    abstract func F(s copy S, x i32, x bool);
-    func G(s copy S, x i32) var x i32;
+    abstract func F(s &copy S, x i32, x bool);
+    func G(s &copy S, x i32) var x i32;
   }
 }
 ctor S() {}
 dtor S() {}
-func G(receiver copy S, value i32) i32 { value })");
+func G(receiver &copy S, value i32) i32 { value })");
 
-  ExpectError(2, 37, "redefinition of variable 'x'", 1);
-  ExpectNote(2, 30, "previous declaration is here", 1);
-  ExpectError(3, 32, "redefinition of variable 'x'", 1);
-  ExpectNote(3, 21, "previous declaration is here", 1);
+  ExpectError(2, 38, "redefinition of variable 'x'", 1);
+  ExpectNote(2, 31, "previous declaration is here", 1);
+  ExpectError(3, 33, "redefinition of variable 'x'", 1);
+  ExpectNote(3, 22, "previous declaration is here", 1);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:s}} <test.cw:1:1, line:6:2> S contains-errors
 | `-VirtualDecl {{address}} <line:2:3, line:5:4> contains-errors
-|   |-VirtualFunctionDecl {{address}} <line:3:5, col:46> F 'func (copy S, i32, bool) void' abstract contains-errors
-|   | |-ParmVarDecl {{address}} <col:21, col:29> s 'copy S'
-|   | | `-ReferenceType {{address}} <col:23, col:29> 'copy'
-|   | |   `-NamedType {{address}} <col:28, col:29> 'S'
-|   | |-ParmVarDecl {{address}} <col:31, col:36> x 'i32'
-|   | | `-BuiltinType {{address}} <col:33, col:36> 'i32'
-|   | `-ParmVarDecl {{address}} <col:38, col:44> x 'bool' contains-errors
-|   |   `-BuiltinType {{address}} <col:40, col:44> 'bool'
-|   `-VirtualFunctionDecl {{address}} <line:4:5, col:39> G 'func (copy S, i32) i32' contains-errors
-|     |-ParmVarDecl {{address}} <col:12, col:20> s 'copy S'
-|     | `-ReferenceType {{address}} <col:14, col:20> 'copy'
-|     |   `-NamedType {{address}} <col:19, col:20> 'S'
-|     |-ParmVarDecl {{address}} <col:22, col:27> x 'i32'
-|     | `-BuiltinType {{address}} <col:24, col:27> 'i32'
-|     `-ReturnVarDecl {{address}} <col:29, col:38> x 'i32' contains-errors
-|       `-BuiltinType {{address}} <col:35, col:38> 'i32'
+|   |-VirtualFunctionDecl {{address}} <line:3:5, col:47> F 'func (&copy S, i32, bool) void' abstract contains-errors
+|   | |-ParmVarDecl {{address}} <col:21, col:30> s '&copy S'
+|   | | `-ReferenceType {{address}} <col:23, col:30> '&copy'
+|   | |   `-NamedType {{address}} <col:29, col:30> 'S'
+|   | |-ParmVarDecl {{address}} <col:32, col:37> x 'i32'
+|   | | `-BuiltinType {{address}} <col:34, col:37> 'i32'
+|   | `-ParmVarDecl {{address}} <col:39, col:45> x 'bool' contains-errors
+|   |   `-BuiltinType {{address}} <col:41, col:45> 'bool'
+|   `-VirtualFunctionDecl {{address}} <line:4:5, col:40> G 'func (&copy S, i32) i32' contains-errors
+|     |-ParmVarDecl {{address}} <col:12, col:21> s '&copy S'
+|     | `-ReferenceType {{address}} <col:14, col:21> '&copy'
+|     |   `-NamedType {{address}} <col:20, col:21> 'S'
+|     |-ParmVarDecl {{address}} <col:23, col:28> x 'i32'
+|     | `-BuiltinType {{address}} <col:25, col:28> 'i32'
+|     `-ReturnVarDecl {{address}} <col:30, col:39> x 'i32' contains-errors
+|       `-BuiltinType {{address}} <col:36, col:39> 'i32'
 |-ConstructorDecl {{address}} <line:7:1, col:12> S target Struct {{address:s}} 'S' 'func () void'
 | `-CompoundStmt {{address}} <col:10, col:12>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <line:8:1, col:12> S target Struct {{address:s}} 'S' 'func () void'
 | `-CompoundStmt {{address}} <col:10, col:12>
-`-FunctionDecl {{address}} <line:9:1, col:49> G 'func (copy S, i32) i32'
-  |-ParmVarDecl {{address}} <col:8, col:23> receiver 'copy S'
-  | `-ReferenceType {{address}} <col:17, col:23> 'copy'
-  |   `-NamedType {{address}} <col:22, col:23> 'S'
-  |-ParmVarDecl {{address:value}} <col:25, col:34> value 'i32'
-  | `-BuiltinType {{address}} <col:31, col:34> 'i32'
-  |-ReturnVarDecl {{address:result}} <col:36, col:39> 'i32'
-  | `-BuiltinType {{address}} <col:36, col:39> 'i32'
-  `-CompoundStmt {{address}} <col:40, col:49>
-    `-ImplicitResultInitializationExpr {{address}} <col:42, col:47> 'void' ReturnVar {{address:result}} 'i32'
-      `-ImplicitCastExpr {{address}} <col:42, col:47> 'i32' pure-rvalue <LValueToRValue>
-        `-DeclRefExpr {{address}} <col:42, col:47> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32')");
+`-FunctionDecl {{address}} <line:9:1, col:50> G 'func (&copy S, i32) i32'
+  |-ParmVarDecl {{address}} <col:8, col:24> receiver '&copy S'
+  | `-ReferenceType {{address}} <col:17, col:24> '&copy'
+  |   `-NamedType {{address}} <col:23, col:24> 'S'
+  |-ParmVarDecl {{address:value}} <col:26, col:35> value 'i32'
+  | `-BuiltinType {{address}} <col:32, col:35> 'i32'
+  |-ReturnVarDecl {{address:result}} <col:37, col:40> 'i32'
+  | `-BuiltinType {{address}} <col:37, col:40> 'i32'
+  `-CompoundStmt {{address}} <col:41, col:50>
+    `-ImplicitResultInitializationExpr {{address}} <col:43, col:48> 'void' ReturnVar {{address:result}} 'i32'
+      `-ImplicitCastExpr {{address}} <col:43, col:48> 'i32' pure-rvalue <LValueToRValue>
+        `-DeclRefExpr {{address}} <col:43, col:48> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+)");
 }
 
 TEST_F(SemaTest, ExcludesVirtualInterfacesWithNameConflictsFromOverloads) {
-  Analyze(R"(func Use(s copy S) bool { F(s, 1, 2) }
+  Analyze(R"(func Use(s &copy S) bool { F(s, 1, 2) }
 struct S {
-  virtual { abstract func F(s copy S, x i32, x i32) i32; }
+  virtual { abstract func F(s &copy S, x i32, x i32) i32; }
 }
 ctor S() {}
 dtor S() {}
-func F(s copy S, first i64, second i64) bool { true })");
+func F(s &copy S, first i64, second i64) bool { true })");
 
-  ExpectError(2, 45, "redefinition of variable 'x'", 1);
-  ExpectNote(2, 38, "previous declaration is here", 1);
+  ExpectError(2, 46, "redefinition of variable 'x'", 1);
+  ExpectNote(2, 39, "previous declaration is here", 1);
 }
 
 TEST_F(SemaTest, KeepsVirtualRecoveryForDefinitionsWithParameterNameConflicts) {
   Analyze(R"(struct S {
-  virtual { func F(s copy S, x i32) i32; }
+  virtual { func F(s &copy S, x i32) i32; }
 }
-func F(value copy S, value i32) i32 { 1 }
+func F(value &copy S, value i32) i32 { 1 }
 ctor S() {}
 dtor S() {}
-func Use(s copy S) i32 { F(s, 1) })");
+func Use(s &copy S) i32 { F(s, 1) })");
 
-  ExpectError(3, 21, "redefinition of variable 'value'", 5);
+  ExpectError(3, 22, "redefinition of variable 'value'", 5);
   ExpectNote(3, 7, "previous declaration is here", 5);
 }
 
 TEST_F(SemaTest, KeepsParameterAndReturnNamesLocalToEachVirtualDeclaration) {
   Analyze(R"(struct S {
   virtual {
-    func F(receiver copy S, value i32) var result i32;
-    abstract func G(receiver copy S, value i32) var result i32;
+    func F(receiver &copy S, value i32) var result i32;
+    abstract func G(receiver &copy S, value i32) var result i32;
   }
 }
-func F(object copy S, input i32) var output i32 { input }
+func F(object &copy S, input i32) var output i32 { input }
 ctor S() {}
 dtor S() {}
-func Use(receiver copy S) i32 { F(receiver, 1) + G(receiver, 2) })");
+func Use(receiver &copy S) i32 { F(receiver, 1) + G(receiver, 2) })");
 }
 
 TEST_F(SemaTest, DiagnosesNonVirtualCallsWithUnsupportedCallees) {
@@ -760,14 +928,14 @@ nonvirtual S();
 TEST_F(SemaTest, DiagnosesNonVirtualCallsWithoutViableOrdinaryCandidates) {
   Analyze(R"(struct Abstract {
 virtual {
-abstract func Missing(this copy Abstract);
-abstract func Present(this copy Abstract);
+abstract func Missing(this &copy Abstract);
+abstract func Present(this &copy Abstract);
 }
 }
 func Present(value i32) {}
 ctor Abstract() {}
 dtor Abstract() {}
-func Use(value copy Abstract) {
+func Use(value &copy Abstract) {
 value.nonvirtual Missing();
 nonvirtual Missing(value);
 nonvirtual Present();
@@ -781,10 +949,10 @@ nonvirtual Present();
 
 TEST_F(SemaTest, DiagnosesOrdinaryFunctionRedefinitionBeforeVirtualDefinitionAssociation) {
   Analyze(R"(struct S {
-  virtual { func Draw(self copy S); }
+  virtual { func Draw(self &copy S); }
 }
-func Draw(self copy S) {}
-func Draw(object copy S) {}
+func Draw(self &copy S) {}
+func Draw(object &copy S) {}
 ctor S() {}
 dtor S() {})");
 
@@ -793,14 +961,14 @@ dtor S() {})");
 }
 
 TEST_F(SemaTest, AssociatesOnlyTheExactOrdinaryOverloadWithAVirtualFunction) {
-  Analyze(R"(func Draw(self copy S, value i32) {}
+  Analyze(R"(func Draw(self &copy S, value i32) {}
 struct S {
-  virtual { func Draw(self copy S); }
+  virtual { func Draw(self &copy S); }
 }
-func Draw(self copy S) {}
+func Draw(self &copy S) {}
 ctor S() {}
 dtor S() {}
-func Use(self copy S) {
+func Use(self &copy S) {
   Draw(self);
   Draw(self, 1);
 })");
@@ -808,13 +976,13 @@ func Use(self copy S) {
 
 TEST_F(SemaTest, RejectsIncompatibleVirtualDefinitionReturnWithoutOrdinaryFallback) {
   Analyze(R"(struct S {
-  virtual { func Value(self copy S) i32; }
+  virtual { func Value(self &copy S) i32; }
 }
-func Value(self copy S) u32 { 0 }
+func Value(self &copy S) u32 { 0 }
 ctor S() {}
 dtor S() {})");
 
-  ExpectError(3, 24,
+  ExpectError(3, 25,
               "return type 'u32' of matching function definition does not match return type 'i32' of virtual function "
               "'Value'",
               3);
@@ -823,24 +991,24 @@ dtor S() {})");
 
 TEST_F(SemaTest, AvoidsMissingDefinitionCascadeAfterAnInvalidMatchingDeclaration) {
   Analyze(R"(struct S {
-  virtual { func Value(this copy S) i32; }
+  virtual { func Value(this &copy S) i32; }
 }
-func Value(this copy S) Missing {}
+func Value(this &copy S) Missing {}
 ctor S() {}
 dtor S() {}
-func Use(value copy S) {
+func Use(value &copy S) {
   value.Value();
   nonvirtual Value(value);
   value.nonvirtual Value();
 })");
 
-  ExpectError(3, 24, "unknown type 'Missing'", 7);
+  ExpectError(3, 25, "unknown type 'Missing'", 7);
 }
 
 TEST_F(SemaTest, ReportsSharedNameConflictsWithoutDependentVirtualDiagnostics) {
   Analyze(R"(trivial struct Clash {}
-struct S { virtual { func Clash(this copy S); } }
-func Clash(this copy S) {}
+struct S { virtual { func Clash(this &copy S); } }
+func Clash(this &copy S) {}
 ctor S() {}
 dtor S() {})");
 
@@ -852,22 +1020,22 @@ dtor S() {})");
 
 TEST_F(SemaTest, EstablishesExplicitOverridesAndAllowsReabstraction) {
   Analyze(R"(struct Base {
-  virtual { abstract func Draw(self copy Base); }
+  virtual { abstract func Draw(self &copy Base); }
 }
 struct Middle : Base {
-  virtual { override func Draw(self copy Middle); }
+  virtual { override func Draw(self &copy Middle); }
 }
 struct Leaf : Middle {
-  virtual { abstract override func Draw(self copy Leaf); }
+  virtual { abstract override func Draw(self &copy Leaf); }
 }
-func Draw(self copy Middle) {}
+func Draw(self &copy Middle) {}
 ctor Base() {}
 dtor Base() {}
 ctor Middle() { this.Base := Base(); }
 dtor Middle() {}
 ctor Leaf() { this.Middle := Middle(); }
 dtor Leaf() {}
-func Use(middle copy Middle, leaf copy Leaf) {
+func Use(middle &copy Middle, leaf &copy Leaf) {
   middle.Draw();
   leaf.Draw();
 })");
@@ -878,18 +1046,18 @@ TEST_F(SemaTest, AcceptsCovariantVirtualReturnTypes) {
 trivial struct SpecialProduct : Product {}
 struct Factory {
   virtual {
-    abstract func Pointer(this copy Factory) *const Product;
-    abstract func Mutable(this copy Factory) mut Product;
-    abstract func Copyable(this copy Factory) copy Product;
-    abstract func Movable(this copy Factory) move Product;
+    abstract func Pointer(this &copy Factory) *const Product;
+    abstract func Mutable(this &copy Factory) &mut Product;
+    abstract func Copyable(this &copy Factory) &copy Product;
+    abstract func Movable(this &copy Factory) &move Product;
   }
 }
 struct SpecialFactory : Factory {
   virtual {
-    override abstract func Pointer(this copy SpecialFactory) *SpecialProduct;
-    override abstract func Mutable(this copy SpecialFactory) mut SpecialProduct;
-    override abstract func Copyable(this copy SpecialFactory) mut SpecialProduct;
-    override abstract func Movable(this copy SpecialFactory) move SpecialProduct;
+    override abstract func Pointer(this &copy SpecialFactory) *SpecialProduct;
+    override abstract func Mutable(this &copy SpecialFactory) &mut SpecialProduct;
+    override abstract func Copyable(this &copy SpecialFactory) &mut SpecialProduct;
+    override abstract func Movable(this &copy SpecialFactory) &move SpecialProduct;
   }
 }
 ctor Factory() {}
@@ -902,24 +1070,24 @@ TEST_F(SemaTest, PreservesStaticCovariantResultsAcrossVirtualCallForms) {
   Analyze(R"(trivial struct Product {}
 trivial struct SpecialProduct : Product {}
 struct Factory {
-  virtual { func Create(this copy Factory, value *SpecialProduct) *Product; }
+  virtual { func Create(this &copy Factory, value *SpecialProduct) *Product; }
 }
-func Create(this copy Factory, value *SpecialProduct) *Product { value }
+func Create(this &copy Factory, value *SpecialProduct) *Product { value }
 struct SpecialFactory : Factory {
-  virtual { override func Create(this copy SpecialFactory, value *SpecialProduct) *SpecialProduct; }
+  virtual { override func Create(this &copy SpecialFactory, value *SpecialProduct) *SpecialProduct; }
 }
-func Create(this copy SpecialFactory, value *SpecialProduct) *SpecialProduct { value }
+func Create(this &copy SpecialFactory, value *SpecialProduct) *SpecialProduct { value }
 ctor Factory() {}
 dtor Factory() {}
 ctor SpecialFactory() { this.Factory := Factory(); }
 dtor SpecialFactory() {}
-func Use(factory copy Factory, special copy SpecialFactory, value *SpecialProduct) {
+func Use(factory &copy Factory, special &copy SpecialFactory, value *SpecialProduct) {
   var direct_base *Product := Create(factory, value);
   var direct_special *SpecialProduct := Create(special, value);
   var receiver_base *Product := factory.Create(value);
   var receiver_special *SpecialProduct := special.Create(value);
-  var base_slot virtual *func (copy Factory, *SpecialProduct) *Product := &Create;
-  var special_slot virtual *func (copy SpecialFactory, *SpecialProduct) *SpecialProduct := &Create;
+  var base_slot virtual *func (&copy Factory, *SpecialProduct) *Product := &Create;
+  var special_slot virtual *func (&copy SpecialFactory, *SpecialProduct) *SpecialProduct := &Create;
   var indirect_base *Product := base_slot(factory, value);
   var indirect_special *SpecialProduct := special_slot(special, value);
   var nonvirtual_base *Product := nonvirtual Create(factory, value);
@@ -933,20 +1101,20 @@ trivial struct Leaf : Root {}
 trivial struct Other {}
 struct Base {
   virtual {
-    abstract func Unrelated(this copy Base) *Root;
-    abstract func Reverse(this copy Base) *Leaf;
-    abstract func ConstLoss(this copy Base) *Root;
-    abstract func Deep(this copy Base) **Root;
-    abstract func Mixed(this copy Base) *Root;
+    abstract func Unrelated(this &copy Base) *Root;
+    abstract func Reverse(this &copy Base) *Leaf;
+    abstract func ConstLoss(this &copy Base) *Root;
+    abstract func Deep(this &copy Base) **Root;
+    abstract func Mixed(this &copy Base) *Root;
   }
 }
 struct Derived : Base {
   virtual {
-    override abstract func Unrelated(this copy Derived) *Other;
-    override abstract func Reverse(this copy Derived) *Root;
-    override abstract func ConstLoss(this copy Derived) *const Leaf;
-    override abstract func Deep(this copy Derived) **Leaf;
-    override abstract func Mixed(this copy Derived) copy Leaf;
+    override abstract func Unrelated(this &copy Derived) *Other;
+    override abstract func Reverse(this &copy Derived) *Root;
+    override abstract func ConstLoss(this &copy Derived) *const Leaf;
+    override abstract func Deep(this &copy Derived) **Leaf;
+    override abstract func Mixed(this &copy Derived) &copy Leaf;
   }
 }
 ctor Base() {}
@@ -954,31 +1122,31 @@ dtor Base() {}
 ctor Derived() { this.Base := Base(); }
 dtor Derived() {})");
 
-  ExpectError(14, 56,
+  ExpectError(14, 57,
               "return type '*Other' of virtual function 'Unrelated' is not covariant with overridden return type "
               "'*Root' because 'Other' is not derived from 'Root'",
               6);
-  ExpectNote(5, 44, "overridden virtual function is declared here", 5);
-  ExpectError(15, 54,
+  ExpectNote(5, 45, "overridden virtual function is declared here", 5);
+  ExpectError(15, 55,
               "return type '*Root' of virtual function 'Reverse' is not covariant with overridden return type "
               "'*Leaf' because 'Root' is not derived from 'Leaf'",
               5);
-  ExpectNote(6, 42, "overridden virtual function is declared here", 5);
-  ExpectError(16, 56,
+  ExpectNote(6, 43, "overridden virtual function is declared here", 5);
+  ExpectError(16, 57,
               "return type '*const Leaf' of virtual function 'ConstLoss' is not covariant with overridden return "
               "type '*Root' because it would remove pointee 'const'",
               11);
-  ExpectNote(7, 44, "overridden virtual function is declared here", 5);
-  ExpectError(17, 51,
+  ExpectNote(7, 45, "overridden virtual function is declared here", 5);
+  ExpectError(17, 52,
               "return type '**Leaf' of virtual function 'Deep' is not covariant with overridden return type "
               "'**Root'; only direct object pointer and reference return types may be covariant",
               6);
-  ExpectNote(8, 39, "overridden virtual function is declared here", 6);
-  ExpectError(18, 52,
-              "return type 'copy Leaf' of virtual function 'Mixed' is not covariant with overridden return type "
+  ExpectNote(8, 40, "overridden virtual function is declared here", 6);
+  ExpectError(18, 53,
+              "return type '&copy Leaf' of virtual function 'Mixed' is not covariant with overridden return type "
               "'*Root' because one return type is a pointer and the other is a reference",
-              9);
-  ExpectNote(9, 40, "overridden virtual function is declared here", 5);
+              10);
+  ExpectNote(9, 41, "overridden virtual function is declared here", 5);
 }
 
 TEST_F(SemaTest, RejectsInvalidCovariantReferenceReturns) {
@@ -986,16 +1154,16 @@ TEST_F(SemaTest, RejectsInvalidCovariantReferenceReturns) {
 trivial struct Leaf : Root {}
 struct Base {
   virtual {
-    abstract func Mutable(this copy Base) mut Root;
-    abstract func Copyable(this copy Base) copy Root;
-    abstract func Movable(this copy Base) move Root;
+    abstract func Mutable(this &copy Base) &mut Root;
+    abstract func Copyable(this &copy Base) &copy Root;
+    abstract func Movable(this &copy Base) &move Root;
   }
 }
 struct Derived : Base {
   virtual {
-    override abstract func Mutable(this copy Derived) copy Leaf;
-    override abstract func Copyable(this copy Derived) move Leaf;
-    override abstract func Movable(this copy Derived) copy Leaf;
+    override abstract func Mutable(this &copy Derived) &copy Leaf;
+    override abstract func Copyable(this &copy Derived) &move Leaf;
+    override abstract func Movable(this &copy Derived) &copy Leaf;
   }
 }
 ctor Base() {}
@@ -1003,31 +1171,31 @@ dtor Base() {}
 ctor Derived() { this.Base := Base(); }
 dtor Derived() {})");
 
-  ExpectError(11, 54,
-              "return type 'copy Leaf' of virtual function 'Mutable' is not covariant with overridden return type "
-              "'mut Root' because a 'copy' return cannot satisfy the overridden 'mut' return",
-              9);
-  ExpectNote(4, 42, "overridden virtual function is declared here", 8);
-  ExpectError(12, 55,
-              "return type 'move Leaf' of virtual function 'Copyable' is not covariant with overridden return type "
-              "'copy Root' because their reference categories differ",
-              9);
-  ExpectNote(5, 43, "overridden virtual function is declared here", 9);
-  ExpectError(13, 54,
-              "return type 'copy Leaf' of virtual function 'Movable' is not covariant with overridden return type "
-              "'move Root' because their reference categories differ",
-              9);
-  ExpectNote(6, 42, "overridden virtual function is declared here", 9);
+  ExpectError(11, 55,
+              "return type '&copy Leaf' of virtual function 'Mutable' is not covariant with overridden return type "
+              "'&mut Root' because a '&copy' return cannot satisfy the overridden '&mut' return",
+              10);
+  ExpectNote(4, 43, "overridden virtual function is declared here", 9);
+  ExpectError(12, 56,
+              "return type '&move Leaf' of virtual function 'Copyable' is not covariant with overridden return type "
+              "'&copy Root' because their reference categories differ",
+              10);
+  ExpectNote(5, 44, "overridden virtual function is declared here", 10);
+  ExpectError(13, 55,
+              "return type '&copy Leaf' of virtual function 'Movable' is not covariant with overridden return type "
+              "'&move Root' because their reference categories differ",
+              10);
+  ExpectNote(6, 43, "overridden virtual function is declared here", 10);
 }
 
 TEST_F(SemaTest, KeepsAnInheritedAbstractSlotAfterInvalidCovariantOverride) {
   Analyze(R"(trivial struct Root {}
 trivial struct Other {}
 struct Base {
-  virtual { abstract func Make(this copy Base) *Root; }
+  virtual { abstract func Make(this &copy Base) *Root; }
 }
 struct Broken : Base {
-  virtual { override func Make(this copy Broken) *Other; }
+  virtual { override func Make(this &copy Broken) *Other; }
 }
 ctor Base() {}
 dtor Base() {}
@@ -1035,52 +1203,52 @@ ctor Broken() { this.Base := Base(); }
 dtor Broken() {}
 func Use(value Broken) {})");
 
-  ExpectError(6, 49,
+  ExpectError(6, 50,
               "return type '*Other' of virtual function 'Make' is not covariant with overridden return type '*Root' "
               "because 'Other' is not derived from 'Root'",
               6);
-  ExpectNote(3, 47, "overridden virtual function is declared here", 5);
+  ExpectNote(3, 48, "overridden virtual function is declared here", 5);
   ExpectError(12, 15, "by-value parameter type 'Broken' is abstract", 6);
 }
 
 TEST_F(SemaTest, KeepsAbstractnessAfterVirtualInterfaceTypeUseError) {
   Analyze(R"(struct A {
-  virtual { abstract func F(this copy A, value A); }
+  virtual { abstract func F(this &copy A, value A); }
 }
 ctor A() {}
 dtor A() {}
 func Take(value A) {})");
 
-  ExpectError(1, 47, "by-value parameter type 'A' is abstract", 1);
+  ExpectError(1, 48, "by-value parameter type 'A' is abstract", 1);
   ExpectError(5, 16, "by-value parameter type 'A' is abstract", 1);
 }
 
 TEST_F(SemaTest, ValidatesAbstractUsesInsideContainedFunctionTypes) {
   Analyze(R"(struct Abstract {
-  virtual { abstract func Observe(self copy Abstract); }
+  virtual { abstract func Observe(self &copy Abstract); }
 }
 ctor Abstract() {}
 dtor Abstract() {}
 trivial struct Holder {
-  callback *func (Abstract, *Abstract, copy Abstract) Abstract;
+  callback *func (Abstract, *Abstract, &copy Abstract) Abstract;
   pointer *Abstract;
 }
-func Use(callback *func (Abstract, *Abstract, copy Abstract) Abstract) {})");
+func Use(callback *func (Abstract, *Abstract, &copy Abstract) Abstract) {})");
 
   ExpectError(6, 18, "by-value parameter type 'Abstract' is abstract", 8);
-  ExpectError(6, 54, "by-value return type 'Abstract' is abstract", 8);
+  ExpectError(6, 55, "by-value return type 'Abstract' is abstract", 8);
   ExpectError(9, 25, "by-value parameter type 'Abstract' is abstract", 8);
-  ExpectError(9, 61, "by-value return type 'Abstract' is abstract", 8);
+  ExpectError(9, 62, "by-value return type 'Abstract' is abstract", 8);
 }
 
 TEST_F(SemaTest, RequiresALocalOverrideForACovariantTypeOutsideFunction) {
   Analyze(R"(trivial struct Product {}
 trivial struct SpecialProduct : Product {}
 struct Factory {
-  virtual { abstract func Create(this copy Factory, value *SpecialProduct) *Product; }
+  virtual { abstract func Create(this &copy Factory, value *SpecialProduct) *Product; }
 }
 struct SpecialFactory : Factory {}
-func Create(this copy SpecialFactory, value *SpecialProduct) *SpecialProduct { value }
+func Create(this &copy SpecialFactory, value *SpecialProduct) *SpecialProduct { value }
 ctor Factory() {}
 dtor Factory() {}
 ctor SpecialFactory() { this.Factory := Factory(); }
@@ -1096,18 +1264,18 @@ TEST_F(SemaTest, RequiresAnExactDefinitionReturnForACovariantInterface) {
   Analyze(R"(trivial struct Product {}
 trivial struct SpecialProduct : Product {}
 struct Factory {
-  virtual { abstract func Create(this copy Factory, value *Product) *Product; }
+  virtual { abstract func Create(this &copy Factory, value *Product) *Product; }
 }
 struct SpecialFactory : Factory {
-  virtual { override func Create(this copy SpecialFactory, value *Product) *SpecialProduct; }
+  virtual { override func Create(this &copy SpecialFactory, value *Product) *SpecialProduct; }
 }
-func Create(this copy SpecialFactory, value *Product) *Product { value }
+func Create(this &copy SpecialFactory, value *Product) *Product { value }
 ctor Factory() {}
 dtor Factory() {}
 ctor SpecialFactory() { this.Factory := Factory(); }
 dtor SpecialFactory() {})");
 
-  ExpectError(8, 54,
+  ExpectError(8, 55,
               "return type '*Product' of matching function definition does not match return type "
               "'*SpecialProduct' of virtual function 'Create'",
               8);
@@ -1117,14 +1285,14 @@ dtor SpecialFactory() {})");
 TEST_F(SemaTest, RequiresVirtualDefinitionsAndExplicitOverrides) {
   Analyze(R"(struct Base {
   virtual {
-    func Missing(self copy Base);
-    abstract func Draw(self copy Base);
+    func Missing(self &copy Base);
+    abstract func Draw(self &copy Base);
   }
 }
 struct Derived : Base {
   virtual {
-    abstract func Draw(self copy Derived);
-    override func New(self copy Derived);
+    abstract func Draw(self &copy Derived);
+    override func New(self &copy Derived);
   }
 }
 ctor Base() {}
@@ -1140,25 +1308,25 @@ dtor Derived() {})");
 
 TEST_F(SemaTest, KeepsMatchingTopLevelFunctionOrdinaryWhenLocalOverrideIsMissing) {
   Analyze(R"(struct Base {
-  virtual { abstract func Draw(self copy Base); }
+  virtual { abstract func Draw(self &copy Base); }
 }
 struct Derived : Base {}
-func Draw(self copy Derived) { Missing; }
+func Draw(self &copy Derived) { Missing; }
 ctor Base() {}
 dtor Base() {}
 ctor Derived() { this.Base := Base(); }
 dtor Derived() {}
-func Use(value copy Derived) { value.Draw(); })");
+func Use(value &copy Derived) { value.Draw(); })");
 
   ExpectError(3, 7, "type 'Derived' is missing an explicit override declaration for virtual function 'Draw'", 7);
   ExpectNote(4, 5, "function with a matching signature is defined here", 4);
   ExpectNote(1, 26, "inherited virtual function is declared here", 4);
-  ExpectError(4, 31, "use of undeclared identifier 'Missing'", 7);
+  ExpectError(4, 32, "use of undeclared identifier 'Missing'", 7);
 }
 
 TEST_F(SemaTest, RejectsCompleteObjectsOfAbstractTypeButAllowsReferencesAndPointers) {
   Analyze(R"(struct Abstract {
-  virtual { abstract func Observe(self copy Abstract); }
+  virtual { abstract func Observe(self &copy Abstract); }
 }
 ctor Abstract() {}
 dtor Abstract() {}
@@ -1166,7 +1334,7 @@ struct Holder { value Abstract; }
 var global Abstract;
 func Take(value Abstract) {}
 func Make() Abstract {}
-func Use(value copy Abstract, pointer *Abstract) {
+func Use(value &copy Abstract, pointer *Abstract) {
   value.Observe();
   Abstract();
   var local Abstract;
@@ -1183,14 +1351,14 @@ func Use(value copy Abstract, pointer *Abstract) {
 
 TEST_F(SemaTest, AllowsConstructionOfAnAbstractDirectBaseSubobject) {
   Analyze(R"(struct Abstract {
-  virtual { abstract func Observe(self copy Abstract); }
+  virtual { abstract func Observe(self &copy Abstract); }
 }
 ctor Abstract() {}
 dtor Abstract() {}
 struct Concrete : Abstract {
-  virtual { override func Observe(self copy Concrete); }
+  virtual { override func Observe(self &copy Concrete); }
 }
-func Observe(self copy Concrete) {}
+func Observe(self &copy Concrete) {}
 ctor Concrete() { this.Abstract := Abstract(); }
 dtor Concrete() {})");
 }
@@ -1262,19 +1430,75 @@ ctor S() { this.value := 1; })");
   ExpectError(0, 0, "non-trivial struct 'S' requires exactly one destructor", 23);
 }
 
+TEST_F(SemaTest, MarksConstructorCompletionInsideEachBranch) {
+  Analyze(R"(struct S { x i32; }
+ctor S(flag bool) {
+  if flag {
+    this.x := 1;
+  } else {
+    this.x := 2;
+  }
+}
+dtor S() {})");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+|-StructDecl {{address:s}} <test.cw:1:1, col:20> S
+| `-FieldDecl {{address:x}} <col:12, col:18> x 'i32'
+|   `-BuiltinType {{address}} <col:14, col:17> 'i32'
+|-ConstructorDecl {{address}} <line:2:1, line:8:2> S target Struct {{address:s}} 'S' 'func (bool) void'
+| |-ParmVarDecl {{address:flag}} <line:2:8, col:17> flag 'bool'
+| | `-BuiltinType {{address}} <col:13, col:17> 'bool'
+| `-CompoundStmt {{address}} <col:19, line:8:2>
+|   `-IfStmt {{address}} <line:3:3, line:7:4>
+|     |-ImplicitCastExpr {{address}} <line:3:6, col:10> 'bool' pure-rvalue <LValueToRValue>
+|     | `-DeclRefExpr {{address}} <col:6, col:10> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+|     |-CompoundStmt {{address}} <col:11, line:5:4>
+|     | |-ExprStmt {{address}} <line:4:5, col:17>
+|     | | `-InitializationExpr {{address}} <col:5, col:16> 'void'
+|     | |   |-MemberExpr {{address}} <col:5, col:11> 'i32' lvalue .x Field {{address:x}} 'x' 'i32'
+|     | |   | `-ThisExpr {{address}} <col:5, col:9> 'S' lvalue this
+|     | |   `-ImplicitCastExpr {{address}} <col:15, col:16> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|     | |     `-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' 1
+|     | `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|     `-CompoundStmt {{address}} <line:5:10, line:7:4>
+|       |-ExprStmt {{address}} <line:6:5, col:17>
+|       | `-InitializationExpr {{address}} <col:5, col:16> 'void'
+|       |   |-MemberExpr {{address}} <col:5, col:11> 'i32' lvalue .x Field {{address:x}} 'x' 'i32'
+|       |   | `-ThisExpr {{address}} <col:5, col:9> 'S' lvalue this
+|       |   `-ImplicitCastExpr {{address}} <col:15, col:16> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|       |     `-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' 2
+|       `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+`-DestructorDecl {{address}} <line:9:1, col:12> S target Struct {{address:s}} 'S' 'func () void'
+  `-CompoundStmt {{address}} <col:10, col:12>
+)");
+}
+
 TEST_F(SemaTest, DumpsConstructorAndDestructorTypes) {
   Analyze(R"(struct S {}
 ctor S(value i32) {}
+ctor S() { this := ((S(1))); }
 dtor S() {})");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
-|-ConstructorDecl {{address}} <line:2:1, col:21> S target Struct {{address:structure}} 'S' 'func (i32) void'
+|-ConstructorDecl {{address:primary_constructor}} <line:2:1, col:21> S target Struct {{address:structure}} 'S' 'func (i32) void'
 | |-ParmVarDecl {{address}} <col:8, col:17> value 'i32'
 | | `-BuiltinType {{address}} <col:14, col:17> 'i32'
 | `-CompoundStmt {{address}} <col:19, col:21>
-`-DestructorDecl {{address}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
-  `-CompoundStmt {{address}} <col:10, col:12>)");
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-ConstructorDecl {{address}} <line:3:1, col:31> S target Struct {{address:structure}} 'S' 'func () void'
+| `-CompoundStmt {{address}} <col:10, col:31>
+|   `-ExprStmt {{address}} <col:12, col:29>
+|     `-InitializationExpr {{address}} <col:12, col:28> 'void'
+|       |-ThisExpr {{address}} <col:12, col:16> 'S' lvalue this
+|       `-ParenExpr {{address}} <col:20, col:28> 'S' pure-rvalue
+|         `-ParenExpr {{address}} <col:21, col:27> 'S' pure-rvalue
+|           `-ConstructionExpr {{address}} <col:22, col:26> 'S' pure-rvalue delegating target <col:22, col:23> 'S' Constructor {{address:primary_constructor}} 'S' 'func (i32) void'
+|             `-ImplicitCastExpr {{address}} <col:24, col:25> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|               `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' 1
+`-DestructorDecl {{address}} <line:4:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+  `-CompoundStmt {{address}} <col:10, col:12>
+)");
 }
 
 TEST_F(SemaTest, ReportsUnknownAndNonTypeSpecialFunctionTargets) {
@@ -1362,7 +1586,7 @@ func Make() Value { return Value(); }
 struct Box {}
 ctor Box(value Value) {}
 dtor Box() {}
-func Check(existing mut Value) {
+func Check(existing &mut Value) {
   Box(Make());
   Box(existing);
   Box(move existing);
@@ -1428,20 +1652,20 @@ TEST_F(SemaTest, TransfersNonTrivialPureRValuesAndRejectsGlvalues) {
 ctor Inner() {}
 dtor Inner() {}
 struct Outer { field Inner; }
-ctor Outer(source copy Inner) {
+ctor Outer(source &copy Inner) {
   this.field := source;
 }
 dtor Outer() {}
-func local(source copy Inner) {
+func local(source &copy Inner) {
   var value Inner;
   value := source;
 }
-func bad_declarations(source copy Inner) {
+func bad_declarations(source &copy Inner) {
   var explicit Inner := source;
   var inferred := source;
 }
 func make() Inner { return Inner(); }
-func bad_return(source copy Inner) Inner { return source; }
+func bad_return(source &copy Inner) Inner { return source; }
 func good_function_result() { var value Inner := make(); }
 ctor Outer() { this.field := make(); }
 func good_results(condition bool) Inner {
@@ -1455,7 +1679,7 @@ func good_results(condition bool) Inner {
   ExpectError(10, 11, "cannot initialize variable 'value': no copy constructor is available for 'Inner'", 6);
   ExpectError(13, 24, "cannot initialize variable 'explicit': no copy constructor is available for 'Inner'", 6);
   ExpectError(14, 18, "cannot infer and initialize variable: no copy constructor is available for 'Inner'", 6);
-  ExpectError(17, 50, "cannot initialize return object: no copy constructor is available for 'Inner'", 6);
+  ExpectError(17, 51, "cannot initialize return object: no copy constructor is available for 'Inner'", 6);
 }
 
 TEST_F(SemaTest, RejectsSeparateInitializationOfANonTrivialObjectsSubobject) {
@@ -1527,12 +1751,12 @@ struct Partial : Base {}
 ctor Partial(value i32) { this.Base.member := value; }
 dtor Partial() {}
 struct Copy : Base {}
-ctor Copy(source copy Base) { this.Base := source; }
+ctor Copy(source &copy Base) { this.Base := source; }
 dtor Copy() {})");
 
   ExpectError(4, 17, "direct base 'Base' must be initialized by the first complete statement of constructor 'Late'", 9);
   ExpectError(7, 26, "constructor for 'Partial' must initialize direct base 'Base' as a whole", 16);
-  ExpectError(10, 43, "cannot initialize base subobject 'Base': no copy constructor is available for 'Base'", 6);
+  ExpectError(10, 44, "cannot initialize base subobject 'Base': no copy constructor is available for 'Base'", 6);
 }
 
 TEST_F(SemaTest, RecoversSpecialCallsAcrossIncompleteDeclarationsBodiesAndArguments) {
@@ -1608,6 +1832,7 @@ func use() {
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
 |-ConstructorDecl {{address:constructor}} <line:2:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
 | `-CompoundStmt {{address}} <col:10, col:12>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <col:13, col:24> S target Struct {{address:structure}} 'S' 'func () void'
 | `-CompoundStmt {{address}} <col:22, col:24>
 `-FunctionDecl {{address}} <line:3:1, line:6:2> use 'func () void' contains-errors
@@ -1620,7 +1845,8 @@ func use() {
     `-ExprStmt {{address}} <line:5:3, col:22> contains-errors
       `-ConstructionExpr {{address}} <col:3, col:21> '*S' pure-rvalue complete-object target <col:18, col:19> 'S' Constructor {{address:constructor}} 'S' 'func () void' contains-errors
         `-ImplicitCastExpr {{address}} <col:9, col:16> '*S' pure-rvalue <LValueToRValue> contains-errors
-          `-DeclRefExpr {{address}} <col:9, col:16> '*S' lvalue Var {{address:pointer}} 'pointer' '*S' contains-errors)");
+          `-DeclRefExpr {{address}} <col:9, col:16> '*S' lvalue Var {{address:pointer}} 'pointer' '*S' contains-errors
+)");
 }
 
 TEST_F(SemaTest, KeepsPlacementConstructionUnboundWhenAnArgumentIsErroneous) {
@@ -1638,6 +1864,7 @@ func use(pointer *S) {
 | |-ParmVarDecl {{address}} <col:8, col:17> value 'i32'
 | | `-BuiltinType {{address}} <col:14, col:17> 'i32'
 | `-CompoundStmt {{address}} <col:19, col:21>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <col:22, col:33> S target Struct {{address:structure}} 'S' 'func () void'
 | `-CompoundStmt {{address}} <col:31, col:33>
 `-FunctionDecl {{address}} <line:3:1, line:5:2> use 'func (*S) void' contains-errors
@@ -1648,7 +1875,8 @@ func use(pointer *S) {
     `-ExprStmt {{address}} <line:4:3, col:29> contains-errors
       `-ConstructionExpr {{address}} <col:3, col:28> complete-object target <col:18, col:19> 'S' contains-errors
         |-DeclRefExpr {{address}} <col:9, col:16> '*S' lvalue ParmVar {{address:pointer}} 'pointer' '*S'
-        `-DeclRefExpr {{address}} <col:20, col:27> 'missing' contains-errors)");
+        `-DeclRefExpr {{address}} <col:20, col:27> 'missing' contains-errors
+)");
 }
 
 TEST_F(SemaTest, RejectsValueReturnsFromConstructorsAndDestructors) {
@@ -1660,7 +1888,7 @@ dtor S() { return 1; })");
   ExpectError(2, 11, "destructor cannot return a value", 0);
 }
 
-TEST_P(ConfiguredSemaTest, PreservesTrivialDefaultFormationAndFinalDestination) {
+TEST_F(SemaTest, PreservesTrivialDefaultFormationAndFinalDestination) {
   Analyze(R"(trivial struct Empty {}
 func Make() Empty { Empty() })");
 
@@ -1685,7 +1913,7 @@ trivial struct Value : Base {
   floating f64;
   pointer *Value;
   function *func() void;
-  slot virtual *func(mut Value) void;
+  slot virtual *func(&mut Value) void;
 }
 func Use() Value {
   var value Value := Value();
@@ -1738,7 +1966,7 @@ func Use() { Empty(1); })");
 
 TEST_F(SemaTest, RejectsVirtualSlotsOnExplicitTrivialStruct) {
   Analyze(R"(trivial struct Value {
-  virtual { abstract func Read(this copy Value) i32; }
+  virtual { abstract func Read(this &copy Value) i32; }
 })");
   ExpectError(0, 0, "trivial struct 'Value' cannot declare constructors, destructors or virtual slots", 0);
 }
@@ -1770,11 +1998,11 @@ func target() i32 { return target(); })");
 
 TEST_F(SemaTest, AcceptsFieldAccessAndReceiverFormCalls) {
   Analyze(R"(trivial struct S { value i32; read i32; }
-func read(receiver copy S) i32 { 0 }
-func mutate(receiver mut S) i32 { 0 }
-func take(receiver move S) i32 { 0 }
-func read_pointer(receiver copy *S) i32 { 0 }
-func read_number(receiver copy i32) i32 { 0 }
+func read(receiver &copy S) i32 { 0 }
+func mutate(receiver &mut S) i32 { 0 }
+func take(receiver &move S) i32 { 0 }
+func read_pointer(receiver &copy *S) i32 { 0 }
+func read_number(receiver &copy i32) i32 { 0 }
 func make() S { S() }
 func caller(value S, pointer *S, const_pointer *const S, number_pointer *i32) {
 value.value;
@@ -1794,12 +2022,12 @@ number_pointer->read_number();
 
 TEST_F(SemaTest, AcceptsExplicitThisParametersWithoutChangingReceiverEligibility) {
   Analyze(R"(trivial struct S {}
-func Read(this copy S) { this; }
-func Write(this mut S, source copy S) { this = source; }
-func Consume(this move S) { move this; }
-func Named(receiver copy S) { receiver; }
-func Pointer(this copy *S) { this; }
-struct V { virtual { abstract func Observe(this copy V); } }
+func Read(this &copy S) { this; }
+func Write(this &mut S, source &copy S) { this = source; }
+func Consume(this &move S) { move this; }
+func Named(receiver &copy S) { receiver; }
+func Pointer(this &copy *S) { this; }
+struct V { virtual { abstract func Observe(this &copy V); } }
 ctor V() {}
 dtor V() {}
 func Calls(value S, pointer *S) {
@@ -1816,38 +2044,38 @@ func Calls(value S, pointer *S) {
 
 TEST_F(SemaTest, DiagnosesInvalidExplicitThisParametersAndDoesNotCreateAnAlias) {
   Analyze(R"(struct S {}
-func Later(value i32, this mut S) { this; }
+func Later(value i32, this &mut S) { this; }
 func ByValue(this S) {}
 func Pointer(this *S) {}
-ctor S(this mut S) { this; }
+ctor S(this &mut S) { this; }
 dtor S() {}
-func Named(receiver mut S) { this; })");
+func Named(receiver &mut S) { this; })");
 
   ExpectError(4, 7, "constructor cannot declare an explicit 'this' parameter", 4);
   ExpectError(1, 22, "'this' parameter must be the first parameter", 4);
-  ExpectError(2, 13, "'this' parameter must have type 'mut T', 'copy T', or 'move T'", 4);
-  ExpectError(3, 13, "'this' parameter must have type 'mut T', 'copy T', or 'move T'", 4);
-  ExpectError(6, 29, "use of undeclared identifier 'this'", 4);
+  ExpectError(2, 13, "'this' parameter must have type '&mut T', '&copy T', or '&move T'", 4);
+  ExpectError(3, 13, "'this' parameter must have type '&mut T', '&copy T', or '&move T'", 4);
+  ExpectError(6, 30, "use of undeclared identifier 'this'", 4);
 }
 
 TEST_F(SemaTest, TreatsExplicitThisAndOrdinaryParameterNamesAsTheSameSignature) {
   Analyze(R"(trivial struct S {}
-func Same(this mut S) {}
-func Same(object mut S) {})");
+func Same(this &mut S) {}
+func Same(object &mut S) {})");
 
   ExpectError(2, 5, "redefinition of function 'Same'", 0);
   ExpectNote(1, 5, "previous declaration is here", 0);
 }
 
 TEST_F(SemaTest, ExplainsReceiverCandidateFailuresAndCrossArgumentAmbiguity) {
-  Analyze(R"(func read(receiver copy i32) {}
+  Analyze(R"(func read(receiver &copy i32) {}
 func zero() {}
 func by_value(receiver i32) {}
-func wrong(receiver copy i64) {}
-func only_move(receiver move i32) {}
-func typed(receiver copy i32, value i32) {}
-func cross(receiver mut i32, value i64) {}
-func cross(receiver copy i32, value i32) {}
+func wrong(receiver &copy i64) {}
+func only_move(receiver &move i32) {}
+func typed(receiver &copy i32, value i32) {}
+func cross(receiver &mut i32, value i64) {}
+func cross(receiver &copy i32, value i32) {}
 func recover(number i32, pointer *void) {
 pointer->read();
 number.zero();
@@ -1864,15 +2092,15 @@ number;
   ExpectError(10, 0, "no matching receiver function for call to 'zero'", 13);
   ExpectNote(1, 0, "candidate function is not viable: no receiver parameter is declared", 0);
   ExpectError(12, 0, "no matching receiver function for call to 'wrong'", 14);
-  ExpectNote(3, 0,
-             "candidate function is not viable: reference type 'copy i64' cannot bind to a value of type 'i32' for "
-             "receiver",
-             0);
+  ExpectNote(
+      3, 0,
+      "candidate function is not viable: reference type '&copy i64' cannot bind to a value of type 'i32' for receiver",
+      0);
   ExpectError(13, 0, "no matching receiver function for call to 'only_move'", 18);
-  ExpectNote(4, 0,
-             "candidate function is not viable: reference type 'move i32' cannot bind to lvalue of type 'i32' for "
-             "receiver",
-             0);
+  ExpectNote(
+      4, 0,
+      "candidate function is not viable: reference type '&move i32' cannot bind to lvalue of type 'i32' for receiver",
+      0);
   ExpectError(14, 0, "no matching receiver function for call to 'typed'", 14);
   ExpectNote(5, 0, "candidate function requires 1 explicit argument, but 0 were provided", 0);
   ExpectError(15, 0, "no matching receiver function for call to 'typed'", 18);
@@ -1953,19 +2181,19 @@ func Use(value i32, pointer *i32) {
 TEST_F(SemaTest, CopiesMovesAndSlicesValueReceivers) {
   Analyze(R"(struct Base {}
 ctor Base() {}
-ctor Base(source copy Base) {}
+ctor Base(source &copy Base) {}
 dtor Base() {}
 struct Derived : Base {}
 ctor Derived() { this.Base := Base(); }
 dtor Derived() {}
 struct Movable {}
 ctor Movable() {}
-ctor Movable(source move Movable) {}
+ctor Movable(source &move Movable) {}
 dtor Movable() {}
 func Take(value Base) {}
 func Consume(value Movable) {}
 func Pointer(value *Derived) {}
-func Use(base mut Base, fixed copy Base, derived mut Derived, pointer *Derived, movable mut Movable) {
+func Use(base &mut Base, fixed &copy Base, derived &mut Derived, pointer *Derived, movable &mut Movable) {
   base.Take();
   fixed.Take();
   (move base).Take();
@@ -1982,7 +2210,7 @@ func Use(base mut Base, fixed copy Base, derived mut Derived, pointer *Derived, 
 
 TEST_F(SemaTest, KeepsReceiverAndOrdinaryCallAmbiguityEquivalent) {
   Analyze(R"(func Pick(value i32) {}
-func Pick(value mut i32) {}
+func Pick(value &mut i32) {}
 func Use(value i32) {
   value.Pick();
   Pick(value);
@@ -2010,6 +2238,7 @@ func Use(pointer *Value, number i32) {
 |-StructDecl {{address:value}} <test.cw:1:1, col:16> Value
 |-ConstructorDecl {{address}} <line:2:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:take}} <line:4:1, col:40> Take 'func (Value, u8) void'
@@ -2031,7 +2260,8 @@ func Use(pointer *Value, number i32) {
         | `-ImplicitCastExpr {{address}} <col:3, col:10> '*Value' pure-rvalue <LValueToRValue>
         |   `-DeclRefExpr {{address}} <col:3, col:10> '*Value' lvalue ParmVar {{address:pointer}} 'pointer' '*Value'
         |-DeclRefExpr {{address}} <col:12, col:16> 'func (Value, u8) void' Function {{address:take}} 'Take' 'func (Value, u8) void'
-        `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue ParmVar {{address:number}} 'number' 'i32')");
+        `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue ParmVar {{address:number}} 'number' 'i32'
+)");
 }
 
 TEST_F(SemaTest, DoesNotFallBackAfterSelectedReceiverOrParameterFormationFails) {
@@ -2039,8 +2269,8 @@ TEST_F(SemaTest, DoesNotFallBackAfterSelectedReceiverOrParameterFormationFails) 
 ctor Value() {}
 dtor Value() {}
 func Take(receiver Value, rank i32) {}
-func Take(receiver copy Value, rank i64) {}
-func Use(value mut Value, rank i32) {
+func Take(receiver &copy Value, rank i64) {}
+func Use(value &mut Value, rank i32) {
   value.Take(rank);
   Take(value, rank);
 })");
@@ -2062,7 +2292,7 @@ func Use(value i32, number i16) {
 
 TEST_F(SemaTest, RejectsStructObjectWithoutCallOperator) {
   Analyze(R"(trivial struct S {}
-func Use(object mut S) {
+func Use(object &mut S) {
   object();
 })");
 
@@ -2071,8 +2301,8 @@ func Use(object mut S) {
 
 TEST_F(SemaTest, ReportsCallOperatorArityWithoutCountingReceiver) {
   Analyze(R"(trivial struct S {}
-func operator()(object mut S, value i32) {}
-func Use(object mut S) {
+func operator()(object &mut S, value i32) {}
+func Use(object &mut S) {
   object();
 })");
 
@@ -2082,9 +2312,9 @@ func Use(object mut S) {
 
 TEST_F(SemaTest, ReportsAmbiguousCallableObjectOverloads) {
   Analyze(R"(trivial struct S {}
-func operator()(object mut S, value i64) {}
-func operator()(object copy S, value i32) {}
-func Use(object mut S, value i32) {
+func operator()(object &mut S, value i64) {}
+func operator()(object &copy S, value i32) {}
+func Use(object &mut S, value i32) {
   object(value);
 })");
 
@@ -2095,7 +2325,7 @@ func Use(object mut S, value i32) {
 
 TEST_F(SemaTest, RequiresExplicitDereferenceForCallableObjectPointers) {
   Analyze(R"(trivial struct S {}
-func operator()(object mut S) {}
+func operator()(object &mut S) {}
 func Use(pointer *S) {
   pointer();
 })");
@@ -2105,7 +2335,7 @@ func Use(pointer *S) {
 
 TEST_F(SemaTest, DiagnosesUninitializedCallableObjectCallee) {
   Analyze(R"(trivial struct S { value i32; }
-func operator()(object mut S) {}
+func operator()(object &mut S) {}
 func Use() {
   var object S;
   object();
@@ -2118,10 +2348,10 @@ TEST_F(SemaTest, DiagnosesExplicitParameterFormationFailureInReceiverCall) {
   Analyze(R"(struct Value {}
 ctor Value() {}
 dtor Value() {}
-func Consume(receiver copy i32, object Value) {}
-func Use(receiver i32, object mut Value) { receiver.Consume(object); })");
+func Consume(receiver &copy i32, object Value) {}
+func Use(receiver i32, object &mut Value) { receiver.Consume(object); })");
 
-  ExpectError(4, 60,
+  ExpectError(4, 61,
               "cannot initialize parameter 1 of receiver function 'Consume': no copy constructor is available for "
               "'Value'",
               6);
@@ -2133,8 +2363,8 @@ trivial struct Derived : Base {}
 struct Value {}
 ctor Value() {}
 dtor Value() {}
-func Consume(receiver copy Base, number u8, object Value) {}
-func Use(pointer *Derived, number i32, object mut Value) { pointer->Consume(number, object); })";
+func Consume(receiver &copy Base, number u8, object Value) {}
+func Use(pointer *Derived, number i32, object &mut Value) { pointer->Consume(number, object); })";
   Analyze(source);
   const auto call_line = source.substr(source.rfind('\n') + 1);
   ExpectError(
@@ -2147,41 +2377,43 @@ func Use(pointer *Derived, number i32, object mut Value) { pointer->Consume(numb
 |-StructDecl {{address:value}} <line:3:1, col:16> Value
 |-ConstructorDecl {{address:value_constructor}} <line:4:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address:value_destructor}} <line:5:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
-|-FunctionDecl {{address:consume}} <line:6:1, col:61> Consume 'func (copy Base, u8, Value) void'
-| |-ParmVarDecl {{address:consume_receiver}} <col:14, col:32> receiver 'copy Base'
-| | `-ReferenceType {{address}} <col:23, col:32> 'copy'
-| |   `-NamedType {{address}} <col:28, col:32> 'Base'
-| |-ParmVarDecl {{address:consume_number}} <col:34, col:43> number 'u8'
-| | `-BuiltinType {{address}} <col:41, col:43> 'u8'
-| |-ParmVarDecl {{address:consume_object}} <col:45, col:57> object 'Value'
-| | `-NamedType {{address}} <col:52, col:57> 'Value'
-| `-CompoundStmt {{address}} <col:59, col:61>
-`-FunctionDecl {{address:use}} <line:7:1, col:95> Use 'func (*Derived, i32, mut Value) void' contains-errors
+|-FunctionDecl {{address:consume}} <line:6:1, col:62> Consume 'func (&copy Base, u8, Value) void'
+| |-ParmVarDecl {{address:consume_receiver}} <col:14, col:33> receiver '&copy Base'
+| | `-ReferenceType {{address}} <col:23, col:33> '&copy'
+| |   `-NamedType {{address}} <col:29, col:33> 'Base'
+| |-ParmVarDecl {{address:consume_number}} <col:35, col:44> number 'u8'
+| | `-BuiltinType {{address}} <col:42, col:44> 'u8'
+| |-ParmVarDecl {{address:consume_object}} <col:46, col:58> object 'Value'
+| | `-NamedType {{address}} <col:53, col:58> 'Value'
+| `-CompoundStmt {{address}} <col:60, col:62>
+`-FunctionDecl {{address:use}} <line:7:1, col:96> Use 'func (*Derived, i32, &mut Value) void' contains-errors
   |-ParmVarDecl {{address:use_pointer}} <col:10, col:26> pointer '*Derived'
   | `-PointerType {{address}} <col:18, col:26>
   |   `-NamedType {{address}} <col:19, col:26> 'Derived'
   |-ParmVarDecl {{address:use_number}} <col:28, col:38> number 'i32'
   | `-BuiltinType {{address}} <col:35, col:38> 'i32'
-  |-ParmVarDecl {{address:use_object}} <col:40, col:56> object 'mut Value'
-  | `-ReferenceType {{address}} <col:47, col:56> 'mut'
-  |   `-NamedType {{address}} <col:51, col:56> 'Value'
-  `-CompoundStmt {{address}} <col:58, col:95> contains-errors
-    `-ExprStmt {{address}} <col:60, col:93> contains-errors
-      `-ReceiverCallExpr {{address}} <col:60, col:92> -> contains-errors
-        |-UnaryOperator {{address}} <col:60, col:67> 'Derived' lvalue '*'
-        | `-ImplicitCastExpr {{address}} <col:60, col:67> '*Derived' pure-rvalue <LValueToRValue>
-        |   `-DeclRefExpr {{address}} <col:60, col:67> '*Derived' lvalue ParmVar {{address:use_pointer}} 'pointer' '*Derived'
-        |-DeclRefExpr {{address}} <col:69, col:76> 'func (copy Base, u8, Value) void' Function {{address:consume}} 'Consume' 'func (copy Base, u8, Value) void'
-        |-DeclRefExpr {{address}} <col:77, col:83> 'i32' lvalue ParmVar {{address:use_number}} 'number' 'i32'
-        `-DeclRefExpr {{address}} <col:85, col:91> 'Value' lvalue ParmVar {{address:use_object}} 'object' 'mut Value')");
+  |-ParmVarDecl {{address:use_object}} <col:40, col:57> object '&mut Value'
+  | `-ReferenceType {{address}} <col:47, col:57> '&mut'
+  |   `-NamedType {{address}} <col:52, col:57> 'Value'
+  `-CompoundStmt {{address}} <col:59, col:96> contains-errors
+    `-ExprStmt {{address}} <col:61, col:94> contains-errors
+      `-ReceiverCallExpr {{address}} <col:61, col:93> -> contains-errors
+        |-UnaryOperator {{address}} <col:61, col:68> 'Derived' lvalue '*'
+        | `-ImplicitCastExpr {{address}} <col:61, col:68> '*Derived' pure-rvalue <LValueToRValue>
+        |   `-DeclRefExpr {{address}} <col:61, col:68> '*Derived' lvalue ParmVar {{address:use_pointer}} 'pointer' '*Derived'
+        |-DeclRefExpr {{address}} <col:70, col:77> 'func (&copy Base, u8, Value) void' Function {{address:consume}} 'Consume' 'func (&copy Base, u8, Value) void'
+        |-DeclRefExpr {{address}} <col:78, col:84> 'i32' lvalue ParmVar {{address:use_number}} 'number' 'i32'
+        `-DeclRefExpr {{address}} <col:86, col:92> 'Value' lvalue ParmVar {{address:use_object}} 'object' '&mut Value'
+)");
 }
 
 TEST_F(SemaTest, ChecksArrowPointerOnceThroughReadonlyBaseProjection) {
   Analyze(R"(trivial struct Base {}
 trivial struct Derived : Base {}
-func Take(receiver copy Base) {}
+func Take(receiver &copy Base) {}
 func Use() {
   var pointer *Derived;
   pointer->Take();
@@ -2297,59 +2529,59 @@ func Use() {
 }
 
 TEST_F(SemaTest, FormsIndirectCallReferenceBindingsAndResults) {
-  Analyze(R"(func indirect_mut(callback *func () mut i32) mut i32 { callback() }
-func indirect_copy(callback *func () copy i32) copy i32 { callback() }
-func indirect_move(callback *func () move i32) move i32 { callback() }
+  Analyze(R"(func indirect_mut(callback *func () &mut i32) &mut i32 { callback() }
+func indirect_copy(callback *func () &copy i32) &copy i32 { callback() }
+func indirect_move(callback *func () &move i32) &move i32 { callback() }
 func indirect_value(callback *func () i32) i32 { callback() }
 func indirect_function(callback *func () *func () void) { callback(); }
-func indirect_void(callback *func (mut i32, copy i32, move i32) void,
+func indirect_void(callback *func (&mut i32, &copy i32, &move i32) void,
                    first i32, second i32) {
 callback(first, second, move second);
 })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
-|-FunctionDecl {{address}} <test.cw:1:1, col:68> indirect_mut 'func (*func () mut i32) mut i32'
-| |-ParmVarDecl {{address:mut_callback}} <col:19, col:44> callback '*func () mut i32'
-| | `-PointerType {{address}} <col:28, col:44>
-| |   `-FunctionType {{address}} <col:29, col:44>
-| |     `-ReferenceType {{address}} <col:37, col:44> 'mut'
-| |       `-BuiltinType {{address}} <col:41, col:44> 'i32'
-| |-ReturnVarDecl {{address:mut_return}} <col:46, col:53> 'mut i32'
-| | `-ReferenceType {{address}} <col:46, col:53> 'mut'
-| |   `-BuiltinType {{address}} <col:50, col:53> 'i32'
-| `-CompoundStmt {{address}} <col:54, col:68>
-|   `-ImplicitResultInitializationExpr {{address}} <col:56, col:66> 'void' ReturnVar {{address:mut_return}} 'mut i32'
-|     `-CallExpr {{address}} <col:56, col:66> 'i32' lvalue
-|       `-ImplicitCastExpr {{address}} <col:56, col:64> '*func () mut i32' pure-rvalue <LValueToRValue>
-|         `-DeclRefExpr {{address}} <col:56, col:64> '*func () mut i32' lvalue ParmVar {{address:mut_callback}} 'callback' '*func () mut i32'
-|-FunctionDecl {{address}} <line:2:1, col:71> indirect_copy 'func (*func () copy i32) copy i32'
-| |-ParmVarDecl {{address:copy_callback}} <col:20, col:46> callback '*func () copy i32'
-| | `-PointerType {{address}} <col:29, col:46>
-| |   `-FunctionType {{address}} <col:30, col:46>
-| |     `-ReferenceType {{address}} <col:38, col:46> 'copy'
-| |       `-BuiltinType {{address}} <col:43, col:46> 'i32'
-| |-ReturnVarDecl {{address:copy_return}} <col:48, col:56> 'copy i32'
-| | `-ReferenceType {{address}} <col:48, col:56> 'copy'
-| |   `-BuiltinType {{address}} <col:53, col:56> 'i32'
-| `-CompoundStmt {{address}} <col:57, col:71>
-|   `-ImplicitResultInitializationExpr {{address}} <col:59, col:69> 'void' ReturnVar {{address:copy_return}} 'copy i32'
-|     `-CallExpr {{address}} <col:59, col:69> 'const i32' lvalue
-|       `-ImplicitCastExpr {{address}} <col:59, col:67> '*func () copy i32' pure-rvalue <LValueToRValue>
-|         `-DeclRefExpr {{address}} <col:59, col:67> '*func () copy i32' lvalue ParmVar {{address:copy_callback}} 'callback' '*func () copy i32'
-|-FunctionDecl {{address}} <line:3:1, col:71> indirect_move 'func (*func () move i32) move i32'
-| |-ParmVarDecl {{address:move_callback}} <col:20, col:46> callback '*func () move i32'
-| | `-PointerType {{address}} <col:29, col:46>
-| |   `-FunctionType {{address}} <col:30, col:46>
-| |     `-ReferenceType {{address}} <col:38, col:46> 'move'
-| |       `-BuiltinType {{address}} <col:43, col:46> 'i32'
-| |-ReturnVarDecl {{address:move_return}} <col:48, col:56> 'move i32'
-| | `-ReferenceType {{address}} <col:48, col:56> 'move'
-| |   `-BuiltinType {{address}} <col:53, col:56> 'i32'
-| `-CompoundStmt {{address}} <col:57, col:71>
-|   `-ImplicitResultInitializationExpr {{address}} <col:59, col:69> 'void' ReturnVar {{address:move_return}} 'move i32'
-|     `-CallExpr {{address}} <col:59, col:69> 'i32' move-lvalue
-|       `-ImplicitCastExpr {{address}} <col:59, col:67> '*func () move i32' pure-rvalue <LValueToRValue>
-|         `-DeclRefExpr {{address}} <col:59, col:67> '*func () move i32' lvalue ParmVar {{address:move_callback}} 'callback' '*func () move i32'
+|-FunctionDecl {{address}} <test.cw:1:1, col:70> indirect_mut 'func (*func () &mut i32) &mut i32'
+| |-ParmVarDecl {{address:mut_callback}} <col:19, col:45> callback '*func () &mut i32'
+| | `-PointerType {{address}} <col:28, col:45>
+| |   `-FunctionType {{address}} <col:29, col:45>
+| |     `-ReferenceType {{address}} <col:37, col:45> '&mut'
+| |       `-BuiltinType {{address}} <col:42, col:45> 'i32'
+| |-ReturnVarDecl {{address:mut_return}} <col:47, col:55> '&mut i32'
+| | `-ReferenceType {{address}} <col:47, col:55> '&mut'
+| |   `-BuiltinType {{address}} <col:52, col:55> 'i32'
+| `-CompoundStmt {{address}} <col:56, col:70>
+|   `-ImplicitResultInitializationExpr {{address}} <col:58, col:68> 'void' ReturnVar {{address:mut_return}} '&mut i32'
+|     `-CallExpr {{address}} <col:58, col:68> 'i32' lvalue
+|       `-ImplicitCastExpr {{address}} <col:58, col:66> '*func () &mut i32' pure-rvalue <LValueToRValue>
+|         `-DeclRefExpr {{address}} <col:58, col:66> '*func () &mut i32' lvalue ParmVar {{address:mut_callback}} 'callback' '*func () &mut i32'
+|-FunctionDecl {{address}} <line:2:1, col:73> indirect_copy 'func (*func () &copy i32) &copy i32'
+| |-ParmVarDecl {{address:copy_callback}} <col:20, col:47> callback '*func () &copy i32'
+| | `-PointerType {{address}} <col:29, col:47>
+| |   `-FunctionType {{address}} <col:30, col:47>
+| |     `-ReferenceType {{address}} <col:38, col:47> '&copy'
+| |       `-BuiltinType {{address}} <col:44, col:47> 'i32'
+| |-ReturnVarDecl {{address:copy_return}} <col:49, col:58> '&copy i32'
+| | `-ReferenceType {{address}} <col:49, col:58> '&copy'
+| |   `-BuiltinType {{address}} <col:55, col:58> 'i32'
+| `-CompoundStmt {{address}} <col:59, col:73>
+|   `-ImplicitResultInitializationExpr {{address}} <col:61, col:71> 'void' ReturnVar {{address:copy_return}} '&copy i32'
+|     `-CallExpr {{address}} <col:61, col:71> 'const i32' lvalue
+|       `-ImplicitCastExpr {{address}} <col:61, col:69> '*func () &copy i32' pure-rvalue <LValueToRValue>
+|         `-DeclRefExpr {{address}} <col:61, col:69> '*func () &copy i32' lvalue ParmVar {{address:copy_callback}} 'callback' '*func () &copy i32'
+|-FunctionDecl {{address}} <line:3:1, col:73> indirect_move 'func (*func () &move i32) &move i32'
+| |-ParmVarDecl {{address:move_callback}} <col:20, col:47> callback '*func () &move i32'
+| | `-PointerType {{address}} <col:29, col:47>
+| |   `-FunctionType {{address}} <col:30, col:47>
+| |     `-ReferenceType {{address}} <col:38, col:47> '&move'
+| |       `-BuiltinType {{address}} <col:44, col:47> 'i32'
+| |-ReturnVarDecl {{address:move_return}} <col:49, col:58> '&move i32'
+| | `-ReferenceType {{address}} <col:49, col:58> '&move'
+| |   `-BuiltinType {{address}} <col:55, col:58> 'i32'
+| `-CompoundStmt {{address}} <col:59, col:73>
+|   `-ImplicitResultInitializationExpr {{address}} <col:61, col:71> 'void' ReturnVar {{address:move_return}} '&move i32'
+|     `-CallExpr {{address}} <col:61, col:71> 'i32' move-lvalue
+|       `-ImplicitCastExpr {{address}} <col:61, col:69> '*func () &move i32' pure-rvalue <LValueToRValue>
+|         `-DeclRefExpr {{address}} <col:61, col:69> '*func () &move i32' lvalue ParmVar {{address:move_callback}} 'callback' '*func () &move i32'
 |-FunctionDecl {{address}} <line:4:1, col:62> indirect_value 'func (*func () i32) i32'
 | |-ParmVarDecl {{address:value_callback}} <col:21, col:42> callback '*func () i32'
 | | `-PointerType {{address}} <col:30, col:42>
@@ -2374,17 +2606,17 @@ callback(first, second, move second);
 |     `-CallExpr {{address}} <col:59, col:69> '*func () void' pure-rvalue
 |       `-ImplicitCastExpr {{address}} <col:59, col:67> '*func () *func () void' pure-rvalue <LValueToRValue>
 |         `-DeclRefExpr {{address}} <col:59, col:67> '*func () *func () void' lvalue ParmVar {{address:function_callback}} 'callback' '*func () *func () void'
-`-FunctionDecl {{address}} <line:6:1, line:9:2> indirect_void 'func (*func (mut i32, copy i32, move i32) void, i32, i32) void'
-  |-ParmVarDecl {{address:void_callback}} <line:6:20, col:69> callback '*func (mut i32, copy i32, move i32) void'
-  | `-PointerType {{address}} <col:29, col:69>
-  |   `-FunctionType {{address}} <col:30, col:69>
-  |     |-ReferenceType {{address}} <col:36, col:43> 'mut'
-  |     | `-BuiltinType {{address}} <col:40, col:43> 'i32'
-  |     |-ReferenceType {{address}} <col:45, col:53> 'copy'
-  |     | `-BuiltinType {{address}} <col:50, col:53> 'i32'
-  |     |-ReferenceType {{address}} <col:55, col:63> 'move'
-  |     | `-BuiltinType {{address}} <col:60, col:63> 'i32'
-  |     `-BuiltinType {{address}} <col:65, col:69> 'void'
+`-FunctionDecl {{address}} <line:6:1, line:9:2> indirect_void 'func (*func (&mut i32, &copy i32, &move i32) void, i32, i32) void'
+  |-ParmVarDecl {{address:void_callback}} <line:6:20, col:72> callback '*func (&mut i32, &copy i32, &move i32) void'
+  | `-PointerType {{address}} <col:29, col:72>
+  |   `-FunctionType {{address}} <col:30, col:72>
+  |     |-ReferenceType {{address}} <col:36, col:44> '&mut'
+  |     | `-BuiltinType {{address}} <col:41, col:44> 'i32'
+  |     |-ReferenceType {{address}} <col:46, col:55> '&copy'
+  |     | `-BuiltinType {{address}} <col:52, col:55> 'i32'
+  |     |-ReferenceType {{address}} <col:57, col:66> '&move'
+  |     | `-BuiltinType {{address}} <col:63, col:66> 'i32'
+  |     `-BuiltinType {{address}} <col:68, col:72> 'void'
   |-ParmVarDecl {{address:first}} <line:7:20, col:29> first 'i32'
   | `-BuiltinType {{address}} <col:26, col:29> 'i32'
   |-ParmVarDecl {{address:second}} <col:31, col:41> second 'i32'
@@ -2392,8 +2624,8 @@ callback(first, second, move second);
   `-CompoundStmt {{address}} <col:43, line:9:2>
     `-ExprStmt {{address}} <line:8:1, col:38>
       `-CallExpr {{address}} <col:1, col:37> 'void'
-        |-ImplicitCastExpr {{address}} <col:1, col:9> '*func (mut i32, copy i32, move i32) void' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:1, col:9> '*func (mut i32, copy i32, move i32) void' lvalue ParmVar {{address:void_callback}} 'callback' '*func (mut i32, copy i32, move i32) void'
+        |-ImplicitCastExpr {{address}} <col:1, col:9> '*func (&mut i32, &copy i32, &move i32) void' pure-rvalue <LValueToRValue>
+        | `-DeclRefExpr {{address}} <col:1, col:9> '*func (&mut i32, &copy i32, &move i32) void' lvalue ParmVar {{address:void_callback}} 'callback' '*func (&mut i32, &copy i32, &move i32) void'
         |-DeclRefExpr {{address}} <col:10, col:15> 'i32' lvalue ParmVar {{address:first}} 'first' 'i32'
         |-ImplicitCastExpr {{address}} <col:17, col:23> 'const i32' lvalue <NoOp>
         | `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue ParmVar {{address:second}} 'second' 'i32'
@@ -2402,7 +2634,7 @@ callback(first, second, move second);
 }
 
 TEST_F(SemaTest, DiagnosesIndirectCallSignatureErrorsWithoutCandidateNotes) {
-  Analyze(R"(func inspect(callback *func (i32, mut i32) void, readonly copy i32) {
+  Analyze(R"(func inspect(callback *func (i32, &mut i32) void, readonly &copy i32) {
 callback();
 callback(true, readonly);
 })");
@@ -2471,7 +2703,7 @@ callback(value);
 
 TEST_F(SemaTest, DescribesFunctionNamesAndAddressesInDiagnostics) {
   Analyze(R"(func F() {}
-func Take(value copy i32) {}
+func Take(value &copy i32) {}
 func Use() {
   if F {}
   !(&F);
@@ -2486,8 +2718,8 @@ func Use() {
   ExpectError(6, 20, "cannot initialize variable 'number': no implicit conversion from a function name to 'i32'", 1);
   ExpectError(7, 2, "no matching function for call to 'Take'", 7);
   ExpectNote(1, 0,
-             "candidate function is not viable: a function name does not produce a value that can bind to "
-             "reference type 'copy i32' for argument 1",
+             "candidate function is not viable: a function name does not produce a value that can bind to reference "
+             "type '&copy i32' for argument 1",
              0);
 }
 
@@ -2550,31 +2782,31 @@ func G(callback *func (*func (func () void) void, i32) void) { callback(); })");
 
 TEST_F(SemaTest, RetainsAddressedSourceWhenSelectedFunctionPointerCannotBindToMut) {
   Analyze(R"(func F() {}
-func Use() { var callback mut *func () void := &F; })");
-  ExpectError(
-      1, 47,
-      "cannot initialize variable 'callback': reference type 'mut *func () void' cannot bind to pure rvalue of type '*func () void'",
-      2);
+func Use() { var callback &mut *func () void := &F; })");
+  ExpectError(1, 48,
+              "cannot initialize variable 'callback': reference type '&mut *func () void' cannot bind to pure rvalue "
+              "of type '*func () void'",
+              2);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-FunctionDecl {{address:f}} <test.cw:1:1, col:12> F 'func () void'
 | `-CompoundStmt {{address}} <col:10, col:12>
-`-FunctionDecl {{address:use}} <line:2:1, col:53> Use 'func () void' contains-errors
-  `-CompoundStmt {{address}} <col:12, col:53> contains-errors
-    `-DeclStmt {{address}} <col:14, col:51> contains-errors
-      `-VarGroupDecl {{address}} <col:14, col:51> contains-errors
-        |-VarDecl {{address}} <col:18, col:44> callback 'mut *func () void'
-        | `-ReferenceType {{address}} <col:27, col:44> 'mut'
-        |   `-PointerType {{address}} <col:31, col:44>
-        |     `-FunctionType {{address}} <col:32, col:44>
-        |       `-BuiltinType {{address}} <col:40, col:44> 'void'
-        `-UnaryOperator {{address}} <col:48, col:50> '<address-of-function-overload-set>' '&' contains-errors
-          `-DeclRefExpr {{address}} <col:49, col:50> '<function-overload-set>' 'F')");
+`-FunctionDecl {{address:use}} <line:2:1, col:54> Use 'func () void' contains-errors
+  `-CompoundStmt {{address}} <col:12, col:54> contains-errors
+    `-DeclStmt {{address}} <col:14, col:52> contains-errors
+      `-VarGroupDecl {{address}} <col:14, col:52> contains-errors
+        |-VarDecl {{address}} <col:18, col:45> callback '&mut *func () void'
+        | `-ReferenceType {{address}} <col:27, col:45> '&mut'
+        |   `-PointerType {{address}} <col:32, col:45>
+        |     `-FunctionType {{address}} <col:33, col:45>
+        |       `-BuiltinType {{address}} <col:41, col:45> 'void'
+        `-UnaryOperator {{address}} <col:49, col:51> '<address-of-function-overload-set>' '&' contains-errors
+          `-DeclRefExpr {{address}} <col:50, col:51> '<function-overload-set>' 'F')");
 }
 
 TEST_F(SemaTest, FormsFunctionAddressReferenceEndpoints) {
   Analyze(R"(func F() {}
-func TakeMove(value move *func () void) {}
-func TakeCopy(value copy *func () void) {}
+func TakeMove(value &move *func () void) {}
+func TakeCopy(value &copy *func () void) {}
 func Use() {
   TakeMove(&F);
   TakeCopy(&F);
@@ -2582,32 +2814,32 @@ func Use() {
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-FunctionDecl {{address:f}} <test.cw:1:1, col:12> F 'func () void'
 | `-CompoundStmt {{address}} <col:10, col:12>
-|-FunctionDecl {{address:take_move}} <line:2:1, col:43> TakeMove 'func (move *func () void) void'
-| |-ParmVarDecl {{address:take_move_value}} <col:15, col:39> value 'move *func () void'
-| | `-ReferenceType {{address}} <col:21, col:39> 'move'
-| |   `-PointerType {{address}} <col:26, col:39>
-| |     `-FunctionType {{address}} <col:27, col:39>
-| |       `-BuiltinType {{address}} <col:35, col:39> 'void'
-| `-CompoundStmt {{address}} <col:41, col:43>
-|-FunctionDecl {{address:take_copy}} <line:3:1, col:43> TakeCopy 'func (copy *func () void) void'
-| |-ParmVarDecl {{address:take_copy_value}} <col:15, col:39> value 'copy *func () void'
-| | `-ReferenceType {{address}} <col:21, col:39> 'copy'
-| |   `-PointerType {{address}} <col:26, col:39>
-| |     `-FunctionType {{address}} <col:27, col:39>
-| |       `-BuiltinType {{address}} <col:35, col:39> 'void'
-| `-CompoundStmt {{address}} <col:41, col:43>
+|-FunctionDecl {{address:take_move}} <line:2:1, col:44> TakeMove 'func (&move *func () void) void'
+| |-ParmVarDecl {{address:take_move_value}} <col:15, col:40> value '&move *func () void'
+| | `-ReferenceType {{address}} <col:21, col:40> '&move'
+| |   `-PointerType {{address}} <col:27, col:40>
+| |     `-FunctionType {{address}} <col:28, col:40>
+| |       `-BuiltinType {{address}} <col:36, col:40> 'void'
+| `-CompoundStmt {{address}} <col:42, col:44>
+|-FunctionDecl {{address:take_copy}} <line:3:1, col:44> TakeCopy 'func (&copy *func () void) void'
+| |-ParmVarDecl {{address:take_copy_value}} <col:15, col:40> value '&copy *func () void'
+| | `-ReferenceType {{address}} <col:21, col:40> '&copy'
+| |   `-PointerType {{address}} <col:27, col:40>
+| |     `-FunctionType {{address}} <col:28, col:40>
+| |       `-BuiltinType {{address}} <col:36, col:40> 'void'
+| `-CompoundStmt {{address}} <col:42, col:44>
 `-FunctionDecl {{address:use}} <line:4:1, line:7:2> Use 'func () void'
   `-CompoundStmt {{address}} <line:4:12, line:7:2>
     |-ExprStmt {{address}} <line:5:3, col:16>
     | `-CallExpr {{address}} <col:3, col:15> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:11> 'func (move *func () void) void' Function {{address:take_move}} 'TakeMove' 'func (move *func () void) void'
+    |   |-DeclRefExpr {{address}} <col:3, col:11> 'func (&move *func () void) void' Function {{address:take_move}} 'TakeMove' 'func (&move *func () void) void'
     |   `-MaterializeTemporaryExpr {{address}} <col:12, col:14> '*func () void' move-lvalue
     |     `-ImplicitOverloadSetSelectionExpr {{address}} <col:12, col:14> '*func () void' pure-rvalue Function {{address:f}} 'F' 'func () void'
     |       `-UnaryOperator {{address}} <col:12, col:14> '<address-of-function-overload-set>' '&'
     |         `-DeclRefExpr {{address}} <col:13, col:14> '<function-overload-set>' 'F'
     `-ExprStmt {{address}} <line:6:3, col:16>
       `-CallExpr {{address}} <col:3, col:15> 'void'
-        |-DeclRefExpr {{address}} <col:3, col:11> 'func (copy *func () void) void' Function {{address:take_copy}} 'TakeCopy' 'func (copy *func () void) void'
+        |-DeclRefExpr {{address}} <col:3, col:11> 'func (&copy *func () void) void' Function {{address:take_copy}} 'TakeCopy' 'func (&copy *func () void) void'
         `-ImplicitCastExpr {{address}} <col:12, col:14> 'const *func () void' move-lvalue <NoOp>
           `-MaterializeTemporaryExpr {{address}} <col:12, col:14> '*func () void' move-lvalue
             `-ImplicitOverloadSetSelectionExpr {{address}} <col:12, col:14> '*func () void' pure-rvalue Function {{address:f}} 'F' 'func () void'
@@ -2620,13 +2852,13 @@ func Use() {
 TEST_F(SemaTest, TreatsSameTypeValueAndReferenceSequencesAsIndistinguishable) {
   Analyze(R"(struct Value { number i32; }
 ctor Value(number i32) { this.number := number; }
-ctor Value(other copy Value) { this.number := other.number; }
+ctor Value(other &copy Value) { this.number := other.number; }
 dtor Value() {}
 func Select(value Value) {}
-func Select(value copy Value) {}
+func Select(value &copy Value) {}
 func Choose(value Value, rank i16) {}
-func Choose(value copy Value, rank i32) {}
-func Rank(source mut Value, rank i16) {
+func Choose(value &copy Value, rank i32) {}
+func Rank(source &mut Value, rank i16) {
   Select(source);
   Choose(source, rank);
 })");
@@ -2641,10 +2873,10 @@ TEST_F(SemaTest, DoesNotUseObjectFormationAvailabilityToBreakValueReferenceAmbig
 ctor Value() {}
 dtor Value() {}
 func Select(value Value) {}
-func Select(value copy Value) {}
-func Use(value mut Value) { Select(value); })");
+func Select(value &copy Value) {}
+func Use(value &mut Value) { Select(value); })");
 
-  ExpectError(5, 28, "call to 'Select' is ambiguous", 13);
+  ExpectError(5, 29, "call to 'Select' is ambiguous", 13);
   ExpectNote(3, 0, "candidate function", 0);
   ExpectNote(4, 0, "candidate function", 0);
 }
@@ -2818,12 +3050,12 @@ func caller(value i16) { same(value); })");
 }
 
 TEST_F(SemaTest, ReportsAllViableCandidatesForNonTransitiveComparisons) {
-  Analyze(R"(func Pick(a mut i32, b i32) {}
-func Pick(a copy i32, b mut i32) {}
-func Pick(a i32, b copy i32) {}
-func Reverse(a i32, b copy i32) {}
-func Reverse(a copy i32, b mut i32) {}
-func Reverse(a mut i32, b i32) {}
+  Analyze(R"(func Pick(a &mut i32, b i32) {}
+func Pick(a &copy i32, b &mut i32) {}
+func Pick(a i32, b &copy i32) {}
+func Reverse(a i32, b &copy i32) {}
+func Reverse(a &copy i32, b &mut i32) {}
+func Reverse(a &mut i32, b i32) {}
 func Use(a i32, b i32) {
   Pick(a, b);
   Reverse(a, b);
@@ -2840,9 +3072,9 @@ func Use(a i32, b i32) {
 }
 
 TEST_F(SemaTest, ReportsAllViableCandidatesForCyclicComparisons) {
-  Analyze(R"(func Pick(a mut i32, b copy i32, c i32) {}
-func Pick(a copy i32, b i32, c mut i32) {}
-func Pick(a i32, b mut i32, c copy i32) {}
+  Analyze(R"(func Pick(a &mut i32, b &copy i32, c i32) {}
+func Pick(a &copy i32, b i32, c &mut i32) {}
+func Pick(a i32, b &mut i32, c &copy i32) {}
 func Use(value i32) {
   Pick(value, value, value);
 })");
@@ -2888,10 +3120,10 @@ func caller(first i32, second i16) { narrow(first, second); })");
 
 TEST_F(SemaTest, KeepsExactValueAndReferenceConversionsIndistinguishableAndExplainsBindingFailures) {
   Analyze(R"(func choice(value i32) {}
-func choice(value mut i32) {}
-func only_mut(value mut i32) {}
-func only_move(value move i32) {}
-func converted(value copy u8) {}
+func choice(value &mut i32) {}
+func only_mut(value &mut i32) {}
+func only_move(value &move i32) {}
+func converted(value &copy u8) {}
 func caller(value i32) {
   choice(value);
   only_mut(move value);
@@ -2904,28 +3136,28 @@ func caller(value i32) {
   ExpectNote(1, 0, "candidate function", 0);
   ExpectError(7, 2, "no matching function for call to 'only_mut'", 20);
   ExpectNote(2, 0,
-             "candidate function is not viable: reference type 'mut i32' cannot bind to move lvalue of type 'i32' "
-             "for argument 1",
+             "candidate function is not viable: reference type '&mut i32' cannot bind to move lvalue of type 'i32' for "
+             "argument 1",
              0);
   ExpectError(8, 2, "no matching function for call to 'only_move'", 16);
-  ExpectNote(3, 0,
-             "candidate function is not viable: reference type 'move i32' cannot bind to lvalue of type 'i32' for "
-             "argument 1",
-             0);
+  ExpectNote(
+      3, 0,
+      "candidate function is not viable: reference type '&move i32' cannot bind to lvalue of type 'i32' for argument 1",
+      0);
   ExpectError(9, 2, "no matching function for call to 'converted'", 16);
-  ExpectNote(4, 0,
-             "candidate function is not viable: reference type 'copy u8' cannot bind to a value of type 'i32' for "
-             "argument 1",
-             0);
+  ExpectNote(
+      4, 0,
+      "candidate function is not viable: reference type '&copy u8' cannot bind to a value of type 'i32' for argument 1",
+      0);
 }
 
 TEST_F(SemaTest, ReportsCrossArgumentAmbiguityForDerivedToBaseReferenceBindings) {
   Analyze(R"(trivial struct Root {}
 trivial struct Middle : Root {}
 trivial struct Derived : Middle {}
-func Choose(left copy Middle, right copy Root) {}
-func Choose(left copy Root, right copy Middle) {}
-func Check(left mut Derived, right mut Derived) {
+func Choose(left &copy Middle, right &copy Root) {}
+func Choose(left &copy Root, right &copy Middle) {}
+func Check(left &mut Derived, right &mut Derived) {
   Choose(left, right);
 })");
 
@@ -2991,9 +3223,9 @@ func target(value i32) {})");
 }
 
 TEST_F(SemaTest, PrefersExactReferencesOverNumericAndPointerQualificationConversions) {
-  Analyze(R"(func Number(value copy i32) i32 { 1 }
+  Analyze(R"(func Number(value &copy i32) i32 { 1 }
 func Number(value i64) bool { true }
-func Pointer(value copy *i32) i32 { 1 }
+func Pointer(value &copy *i32) i32 { 1 }
 func Pointer(value *const i32) bool { true }
 func Use(number i32, pointer *i32) i32 {
   var first i32 := Number(number);
@@ -3007,8 +3239,8 @@ TEST_F(SemaTest, LetsOtherArgumentsDecideBetweenDifferentSelectedFunctionAddress
 func F(value bool) {}
 func ValueChoice(fn *func (i32) void, rank i64) bool { true }
 func ValueChoice(fn *func (bool) void, rank i32) i32 { 1 }
-func ReferenceChoice(fn move *func (i32) void, rank i64) bool { true }
-func ReferenceChoice(fn copy *func (bool) void, rank i32) i32 { 1 }
+func ReferenceChoice(fn &move *func (i32) void, rank i64) bool { true }
+func ReferenceChoice(fn &copy *func (bool) void, rank i32) i32 { 1 }
 func Use(rank i32) i32 {
   var first i32 := ValueChoice(&F, rank);
   var second i32 := ReferenceChoice(&F, rank);
@@ -3020,8 +3252,8 @@ func Use(rank i32) i32 {
 class ConversionOrderTest : public SemaTest, public ::testing::WithParamInterface<std::string> {};
 
 TEST_P(ConversionOrderTest, KeepsValueMutCopyAmbiguityIndependentOfDeclarationOrder) {
-  const std::string declarations[] = {"func Select(value i32) {}\n", "func Select(value mut i32) {}\n",
-                                      "func Select(value copy i32) {}\n"};
+  const std::string declarations[] = {"func Select(value i32) {}\n", "func Select(value &mut i32) {}\n",
+                                      "func Select(value &copy i32) {}\n"};
   std::string source;
   for (char index : GetParam()) source += declarations[index - '0'];
   source += "func Use(value i32) { Select(value); }";
@@ -3040,12 +3272,12 @@ TEST_F(SemaTest, PrefersNearerValueAndReferenceBaseTargetsBeforeBindingModes) {
 trivial struct Middle : Base {}
 trivial struct Derived : Middle {}
 func First(value Base) bool { true }
-func First(value copy Middle) i32 { 1 }
+func First(value &copy Middle) i32 { 1 }
 func Second(value Middle) i32 { 1 }
-func Second(value mut Base) bool { true }
+func Second(value &mut Base) bool { true }
 func Exact(value Derived) i32 { 1 }
-func Exact(value copy Base) bool { true }
-func Use(source mut Derived) i32 {
+func Exact(value &copy Base) bool { true }
+func Use(source &mut Derived) i32 {
   var first i32 := First(source);
   var second i32 := Second(source);
   var exact i32 := Exact(source);
@@ -3070,12 +3302,12 @@ func Use(condition bool) {
 TEST_F(SemaTest, FormsNonTrivialValuesWithCopyAndMoveConstructors) {
   Analyze(R"(struct Value { number i32; }
 ctor Value(number i32) { this.number := number; }
-ctor Value(other copy Value) { this.number := other.number; }
-ctor Value(other move Value) { this.number := other.number; }
+ctor Value(other &copy Value) { this.number := other.number; }
+ctor Value(other &move Value) { this.number := other.number; }
 dtor Value() {}
 func Make() Value { Value(1) }
 func Take(value Value) {}
-func Use(left mut Value, right copy Value, condition bool) Value {
+func Use(left &mut Value, right &copy Value, condition bool) Value {
   var copied Value := left;
   var inferred := left;
   var readonly_copy Value := right;
@@ -3088,9 +3320,9 @@ func Use(left mut Value, right copy Value, condition bool) Value {
 }
 struct CopyOnly { number i32; }
 ctor CopyOnly(number i32) { this.number := number; }
-ctor CopyOnly(other copy CopyOnly) { this.number := other.number; }
+ctor CopyOnly(other &copy CopyOnly) { this.number := other.number; }
 dtor CopyOnly() {}
-func CopyFallback(source mut CopyOnly) {
+func CopyFallback(source &mut CopyOnly) {
   var result CopyOnly := move source;
 })");
 }
@@ -3098,11 +3330,11 @@ func CopyFallback(source mut CopyOnly) {
 TEST_F(SemaTest, FormsCopyConstructionAcrossConstructorIndirectAndOperatorCalls) {
   Analyze(R"(struct Value { number i32; }
 ctor Value(number i32) { this.number := number; }
-ctor Value(other copy Value) { this.number := other.number; }
+ctor Value(other &copy Value) { this.number := other.number; }
 ctor Value(other Value, tag bool) { this.number := other.number; }
 dtor Value() {}
-func operator+(left Value, right copy Value) {}
-func Use(source mut Value, callback *func (Value) void) {
+func operator+(left Value, right &copy Value) {}
+func Use(source &mut Value, callback *func (Value) void) {
   Value(source, true);
   callback(source);
   source + source;
@@ -3113,7 +3345,7 @@ TEST_F(SemaTest, DiagnosesMissingCopyAndMoveConstruction) {
   Analyze(R"(struct Missing { number i32; }
 ctor Missing(number i32) { this.number := number; }
 dtor Missing() {}
-func Reject(source mut Missing) {
+func Reject(source &mut Missing) {
   var copied Missing := source;
   var moved Missing := move source;
 })");
@@ -3127,14 +3359,15 @@ TEST_F(SemaTest, PreservesSelectedCallAndArgumentsWhenParameterFormationFails) {
 ctor Value() {}
 dtor Value() {}
 func Consume(number u8, object Value) {}
-func Use(number i32, object mut Value) { Consume(number, object); })");
+func Use(number i32, object &mut Value) { Consume(number, object); })");
 
-  ExpectError(4, 57,
+  ExpectError(4, 58,
               "cannot initialize parameter 2 of function 'Consume': no copy constructor is available for 'Value'", 6);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
 |-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:consume}} <line:4:1, col:41> Consume 'func (u8, Value) void'
@@ -3143,18 +3376,19 @@ func Use(number i32, object mut Value) { Consume(number, object); })");
 | |-ParmVarDecl {{address}} <col:25, col:37> object 'Value'
 | | `-NamedType {{address}} <col:32, col:37> 'Value'
 | `-CompoundStmt {{address}} <col:39, col:41>
-`-FunctionDecl {{address}} <line:5:1, col:68> Use 'func (i32, mut Value) void' contains-errors
+`-FunctionDecl {{address}} <line:5:1, col:69> Use 'func (i32, &mut Value) void' contains-errors
   |-ParmVarDecl {{address:number}} <col:10, col:20> number 'i32'
   | `-BuiltinType {{address}} <col:17, col:20> 'i32'
-  |-ParmVarDecl {{address:object}} <col:22, col:38> object 'mut Value'
-  | `-ReferenceType {{address}} <col:29, col:38> 'mut'
-  |   `-NamedType {{address}} <col:33, col:38> 'Value'
-  `-CompoundStmt {{address}} <col:40, col:68> contains-errors
-    `-ExprStmt {{address}} <col:42, col:66> contains-errors
-      `-CallExpr {{address}} <col:42, col:65> contains-errors
-        |-DeclRefExpr {{address}} <col:42, col:49> 'func (u8, Value) void' Function {{address:consume}} 'Consume' 'func (u8, Value) void'
-        |-DeclRefExpr {{address}} <col:50, col:56> 'i32' lvalue ParmVar {{address:number}} 'number' 'i32'
-        `-DeclRefExpr {{address}} <col:58, col:64> 'Value' lvalue ParmVar {{address:object}} 'object' 'mut Value')");
+  |-ParmVarDecl {{address:object}} <col:22, col:39> object '&mut Value'
+  | `-ReferenceType {{address}} <col:29, col:39> '&mut'
+  |   `-NamedType {{address}} <col:34, col:39> 'Value'
+  `-CompoundStmt {{address}} <col:41, col:69> contains-errors
+    `-ExprStmt {{address}} <col:43, col:67> contains-errors
+      `-CallExpr {{address}} <col:43, col:66> contains-errors
+        |-DeclRefExpr {{address}} <col:43, col:50> 'func (u8, Value) void' Function {{address:consume}} 'Consume' 'func (u8, Value) void'
+        |-DeclRefExpr {{address}} <col:51, col:57> 'i32' lvalue ParmVar {{address:number}} 'number' 'i32'
+        `-DeclRefExpr {{address}} <col:59, col:65> 'Value' lvalue ParmVar {{address:object}} 'object' '&mut Value'
+)");
 }
 
 TEST_F(SemaTest, KeepsDirectlyPassedNonTrivialPureRValueUnwrappedInSemanticAst) {
@@ -3169,6 +3403,7 @@ func Use() { Take(Make()); })");
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
 |-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:make}} <line:4:1, col:38> Make 'func () Value'
@@ -3188,7 +3423,8 @@ func Use() { Take(Make()); })");
       `-CallExpr {{address}} <col:14, col:26> 'void'
         |-DeclRefExpr {{address}} <col:14, col:18> 'func (Value) void' Function {{address:take}} 'Take' 'func (Value) void'
         `-CallExpr {{address}} <col:19, col:25> 'Value' pure-rvalue
-          `-DeclRefExpr {{address}} <col:19, col:23> 'func () Value' Function {{address:make}} 'Make' 'func () Value')");
+          `-DeclRefExpr {{address}} <col:19, col:23> 'func () Value' Function {{address:make}} 'Make' 'func () Value'
+)");
 }
 
 TEST_F(SemaTest, RejectsNonTrivialGlvaluesAndMixedConditionalValuesForValueParameters) {
@@ -3196,7 +3432,7 @@ TEST_F(SemaTest, RejectsNonTrivialGlvaluesAndMixedConditionalValuesForValueParam
 ctor Value() {}
 dtor Value() {}
 func Take(value Value) {}
-func Reject(condition bool, existing mut Value, other mut Value) {
+func Reject(condition bool, existing &mut Value, other &mut Value) {
   Take(existing);
   Take(move existing);
   Take(condition ? existing : Value());
@@ -3223,7 +3459,7 @@ TEST_F(SemaTest, AppliesNonTrivialDirectTransferToIndirectCallArguments) {
 ctor Value() {}
 dtor Value() {}
 func Make() Value { return Value(); }
-func Check(callback *func (Value) void, existing mut Value) {
+func Check(callback *func (Value) void, existing &mut Value) {
   callback(Make());
   callback(existing);
   callback(move existing);
@@ -3242,9 +3478,9 @@ TEST_F(SemaTest, ExplainsDerivedToBaseReferenceBindingFailures) {
   Analyze(R"(trivial struct Base {}
 trivial struct Derived : Base {}
 trivial struct Other {}
-func NeedBase(value mut Base) {}
-func MoveBase(value move Base) {}
-func Check(other mut Other, fixed copy Derived, value mut Derived) {
+func NeedBase(value &mut Base) {}
+func MoveBase(value &move Base) {}
+func Check(other &mut Other, fixed &copy Derived, value &mut Derived) {
   NeedBase(other);
   NeedBase(fixed);
   MoveBase(value);
@@ -3252,17 +3488,17 @@ func Check(other mut Other, fixed copy Derived, value mut Derived) {
 
   ExpectError(6, 2, "no matching function for call to 'NeedBase'", 15);
   ExpectNote(3, 0,
-             "candidate function is not viable: reference type 'mut Base' cannot bind to a value of type 'Other' "
-             "for argument 1",
+             "candidate function is not viable: reference type '&mut Base' cannot bind to a value of type 'Other' for "
+             "argument 1",
              0);
   ExpectError(7, 2, "no matching function for call to 'NeedBase'", 15);
   ExpectNote(3, 0,
-             "candidate function is not viable: binding a reference of type 'mut Base' to a value of type 'const "
+             "candidate function is not viable: binding a reference of type '&mut Base' to a value of type 'const "
              "Derived' would discard const for argument 1",
              0);
   ExpectError(8, 2, "no matching function for call to 'MoveBase'", 15);
   ExpectNote(4, 0,
-             "candidate function is not viable: reference type 'move Base' cannot bind to lvalue of type 'Derived' "
+             "candidate function is not viable: reference type '&move Base' cannot bind to lvalue of type 'Derived' "
              "for argument 1",
              0);
 }
@@ -3270,8 +3506,8 @@ func Check(other mut Other, fixed copy Derived, value mut Derived) {
 TEST_F(SemaTest, AcceptsDelayedDerivedToBaseReferenceBinding) {
   Analyze(R"(trivial struct Base {}
 trivial struct Derived : Base {}
-func Check(source mut Derived) {
-  var link mut Base;
+func Check(source &mut Derived) {
+  var link &mut Base;
   link := source;
   link;
 })");
@@ -3280,13 +3516,13 @@ func Check(source mut Derived) {
 TEST_F(SemaTest, FormsBaseValuesFromProjectedObjectsAndMaterializedDerivedResults) {
   Analyze(R"(struct Base { number i32; }
 ctor Base(number i32) { this.number := number; }
-ctor Base(source copy Base) { this.number := source.number; }
-ctor Base(source move Base) { this.number := source.number; }
+ctor Base(source &copy Base) { this.number := source.number; }
+ctor Base(source &move Base) { this.number := source.number; }
 dtor Base() {}
 struct Derived : Base {}
 ctor Derived() { this.Base := Base(1); }
 dtor Derived() {}
-func Use(source mut Derived, callback *func (Base) Base) Base {
+func Use(source &mut Derived, callback *func (Base) Base) Base {
   var copied Base := source;
   var moved Base := move source;
   var temporary Base := Derived();
@@ -3301,107 +3537,112 @@ func Use(source mut Derived, callback *func (Base) Base) Base {
 | |-ParmVarDecl {{address:base_value_constructor_number}} <col:11, col:21> number 'i32'
 | | `-BuiltinType {{address}} <col:18, col:21> 'i32'
 | `-CompoundStmt {{address}} <col:23, col:49>
-|   `-ExprStmt {{address}} <col:25, col:47>
-|     `-InitializationExpr {{address}} <col:25, col:46> 'void'
-|       |-MemberExpr {{address}} <col:25, col:36> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
-|       | `-ThisExpr {{address}} <col:25, col:29> 'Base' lvalue this
-|       `-ImplicitCastExpr {{address}} <col:40, col:46> 'i32' pure-rvalue <LValueToRValue>
-|         `-DeclRefExpr {{address}} <col:40, col:46> 'i32' lvalue ParmVar {{address:base_value_constructor_number}} 'number' 'i32'
-|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:62> Base target Struct {{address:base}} 'Base' 'func (copy Base) void'
-| |-ParmVarDecl {{address:base_copy_constructor_source}} <col:11, col:27> source 'copy Base'
-| | `-ReferenceType {{address}} <col:18, col:27> 'copy'
-| |   `-NamedType {{address}} <col:23, col:27> 'Base'
-| `-CompoundStmt {{address}} <col:29, col:62>
-|   `-ExprStmt {{address}} <col:31, col:60>
-|     `-InitializationExpr {{address}} <col:31, col:59> 'void'
-|       |-MemberExpr {{address}} <col:31, col:42> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
-|       | `-ThisExpr {{address}} <col:31, col:35> 'Base' lvalue this
-|       `-ImplicitCastExpr {{address}} <col:46, col:59> 'i32' pure-rvalue <LValueToRValue>
-|         `-MemberExpr {{address}} <col:46, col:59> 'const i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
-|           `-DeclRefExpr {{address}} <col:46, col:52> 'const Base' lvalue ParmVar {{address:base_copy_constructor_source}} 'source' 'copy Base'
-|-ConstructorDecl {{address:base_move_constructor}} <line:4:1, col:62> Base target Struct {{address:base}} 'Base' 'func (move Base) void'
-| |-ParmVarDecl {{address:base_move_constructor_source}} <col:11, col:27> source 'move Base'
-| | `-ReferenceType {{address}} <col:18, col:27> 'move'
-| |   `-NamedType {{address}} <col:23, col:27> 'Base'
-| `-CompoundStmt {{address}} <col:29, col:62>
-|   `-ExprStmt {{address}} <col:31, col:60>
-|     `-InitializationExpr {{address}} <col:31, col:59> 'void'
-|       |-MemberExpr {{address}} <col:31, col:42> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
-|       | `-ThisExpr {{address}} <col:31, col:35> 'Base' lvalue this
-|       `-ImplicitCastExpr {{address}} <col:46, col:59> 'i32' pure-rvalue <LValueToRValue>
-|         `-MemberExpr {{address}} <col:46, col:59> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
-|           `-DeclRefExpr {{address}} <col:46, col:52> 'Base' lvalue ParmVar {{address:base_move_constructor_source}} 'source' 'move Base'
+|   |-ExprStmt {{address}} <col:25, col:47>
+|   | `-InitializationExpr {{address}} <col:25, col:46> 'void'
+|   |   |-MemberExpr {{address}} <col:25, col:36> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
+|   |   | `-ThisExpr {{address}} <col:25, col:29> 'Base' lvalue this
+|   |   `-ImplicitCastExpr {{address}} <col:40, col:46> 'i32' pure-rvalue <LValueToRValue>
+|   |     `-DeclRefExpr {{address}} <col:40, col:46> 'i32' lvalue ParmVar {{address:base_value_constructor_number}} 'number' 'i32'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:63> Base target Struct {{address:base}} 'Base' 'func (&copy Base) void'
+| |-ParmVarDecl {{address:base_copy_constructor_source}} <col:11, col:28> source '&copy Base'
+| | `-ReferenceType {{address}} <col:18, col:28> '&copy'
+| |   `-NamedType {{address}} <col:24, col:28> 'Base'
+| `-CompoundStmt {{address}} <col:30, col:63>
+|   |-ExprStmt {{address}} <col:32, col:61>
+|   | `-InitializationExpr {{address}} <col:32, col:60> 'void'
+|   |   |-MemberExpr {{address}} <col:32, col:43> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
+|   |   | `-ThisExpr {{address}} <col:32, col:36> 'Base' lvalue this
+|   |   `-ImplicitCastExpr {{address}} <col:47, col:60> 'i32' pure-rvalue <LValueToRValue>
+|   |     `-MemberExpr {{address}} <col:47, col:60> 'const i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
+|   |       `-DeclRefExpr {{address}} <col:47, col:53> 'const Base' lvalue ParmVar {{address:base_copy_constructor_source}} 'source' '&copy Base'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-ConstructorDecl {{address:base_move_constructor}} <line:4:1, col:63> Base target Struct {{address:base}} 'Base' 'func (&move Base) void'
+| |-ParmVarDecl {{address:base_move_constructor_source}} <col:11, col:28> source '&move Base'
+| | `-ReferenceType {{address}} <col:18, col:28> '&move'
+| |   `-NamedType {{address}} <col:24, col:28> 'Base'
+| `-CompoundStmt {{address}} <col:30, col:63>
+|   |-ExprStmt {{address}} <col:32, col:61>
+|   | `-InitializationExpr {{address}} <col:32, col:60> 'void'
+|   |   |-MemberExpr {{address}} <col:32, col:43> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
+|   |   | `-ThisExpr {{address}} <col:32, col:36> 'Base' lvalue this
+|   |   `-ImplicitCastExpr {{address}} <col:47, col:60> 'i32' pure-rvalue <LValueToRValue>
+|   |     `-MemberExpr {{address}} <col:47, col:60> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
+|   |       `-DeclRefExpr {{address}} <col:47, col:53> 'Base' lvalue ParmVar {{address:base_move_constructor_source}} 'source' '&move Base'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address:base_destructor}} <line:5:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:6:1, col:25> Derived : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
 |-ConstructorDecl {{address:derived_constructor}} <line:7:1, col:41> Derived target Struct {{address:derived}} 'Derived' 'func () void'
 | `-CompoundStmt {{address}} <col:16, col:41>
-|   `-ExprStmt {{address}} <col:18, col:39>
-|     `-InitializationExpr {{address}} <col:18, col:38> 'void'
-|       |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
-|       | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
-|       `-ConstructionExpr {{address}} <col:31, col:38> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_value_constructor}} 'Base' 'func (i32) void'
-|         `-ImplicitCastExpr {{address}} <col:36, col:37> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-|           `-IntegerLiteral {{address}} <col:36, col:37> 'comptime_int' 1
+|   |-ExprStmt {{address}} <col:18, col:39>
+|   | `-InitializationExpr {{address}} <col:18, col:38> 'void'
+|   |   |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|   |   | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:31, col:38> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_value_constructor}} 'Base' 'func (i32) void'
+|   |     `-ImplicitCastExpr {{address}} <col:36, col:37> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|   |       `-IntegerLiteral {{address}} <col:36, col:37> 'comptime_int' 1
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address:derived_destructor}} <line:8:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
 | `-CompoundStmt {{address}} <col:16, col:18>
-`-FunctionDecl {{address:use}} <line:9:1, line:15:2> Use 'func (mut Derived, *func (Base) Base) Base'
-  |-ParmVarDecl {{address:use_source}} <line:9:10, col:28> source 'mut Derived'
-  | `-ReferenceType {{address}} <col:17, col:28> 'mut'
-  |   `-NamedType {{address}} <col:21, col:28> 'Derived'
-  |-ParmVarDecl {{address:use_callback}} <col:30, col:56> callback '*func (Base) Base'
-  | `-PointerType {{address}} <col:39, col:56>
-  |   `-FunctionType {{address}} <col:40, col:56>
-  |     |-NamedType {{address}} <col:46, col:50> 'Base'
-  |     `-NamedType {{address}} <col:52, col:56> 'Base'
-  |-ReturnVarDecl {{address:use_result}} <col:58, col:62> 'Base'
-  | `-NamedType {{address}} <col:58, col:62> 'Base'
-  `-CompoundStmt {{address}} <col:63, line:15:2>
+`-FunctionDecl {{address:use}} <line:9:1, line:15:2> Use 'func (&mut Derived, *func (Base) Base) Base'
+  |-ParmVarDecl {{address:use_source}} <line:9:10, col:29> source '&mut Derived'
+  | `-ReferenceType {{address}} <col:17, col:29> '&mut'
+  |   `-NamedType {{address}} <col:22, col:29> 'Derived'
+  |-ParmVarDecl {{address:use_callback}} <col:31, col:57> callback '*func (Base) Base'
+  | `-PointerType {{address}} <col:40, col:57>
+  |   `-FunctionType {{address}} <col:41, col:57>
+  |     |-NamedType {{address}} <col:47, col:51> 'Base'
+  |     `-NamedType {{address}} <col:53, col:57> 'Base'
+  |-ReturnVarDecl {{address:use_result}} <col:59, col:63> 'Base'
+  | `-NamedType {{address}} <col:59, col:63> 'Base'
+  `-CompoundStmt {{address}} <col:64, line:15:2>
     |-DeclStmt {{address}} <line:10:3, col:29>
     | `-VarGroupDecl {{address}} <col:3, col:29>
     |   |-VarDecl {{address}} <col:7, col:18> copied 'Base'
     |   | `-NamedType {{address}} <col:14, col:18> 'Base'
-    |   `-ConstructionExpr {{address}} <col:22, col:28> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'func (copy Base) void'
+    |   `-ConstructionExpr {{address}} <col:22, col:28> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'func (&copy Base) void'
     |     `-ImplicitCastExpr {{address}} <col:22, col:28> 'const Base' lvalue <NoOp>
-    |       `-ImplicitCastExpr {{address}} <col:22, col:28> 'Base' lvalue <DerivedToBase> path Struct {{address:base}} 'Base'
-    |         `-DeclRefExpr {{address}} <col:22, col:28> 'Derived' lvalue ParmVar {{address:use_source}} 'source' 'mut Derived'
+    |       `-ImplicitCastExpr {{address}} <col:22, col:28> 'Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
+    |         `-DeclRefExpr {{address}} <col:22, col:28> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
     |-DeclStmt {{address}} <line:11:3, col:33>
     | `-VarGroupDecl {{address}} <col:3, col:33>
     |   |-VarDecl {{address}} <col:7, col:17> moved 'Base'
     |   | `-NamedType {{address}} <col:13, col:17> 'Base'
-    |   `-ConstructionExpr {{address}} <col:21, col:32> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (move Base) void'
-    |     `-ImplicitCastExpr {{address}} <col:21, col:32> 'Base' move-lvalue <DerivedToBase> path Struct {{address:base}} 'Base'
+    |   `-ConstructionExpr {{address}} <col:21, col:32> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (&move Base) void'
+    |     `-ImplicitCastExpr {{address}} <col:21, col:32> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |       `-UnaryOperator {{address}} <col:21, col:32> 'Derived' move-lvalue 'move'
-    |         `-DeclRefExpr {{address}} <col:26, col:32> 'Derived' lvalue ParmVar {{address:use_source}} 'source' 'mut Derived'
+    |         `-DeclRefExpr {{address}} <col:26, col:32> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
     |-DeclStmt {{address}} <line:12:3, col:35>
     | `-VarGroupDecl {{address}} <col:3, col:35>
     |   |-VarDecl {{address}} <col:7, col:21> temporary 'Base'
     |   | `-NamedType {{address}} <col:17, col:21> 'Base'
-    |   `-ConstructionExpr {{address}} <col:25, col:34> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (move Base) void'
-    |     `-ImplicitCastExpr {{address}} <col:25, col:34> 'Base' move-lvalue <DerivedToBase> path Struct {{address:base}} 'Base'
+    |   `-ConstructionExpr {{address}} <col:25, col:34> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (&move Base) void'
+    |     `-ImplicitCastExpr {{address}} <col:25, col:34> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |       `-MaterializeTemporaryExpr {{address}} <col:25, col:34> 'Derived' move-lvalue
     |         `-ConstructionExpr {{address}} <col:25, col:34> 'Derived' pure-rvalue complete-object target <col:25, col:32> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'func () void'
     |-ExprStmt {{address}} <line:13:3, col:20>
     | `-CallExpr {{address}} <col:3, col:19> 'Base' pure-rvalue
     |   |-ImplicitCastExpr {{address}} <col:3, col:11> '*func (Base) Base' pure-rvalue <LValueToRValue>
     |   | `-DeclRefExpr {{address}} <col:3, col:11> '*func (Base) Base' lvalue ParmVar {{address:use_callback}} 'callback' '*func (Base) Base'
-    |   `-ConstructionExpr {{address}} <col:12, col:18> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'func (copy Base) void'
+    |   `-ConstructionExpr {{address}} <col:12, col:18> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'func (&copy Base) void'
     |     `-ImplicitCastExpr {{address}} <col:12, col:18> 'const Base' lvalue <NoOp>
-    |       `-ImplicitCastExpr {{address}} <col:12, col:18> 'Base' lvalue <DerivedToBase> path Struct {{address:base}} 'Base'
-    |         `-DeclRefExpr {{address}} <col:12, col:18> 'Derived' lvalue ParmVar {{address:use_source}} 'source' 'mut Derived'
+    |       `-ImplicitCastExpr {{address}} <col:12, col:18> 'Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
+    |         `-DeclRefExpr {{address}} <col:12, col:18> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
     `-ImplicitResultInitializationExpr {{address}} <line:14:3, col:12> 'void' ReturnVar {{address:use_result}} 'Base'
-      `-ConstructionExpr {{address}} <col:3, col:12> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (move Base) void'
-        `-ImplicitCastExpr {{address}} <col:3, col:12> 'Base' move-lvalue <DerivedToBase> path Struct {{address:base}} 'Base'
+      `-ConstructionExpr {{address}} <col:3, col:12> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (&move Base) void'
+        `-ImplicitCastExpr {{address}} <col:3, col:12> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
           `-MaterializeTemporaryExpr {{address}} <col:3, col:12> 'Derived' move-lvalue
-            `-ConstructionExpr {{address}} <col:3, col:12> 'Derived' pure-rvalue complete-object target <col:3, col:10> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'func () void')");
+            `-ConstructionExpr {{address}} <col:3, col:12> 'Derived' pure-rvalue complete-object target <col:3, col:10> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'func () void'
+)");
 }
 
 TEST_F(SemaTest, FormsTrivialBaseValuesFromEverySourceCategory) {
   Analyze(R"(trivial struct Base { number i32; }
 trivial struct Derived : Base {}
-func Make(source copy Derived) Derived { source }
-func Use(source mut Derived, readonly copy Derived) {
+func Make(source &copy Derived) Derived { source }
+func Use(source &mut Derived, readonly &copy Derived) {
   var copied Base := source;
   var fixed Base := readonly;
   var moved Base := move source;
@@ -3413,57 +3654,57 @@ func Use(source mut Derived, readonly copy Derived) {
 |   `-BuiltinType {{address}} <col:30, col:33> 'i32'
 |-StructDecl {{address:derived}} <line:2:1, col:33> Derived trivial : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
-|-FunctionDecl {{address:make}} <line:3:1, col:50> Make 'func (copy Derived) Derived'
-| |-ParmVarDecl {{address:make_source}} <col:11, col:30> source 'copy Derived'
-| | `-ReferenceType {{address}} <col:18, col:30> 'copy'
-| |   `-NamedType {{address}} <col:23, col:30> 'Derived'
-| |-ReturnVarDecl {{address:make_result}} <col:32, col:39> 'Derived'
-| | `-NamedType {{address}} <col:32, col:39> 'Derived'
-| `-CompoundStmt {{address}} <col:40, col:50>
-|   `-ImplicitResultInitializationExpr {{address}} <col:42, col:48> 'void' ReturnVar {{address:make_result}} 'Derived'
-|     `-ImplicitCastExpr {{address}} <col:42, col:48> 'Derived' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:42, col:48> 'const Derived' lvalue ParmVar {{address:make_source}} 'source' 'copy Derived'
-`-FunctionDecl {{address:use}} <line:4:1, line:9:2> Use 'func (mut Derived, copy Derived) void'
-  |-ParmVarDecl {{address:use_source}} <line:4:10, col:28> source 'mut Derived'
-  | `-ReferenceType {{address}} <col:17, col:28> 'mut'
-  |   `-NamedType {{address}} <col:21, col:28> 'Derived'
-  |-ParmVarDecl {{address:use_readonly}} <col:30, col:51> readonly 'copy Derived'
-  | `-ReferenceType {{address}} <col:39, col:51> 'copy'
-  |   `-NamedType {{address}} <col:44, col:51> 'Derived'
-  `-CompoundStmt {{address}} <col:53, line:9:2>
+|-FunctionDecl {{address:make}} <line:3:1, col:51> Make 'func (&copy Derived) Derived'
+| |-ParmVarDecl {{address:make_source}} <col:11, col:31> source '&copy Derived'
+| | `-ReferenceType {{address}} <col:18, col:31> '&copy'
+| |   `-NamedType {{address}} <col:24, col:31> 'Derived'
+| |-ReturnVarDecl {{address:make_result}} <col:33, col:40> 'Derived'
+| | `-NamedType {{address}} <col:33, col:40> 'Derived'
+| `-CompoundStmt {{address}} <col:41, col:51>
+|   `-ImplicitResultInitializationExpr {{address}} <col:43, col:49> 'void' ReturnVar {{address:make_result}} 'Derived'
+|     `-ImplicitCastExpr {{address}} <col:43, col:49> 'Derived' pure-rvalue <LValueToRValue>
+|       `-DeclRefExpr {{address}} <col:43, col:49> 'const Derived' lvalue ParmVar {{address:make_source}} 'source' '&copy Derived'
+`-FunctionDecl {{address:use}} <line:4:1, line:9:2> Use 'func (&mut Derived, &copy Derived) void'
+  |-ParmVarDecl {{address:use_source}} <line:4:10, col:29> source '&mut Derived'
+  | `-ReferenceType {{address}} <col:17, col:29> '&mut'
+  |   `-NamedType {{address}} <col:22, col:29> 'Derived'
+  |-ParmVarDecl {{address:use_readonly}} <col:31, col:53> readonly '&copy Derived'
+  | `-ReferenceType {{address}} <col:40, col:53> '&copy'
+  |   `-NamedType {{address}} <col:46, col:53> 'Derived'
+  `-CompoundStmt {{address}} <col:55, line:9:2>
     |-DeclStmt {{address}} <line:5:3, col:29>
     | `-VarGroupDecl {{address}} <col:3, col:29>
     |   |-VarDecl {{address}} <col:7, col:18> copied 'Base'
     |   | `-NamedType {{address}} <col:14, col:18> 'Base'
     |   `-ImplicitCastExpr {{address}} <col:22, col:28> 'Base' pure-rvalue <LValueToRValue>
-    |     `-ImplicitCastExpr {{address}} <col:22, col:28> 'Base' lvalue <DerivedToBase> path Struct {{address:base}} 'Base'
-    |       `-DeclRefExpr {{address}} <col:22, col:28> 'Derived' lvalue ParmVar {{address:use_source}} 'source' 'mut Derived'
+    |     `-ImplicitCastExpr {{address}} <col:22, col:28> 'Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
+    |       `-DeclRefExpr {{address}} <col:22, col:28> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
     |-DeclStmt {{address}} <line:6:3, col:30>
     | `-VarGroupDecl {{address}} <col:3, col:30>
     |   |-VarDecl {{address}} <col:7, col:17> fixed 'Base'
     |   | `-NamedType {{address}} <col:13, col:17> 'Base'
     |   `-ImplicitCastExpr {{address}} <col:21, col:29> 'Base' pure-rvalue <LValueToRValue>
-    |     `-ImplicitCastExpr {{address}} <col:21, col:29> 'const Base' lvalue <DerivedToBase> path Struct {{address:base}} 'Base'
-    |       `-DeclRefExpr {{address}} <col:21, col:29> 'const Derived' lvalue ParmVar {{address:use_readonly}} 'readonly' 'copy Derived'
+    |     `-ImplicitCastExpr {{address}} <col:21, col:29> 'const Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
+    |       `-DeclRefExpr {{address}} <col:21, col:29> 'const Derived' lvalue ParmVar {{address:use_readonly}} 'readonly' '&copy Derived'
     |-DeclStmt {{address}} <line:7:3, col:33>
     | `-VarGroupDecl {{address}} <col:3, col:33>
     |   |-VarDecl {{address}} <col:7, col:17> moved 'Base'
     |   | `-NamedType {{address}} <col:13, col:17> 'Base'
     |   `-ImplicitCastExpr {{address}} <col:21, col:32> 'Base' pure-rvalue <LValueToRValue>
-    |     `-ImplicitCastExpr {{address}} <col:21, col:32> 'Base' move-lvalue <DerivedToBase> path Struct {{address:base}} 'Base'
+    |     `-ImplicitCastExpr {{address}} <col:21, col:32> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |       `-UnaryOperator {{address}} <col:21, col:32> 'Derived' move-lvalue 'move'
-    |         `-DeclRefExpr {{address}} <col:26, col:32> 'Derived' lvalue ParmVar {{address:use_source}} 'source' 'mut Derived'
+    |         `-DeclRefExpr {{address}} <col:26, col:32> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
     `-DeclStmt {{address}} <line:8:3, col:38>
       `-VarGroupDecl {{address}} <col:3, col:38>
         |-VarDecl {{address}} <col:7, col:21> temporary 'Base'
         | `-NamedType {{address}} <col:17, col:21> 'Base'
         `-ImplicitCastExpr {{address}} <col:25, col:37> 'Base' pure-rvalue <LValueToRValue>
-          `-ImplicitCastExpr {{address}} <col:25, col:37> 'Base' move-lvalue <DerivedToBase> path Struct {{address:base}} 'Base'
+          `-ImplicitCastExpr {{address}} <col:25, col:37> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
             `-MaterializeTemporaryExpr {{address}} <col:25, col:37> 'Derived' move-lvalue
               `-CallExpr {{address}} <col:25, col:37> 'Derived' pure-rvalue
-                |-DeclRefExpr {{address}} <col:25, col:29> 'func (copy Derived) Derived' Function {{address:make}} 'Make' 'func (copy Derived) Derived'
+                |-DeclRefExpr {{address}} <col:25, col:29> 'func (&copy Derived) Derived' Function {{address:make}} 'Make' 'func (&copy Derived) Derived'
                 `-ImplicitCastExpr {{address}} <col:30, col:36> 'const Derived' lvalue <NoOp>
-                  `-DeclRefExpr {{address}} <col:30, col:36> 'Derived' lvalue ParmVar {{address:use_source}} 'source' 'mut Derived')");
+                  `-DeclRefExpr {{address}} <col:30, col:36> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived')");
 }
 
 TEST_F(SemaTest, PreservesAllArgumentsWhenSelectedBaseValueFormationFails) {
@@ -3475,8 +3716,8 @@ ctor Derived() { this.Base := Base(); }
 dtor Derived() {}
 func F() {}
 func Select(fn *func () void, number u8, object Base, rank i32) {}
-func Select(fn *func () void, number u8, object copy Base, rank i64) {}
-func Use(source mut Derived, number i32) { Select(&F, number, source, number); })";
+func Select(fn *func () void, number u8, object &copy Base, rank i64) {}
+func Use(source &mut Derived, number i32) { Select(&F, number, source, number); })";
   Analyze(source);
   const auto call_line = source.substr(source.rfind('\n') + 1);
   ExpectError(9, static_cast<int>(call_line.find("source, number")),
@@ -3485,17 +3726,19 @@ func Use(source mut Derived, number i32) { Select(&F, number, source, number); }
 |-StructDecl {{address:base}} <test.cw:1:1, col:15> Base
 |-ConstructorDecl {{address:base_constructor}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
 | `-CompoundStmt {{address}} <col:13, col:15>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address:base_destructor}} <line:3:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:4:1, col:25> Derived : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
 |-ConstructorDecl {{address:derived_constructor}} <line:5:1, col:40> Derived target Struct {{address:derived}} 'Derived' 'func () void'
 | `-CompoundStmt {{address}} <col:16, col:40>
-|   `-ExprStmt {{address}} <col:18, col:38>
-|     `-InitializationExpr {{address}} <col:18, col:37> 'void'
-|       |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
-|       | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
-|       `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'func () void'
+|   |-ExprStmt {{address}} <col:18, col:38>
+|   | `-InitializationExpr {{address}} <col:18, col:37> 'void'
+|   |   |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|   |   | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'func () void'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address:derived_destructor}} <line:6:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
 | `-CompoundStmt {{address}} <col:16, col:18>
 |-FunctionDecl {{address:f}} <line:7:1, col:12> F 'func () void'
@@ -3512,94 +3755,100 @@ func Use(source mut Derived, number i32) { Select(&F, number, source, number); }
 | |-ParmVarDecl {{address:selected_rank}} <col:55, col:63> rank 'i32'
 | | `-BuiltinType {{address}} <col:60, col:63> 'i32'
 | `-CompoundStmt {{address}} <col:65, col:67>
-|-FunctionDecl {{address:other_candidate}} <line:9:1, col:72> Select 'func (*func () void, u8, copy Base, i64) void'
+|-FunctionDecl {{address:other_candidate}} <line:9:1, col:73> Select 'func (*func () void, u8, &copy Base, i64) void'
 | |-ParmVarDecl {{address:other_candidate_fn}} <col:13, col:29> fn '*func () void'
 | | `-PointerType {{address}} <col:16, col:29>
 | |   `-FunctionType {{address}} <col:17, col:29>
 | |     `-BuiltinType {{address}} <col:25, col:29> 'void'
 | |-ParmVarDecl {{address:other_candidate_number}} <col:31, col:40> number 'u8'
 | | `-BuiltinType {{address}} <col:38, col:40> 'u8'
-| |-ParmVarDecl {{address:other_candidate_object}} <col:42, col:58> object 'copy Base'
-| | `-ReferenceType {{address}} <col:49, col:58> 'copy'
-| |   `-NamedType {{address}} <col:54, col:58> 'Base'
-| |-ParmVarDecl {{address:other_candidate_rank}} <col:60, col:68> rank 'i64'
-| | `-BuiltinType {{address}} <col:65, col:68> 'i64'
-| `-CompoundStmt {{address}} <col:70, col:72>
-`-FunctionDecl {{address:use}} <line:10:1, col:81> Use 'func (mut Derived, i32) void' contains-errors
-  |-ParmVarDecl {{address:use_source}} <col:10, col:28> source 'mut Derived'
-  | `-ReferenceType {{address}} <col:17, col:28> 'mut'
-  |   `-NamedType {{address}} <col:21, col:28> 'Derived'
-  |-ParmVarDecl {{address:use_number}} <col:30, col:40> number 'i32'
-  | `-BuiltinType {{address}} <col:37, col:40> 'i32'
-  `-CompoundStmt {{address}} <col:42, col:81> contains-errors
-    `-ExprStmt {{address}} <col:44, col:79> contains-errors
-      `-CallExpr {{address}} <col:44, col:78> contains-errors
-        |-DeclRefExpr {{address}} <col:44, col:50> 'func (*func () void, u8, Base, i32) void' Function {{address:selected}} 'Select' 'func (*func () void, u8, Base, i32) void'
-        |-UnaryOperator {{address}} <col:51, col:53> '<address-of-function-overload-set>' '&'
-        | `-DeclRefExpr {{address}} <col:52, col:53> '<function-overload-set>' 'F'
-        |-DeclRefExpr {{address}} <col:55, col:61> 'i32' lvalue ParmVar {{address:use_number}} 'number' 'i32'
-        |-DeclRefExpr {{address}} <col:63, col:69> 'Derived' lvalue ParmVar {{address:use_source}} 'source' 'mut Derived'
-        `-DeclRefExpr {{address}} <col:71, col:77> 'i32' lvalue ParmVar {{address:use_number}} 'number' 'i32')");
+| |-ParmVarDecl {{address:other_candidate_object}} <col:42, col:59> object '&copy Base'
+| | `-ReferenceType {{address}} <col:49, col:59> '&copy'
+| |   `-NamedType {{address}} <col:55, col:59> 'Base'
+| |-ParmVarDecl {{address:other_candidate_rank}} <col:61, col:69> rank 'i64'
+| | `-BuiltinType {{address}} <col:66, col:69> 'i64'
+| `-CompoundStmt {{address}} <col:71, col:73>
+`-FunctionDecl {{address:use}} <line:10:1, col:82> Use 'func (&mut Derived, i32) void' contains-errors
+  |-ParmVarDecl {{address:use_source}} <col:10, col:29> source '&mut Derived'
+  | `-ReferenceType {{address}} <col:17, col:29> '&mut'
+  |   `-NamedType {{address}} <col:22, col:29> 'Derived'
+  |-ParmVarDecl {{address:use_number}} <col:31, col:41> number 'i32'
+  | `-BuiltinType {{address}} <col:38, col:41> 'i32'
+  `-CompoundStmt {{address}} <col:43, col:82> contains-errors
+    `-ExprStmt {{address}} <col:45, col:80> contains-errors
+      `-CallExpr {{address}} <col:45, col:79> contains-errors
+        |-DeclRefExpr {{address}} <col:45, col:51> 'func (*func () void, u8, Base, i32) void' Function {{address:selected}} 'Select' 'func (*func () void, u8, Base, i32) void'
+        |-UnaryOperator {{address}} <col:52, col:54> '<address-of-function-overload-set>' '&'
+        | `-DeclRefExpr {{address}} <col:53, col:54> '<function-overload-set>' 'F'
+        |-DeclRefExpr {{address}} <col:56, col:62> 'i32' lvalue ParmVar {{address:use_number}} 'number' 'i32'
+        |-DeclRefExpr {{address}} <col:64, col:70> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
+        `-DeclRefExpr {{address}} <col:72, col:78> 'i32' lvalue ParmVar {{address:use_number}} 'number' 'i32'
+)");
 }
 
 TEST_F(SemaTest, PreservesBaseSubobjectConstructionKindAfterSlicing) {
   Analyze(R"(struct Base {}
 ctor Base() {}
-ctor Base(source copy Base) {}
+ctor Base(source &copy Base) {}
 dtor Base() {}
 struct Derived : Base {}
 ctor Derived() { this.Base := Base(); }
 dtor Derived() {}
 struct Holder : Base {}
 dtor Holder() {}
-ctor Holder(source copy Derived) { this.Base := source; })");
+ctor Holder(source &copy Derived) { this.Base := source; })");
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:base}} <test.cw:1:1, col:15> Base
 |-ConstructorDecl {{address:base_constructor}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
 | `-CompoundStmt {{address}} <col:13, col:15>
-|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:31> Base target Struct {{address:base}} 'Base' 'func (copy Base) void'
-| |-ParmVarDecl {{address:base_copy_constructor_source}} <col:11, col:27> source 'copy Base'
-| | `-ReferenceType {{address}} <col:18, col:27> 'copy'
-| |   `-NamedType {{address}} <col:23, col:27> 'Base'
-| `-CompoundStmt {{address}} <col:29, col:31>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:32> Base target Struct {{address:base}} 'Base' 'func (&copy Base) void'
+| |-ParmVarDecl {{address:base_copy_constructor_source}} <col:11, col:28> source '&copy Base'
+| | `-ReferenceType {{address}} <col:18, col:28> '&copy'
+| |   `-NamedType {{address}} <col:24, col:28> 'Base'
+| `-CompoundStmt {{address}} <col:30, col:32>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address:base_destructor}} <line:4:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:5:1, col:25> Derived : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
 |-ConstructorDecl {{address:derived_constructor}} <line:6:1, col:40> Derived target Struct {{address:derived}} 'Derived' 'func () void'
 | `-CompoundStmt {{address}} <col:16, col:40>
-|   `-ExprStmt {{address}} <col:18, col:38>
-|     `-InitializationExpr {{address}} <col:18, col:37> 'void'
-|       |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
-|       | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
-|       `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'func () void'
+|   |-ExprStmt {{address}} <col:18, col:38>
+|   | `-InitializationExpr {{address}} <col:18, col:37> 'void'
+|   |   |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|   |   | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'func () void'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address:derived_destructor}} <line:7:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
 | `-CompoundStmt {{address}} <col:16, col:18>
 |-StructDecl {{address:holder}} <line:8:1, col:24> Holder : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
 |-DestructorDecl {{address:holder_destructor}} <line:9:1, col:17> Holder target Struct {{address:holder}} 'Holder' 'func () void'
 | `-CompoundStmt {{address}} <col:15, col:17>
-`-ConstructorDecl {{address:holder_constructor}} <line:10:1, col:58> Holder target Struct {{address:holder}} 'Holder' 'func (copy Derived) void'
-  |-ParmVarDecl {{address:holder_constructor_source}} <col:13, col:32> source 'copy Derived'
-  | `-ReferenceType {{address}} <col:20, col:32> 'copy'
-  |   `-NamedType {{address}} <col:25, col:32> 'Derived'
-  `-CompoundStmt {{address}} <col:34, col:58>
-    `-ExprStmt {{address}} <col:36, col:56>
-      `-InitializationExpr {{address}} <col:36, col:55> 'void'
-        |-BaseSubobjectExpr {{address}} <col:36, col:45> 'Base' lvalue .Base Struct {{address:base}} 'Base'
-        | `-ThisExpr {{address}} <col:36, col:40> 'Holder' lvalue this
-        `-ConstructionExpr {{address}} <col:49, col:55> 'Base' pure-rvalue base-subobject Constructor {{address:base_copy_constructor}} 'Base' 'func (copy Base) void'
-          `-ImplicitCastExpr {{address}} <col:49, col:55> 'const Base' lvalue <DerivedToBase> path Struct {{address:base}} 'Base'
-            `-DeclRefExpr {{address}} <col:49, col:55> 'const Derived' lvalue ParmVar {{address:holder_constructor_source}} 'source' 'copy Derived')");
+`-ConstructorDecl {{address:holder_constructor}} <line:10:1, col:59> Holder target Struct {{address:holder}} 'Holder' 'func (&copy Derived) void'
+  |-ParmVarDecl {{address:holder_constructor_source}} <col:13, col:33> source '&copy Derived'
+  | `-ReferenceType {{address}} <col:20, col:33> '&copy'
+  |   `-NamedType {{address}} <col:26, col:33> 'Derived'
+  `-CompoundStmt {{address}} <col:35, col:59>
+    |-ExprStmt {{address}} <col:37, col:57>
+    | `-InitializationExpr {{address}} <col:37, col:56> 'void'
+    |   |-BaseSubobjectExpr {{address}} <col:37, col:46> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+    |   | `-ThisExpr {{address}} <col:37, col:41> 'Holder' lvalue this
+    |   `-ConstructionExpr {{address}} <col:50, col:56> 'Base' pure-rvalue base-subobject Constructor {{address:base_copy_constructor}} 'Base' 'func (&copy Base) void'
+    |     `-ImplicitCastExpr {{address}} <col:50, col:56> 'const Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
+    |       `-DeclRefExpr {{address}} <col:50, col:56> 'const Derived' lvalue ParmVar {{address:holder_constructor_source}} 'source' '&copy Derived'
+    `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+)");
 }
 
 // User operators and special assignment.
 
 TEST_F(SemaTest, RejectsDuplicateOperatorSignatures) {
   Analyze(R"(trivial struct S {}
-func operator+(left mut S, right copy S) {}
-func operator+(lhs mut S, rhs copy S) {}
-func operator+(left copy S, right copy S) {})");
+func operator+(left &mut S, right &copy S) {}
+func operator+(lhs &mut S, rhs &copy S) {}
+func operator+(left &copy S, right &copy S) {})");
 
   ExpectError(2, 5, "redefinition of operator '+'", 0);
   ExpectNote(1, 5, "previous declaration is here", 0);
@@ -3607,30 +3856,30 @@ func operator+(left copy S, right copy S) {})");
 
 TEST_F(SemaTest, SelectsCopyMoveAndMoveFallbackAssignmentBySameTypeIdentity) {
   Analyze(R"(struct Both {}
-func operator=(dst mut Both, src copy Both) i32 { return 1; }
-func operator=(dst mut Both, src move Both) bool { return true; }
+func operator=(dst &mut Both, src &copy Both) i32 { return 1; }
+func operator=(dst &mut Both, src &move Both) bool { return true; }
 ctor Both() {}
 dtor Both() {}
-func copy_both(dst mut Both, src copy Both) i32 { return dst = src; }
-func move_both(dst mut Both, src move Both) bool { return dst = move src; }
+func copy_both(dst &mut Both, src &copy Both) i32 { return dst = src; }
+func move_both(dst &mut Both, src &move Both) bool { return dst = move src; }
 struct CopyOnly {}
-func operator=(dst mut CopyOnly, src copy CopyOnly) i32 { return 3; }
+func operator=(dst &mut CopyOnly, src &copy CopyOnly) i32 { return 3; }
 ctor CopyOnly() {}
 dtor CopyOnly() {}
-func move_fallback(dst mut CopyOnly, src move CopyOnly) i32 { return dst = move src; })");
+func move_fallback(dst &mut CopyOnly, src &move CopyOnly) i32 { return dst = move src; })");
 }
 
 TEST_F(SemaTest, RejectsForbiddenAndDuplicateSpecialAssignmentIdentities) {
   Analyze(R"(struct S {}
-func operator=(dst mut S, src mut S) {}
-func operator=(dst mut S, src copy S) {}
-func operator=(other mut S, value copy S) {}
-func operator=(dst mut S, src move S) {}
-func operator=(other mut S, value move S) {}
+func operator=(dst &mut S, src &mut S) {}
+func operator=(dst &mut S, src &copy S) {}
+func operator=(other &mut S, value &copy S) {}
+func operator=(dst &mut S, src &move S) {}
+func operator=(other &mut S, value &move S) {}
 ctor S() {}
 dtor S() {})");
 
-  ExpectError(1, 5, "same-type assignment cannot use a 'mut' source parameter", 9);
+  ExpectError(1, 5, "same-type assignment cannot use a '&mut' source parameter", 9);
   ExpectError(3, 5, "redefinition of copy assignment", 0);
   ExpectNote(2, 5, "previous declaration is here", 0);
   ExpectError(5, 5, "redefinition of move assignment", 0);
@@ -3639,8 +3888,8 @@ dtor S() {})");
 
 TEST_F(SemaTest, RejectsSpecialAssignmentDeclarationsForTrivialTypes) {
   Analyze(R"(trivial struct S {}
-func operator=(dst mut S, src copy S) {}
-func operator=(dst mut S, src move S) {})");
+func operator=(dst &mut S, src &copy S) {}
+func operator=(dst &mut S, src &move S) {})");
 
   ExpectError(1, 5, "copy assignment cannot be declared for trivial type 'S'", 9);
   ExpectError(2, 5, "move assignment cannot be declared for trivial type 'S'", 9);
@@ -3648,47 +3897,48 @@ func operator=(dst mut S, src move S) {})");
 
 TEST_F(SemaTest, ExcludesInvalidCopyAssignmentInterfaceFromCallableSlot) {
   Analyze(R"(struct S {}
-func operator=(dst mut S, src copy S) var result void {}
+func operator=(dst &mut S, src &copy S) var result void {}
 ctor S() {}
 dtor S() {}
-func use(dst mut S, src copy S) {
+func use(dst &mut S, src &copy S) {
   dst = src;
 })");
 
-  ExpectError(1, 38, "void function cannot declare a named return object", 15);
+  ExpectError(1, 40, "void function cannot declare a named return object", 15);
   ExpectError(5, 2, "no copy assignment declared for type 'S'", 9);
 }
 
 TEST_F(SemaTest, KeepsSpecialAssignmentWithErroneousBodyInCallableSlot) {
   Analyze(R"(struct S {}
-func operator=(dst mut S, src copy S) { missing_body; }
+func operator=(dst &mut S, src &copy S) { missing_body; }
 ctor S() {}
 dtor S() {}
-func use(dst mut S, src copy S) { dst = src; })");
+func use(dst &mut S, src &copy S) { dst = src; })");
 
-  ExpectError(1, 40, "use of undeclared identifier 'missing_body'", 12);
+  ExpectError(1, 42, "use of undeclared identifier 'missing_body'", 12);
 }
 
 TEST_F(SemaTest, FormsMoveAssignmentCallFromPureRValueAtomically) {
   Analyze(R"(struct S {}
-func operator=(dst mut S, src move S) {}
+func operator=(dst &mut S, src &move S) {}
 ctor S() {}
 dtor S() {}
 func Make() S { return S(); }
-func Assign(dst mut S) { dst = Make(); })");
+func Assign(dst &mut S) { dst = Make(); })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
-|-FunctionDecl {{address:move_assignment}} <line:2:1, col:41> operator= 'func (mut S, move S) void'
-| |-ParmVarDecl {{address:destination}} <col:16, col:25> dst 'mut S'
-| | `-ReferenceType {{address}} <col:20, col:25> 'mut'
-| |   `-NamedType {{address}} <col:24, col:25> 'S'
-| |-ParmVarDecl {{address:source}} <col:27, col:37> src 'move S'
-| | `-ReferenceType {{address}} <col:31, col:37> 'move'
-| |   `-NamedType {{address}} <col:36, col:37> 'S'
-| `-CompoundStmt {{address}} <col:39, col:41>
+|-FunctionDecl {{address:move_assignment}} <line:2:1, col:43> operator= 'func (&mut S, &move S) void'
+| |-ParmVarDecl {{address:destination}} <col:16, col:26> dst '&mut S'
+| | `-ReferenceType {{address}} <col:20, col:26> '&mut'
+| |   `-NamedType {{address}} <col:25, col:26> 'S'
+| |-ParmVarDecl {{address:source}} <col:28, col:39> src '&move S'
+| | `-ReferenceType {{address}} <col:32, col:39> '&move'
+| |   `-NamedType {{address}} <col:38, col:39> 'S'
+| `-CompoundStmt {{address}} <col:41, col:43>
 |-ConstructorDecl {{address:constructor}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
 | `-CompoundStmt {{address}} <col:10, col:12>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <line:4:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |-FunctionDecl {{address:make}} <line:5:1, col:30> Make 'func () S'
@@ -3698,18 +3948,19 @@ func Assign(dst mut S) { dst = Make(); })");
 |   `-ReturnStmt {{address}} <col:17, col:28>
 |     `-ImplicitResultInitializationExpr {{address}} <col:24, col:27> 'void' ReturnVar {{address:make_result}} 'S'
 |       `-ConstructionExpr {{address}} <col:24, col:27> 'S' pure-rvalue complete-object target <col:24, col:25> 'S' Constructor {{address:constructor}} 'S' 'func () void'
-`-FunctionDecl {{address}} <line:6:1, col:41> Assign 'func (mut S) void'
-  |-ParmVarDecl {{address:assign_destination}} <col:13, col:22> dst 'mut S'
-  | `-ReferenceType {{address}} <col:17, col:22> 'mut'
-  |   `-NamedType {{address}} <col:21, col:22> 'S'
-  `-CompoundStmt {{address}} <col:24, col:41>
-    `-ExprStmt {{address}} <col:26, col:39>
-      `-OperatorCallExpr {{address}} <col:26, col:38> 'void'
-        |-DeclRefExpr {{address}} <col:30, col:31> 'func (mut S, move S) void' Function {{address:move_assignment}} 'operator=' 'func (mut S, move S) void'
-        |-DeclRefExpr {{address}} <col:26, col:29> 'S' lvalue ParmVar {{address:assign_destination}} 'dst' 'mut S'
-        `-MaterializeTemporaryExpr {{address}} <col:32, col:38> 'S' move-lvalue
-          `-CallExpr {{address}} <col:32, col:38> 'S' pure-rvalue
-            `-DeclRefExpr {{address}} <col:32, col:36> 'func () S' Function {{address:make}} 'Make' 'func () S')");
+`-FunctionDecl {{address}} <line:6:1, col:42> Assign 'func (&mut S) void'
+  |-ParmVarDecl {{address:assign_destination}} <col:13, col:23> dst '&mut S'
+  | `-ReferenceType {{address}} <col:17, col:23> '&mut'
+  |   `-NamedType {{address}} <col:22, col:23> 'S'
+  `-CompoundStmt {{address}} <col:25, col:42>
+    `-ExprStmt {{address}} <col:27, col:40>
+      `-OperatorCallExpr {{address}} <col:27, col:39> 'void'
+        |-DeclRefExpr {{address}} <col:31, col:32> 'func (&mut S, &move S) void' Function {{address:move_assignment}} 'operator=' 'func (&mut S, &move S) void'
+        |-DeclRefExpr {{address}} <col:27, col:30> 'S' lvalue ParmVar {{address:assign_destination}} 'dst' '&mut S'
+        `-MaterializeTemporaryExpr {{address}} <col:33, col:39> 'S' move-lvalue
+          `-CallExpr {{address}} <col:33, col:39> 'S' pure-rvalue
+            `-DeclRefExpr {{address}} <col:33, col:37> 'func () S' Function {{address:make}} 'Make' 'func () S'
+)");
 }
 
 TEST_F(SemaTest, RejectsInvalidSupportedOperatorInterfacesBeforeLookup) {
@@ -3730,13 +3981,13 @@ TEST_F(SemaTest, RejectsInvalidCallOperatorReceiversWithoutCascadingAtUseSites) 
 func operator()() {}
 func operator()(object S) {}
 func operator()(object *S) {}
-func operator()(object mut i32) {}
-func Use(object mut S) { object(); })");
+func operator()(object &mut i32) {}
+func Use(object &mut S) { object(); })");
 
   ExpectError(1, 5, "operator '()' requires a receiver parameter", 10);
   ExpectError(2, 5, "first parameter of operator '()' must be a reference to a struct, not 'S'", 10);
   ExpectError(3, 5, "first parameter of operator '()' must be a reference to a struct, not '*S'", 10);
-  ExpectError(4, 5, "first parameter of operator '()' must be a reference to a struct, not 'mut i32'", 10);
+  ExpectError(4, 5, "first parameter of operator '()' must be a reference to a struct, not '&mut i32'", 10);
 }
 
 TEST_F(SemaTest, RejectsInitializationOperatorOverload) {
@@ -3769,7 +4020,7 @@ ctor Value() {}
 dtor Value() {}
 func Make() Value { return Value(); }
 func operator!(value Value) bool { return true; }
-func Check(existing mut Value) {
+func Check(existing &mut Value) {
   !Make();
   !existing;
   !(move existing);
@@ -3785,13 +4036,14 @@ TEST_F(SemaTest, RetainsSelectedOperatorCallWhenParameterFormationFails) {
 ctor Value() {}
 dtor Value() {}
 func operator!(value Value) bool { true }
-func Check(existing mut Value) { !existing; })");
+func Check(existing &mut Value) { !existing; })");
 
-  ExpectError(4, 34, "cannot initialize parameter 1 of operator '!': no copy constructor is available for 'Value'", 8);
+  ExpectError(4, 35, "cannot initialize parameter 1 of operator '!': no copy constructor is available for 'Value'", 8);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
 |-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:operator}} <line:4:1, col:42> operator! 'func (Value) bool'
@@ -3802,34 +4054,35 @@ func Check(existing mut Value) { !existing; })");
 | `-CompoundStmt {{address}} <col:34, col:42>
 |   `-ImplicitResultInitializationExpr {{address}} <col:36, col:40> 'void' ReturnVar {{address:result}} 'bool'
 |     `-BoolLiteral {{address}} <col:36, col:40> 'bool' pure-rvalue true
-`-FunctionDecl {{address}} <line:5:1, col:46> Check 'func (mut Value) void' contains-errors
-  |-ParmVarDecl {{address:existing}} <col:12, col:30> existing 'mut Value'
-  | `-ReferenceType {{address}} <col:21, col:30> 'mut'
-  |   `-NamedType {{address}} <col:25, col:30> 'Value'
-  `-CompoundStmt {{address}} <col:32, col:46> contains-errors
-    `-ExprStmt {{address}} <col:34, col:44> contains-errors
-      `-OperatorCallExpr {{address}} <col:34, col:43> contains-errors
-        |-DeclRefExpr {{address}} <col:34, col:35> 'func (Value) bool' Function {{address:operator}} 'operator!' 'func (Value) bool'
-        `-DeclRefExpr {{address}} <col:35, col:43> 'Value' lvalue ParmVar {{address:existing}} 'existing' 'mut Value')");
+`-FunctionDecl {{address}} <line:5:1, col:47> Check 'func (&mut Value) void' contains-errors
+  |-ParmVarDecl {{address:existing}} <col:12, col:31> existing '&mut Value'
+  | `-ReferenceType {{address}} <col:21, col:31> '&mut'
+  |   `-NamedType {{address}} <col:26, col:31> 'Value'
+  `-CompoundStmt {{address}} <col:33, col:47> contains-errors
+    `-ExprStmt {{address}} <col:35, col:45> contains-errors
+      `-OperatorCallExpr {{address}} <col:35, col:44> contains-errors
+        |-DeclRefExpr {{address}} <col:35, col:36> 'func (Value) bool' Function {{address:operator}} 'operator!' 'func (Value) bool'
+        `-DeclRefExpr {{address}} <col:36, col:44> 'Value' lvalue ParmVar {{address:existing}} 'existing' '&mut Value'
+)");
 }
 
 TEST_F(SemaTest, ReportsNoMatchingUserOperatorWithCandidateNotes) {
   Analyze(R"(trivial struct S {}
-func operator+(left mut S, right copy S) {}
-func Use(left copy S, right S) { left + right; })");
+func operator+(left &mut S, right &copy S) {}
+func Use(left &copy S, right S) { left + right; })");
 
-  ExpectError(2, 33, "no matching overloaded operator '+'", 12);
+  ExpectError(2, 34, "no matching overloaded operator '+'", 12);
   ExpectNote(1, 0,
-             "candidate function is not viable: binding a reference of type 'mut S' to a value of type 'const S' "
+             "candidate function is not viable: binding a reference of type '&mut S' to a value of type 'const S' "
              "would discard const for operand 1",
              0);
 }
 
 TEST_F(SemaTest, ReportsAllViableUserOperatorCandidatesForAmbiguity) {
   Analyze(R"(trivial struct S {}
-func operator+(left mut S, right copy S) {}
-func operator+(left copy S, right mut S) {}
-func operator+(left copy S, right copy S) {}
+func operator+(left &mut S, right &copy S) {}
+func operator+(left &copy S, right &mut S) {}
+func operator+(left &copy S, right &copy S) {}
 func Use(left S, right S) { left + right; })");
 
   ExpectError(4, 28, "use of overloaded operator '+' is ambiguous", 12);
@@ -3840,9 +4093,9 @@ func Use(left S, right S) { left + right; })");
 
 TEST_F(SemaTest, DiagnosesExplicitOperatorFunctionCallFailures) {
   Analyze(R"(trivial struct S {}
-func operator!(value copy S) {}
-func operator+(left mut S, right copy S) {}
-func operator+(left copy S, right mut S) {}
+func operator!(value &copy S) {}
+func operator+(left &mut S, right &copy S) {}
+func operator+(left &copy S, right &mut S) {}
 func Diagnose(left S, right S) {
   operator %(1, 2);
   operator !(left, right);
@@ -3869,8 +4122,8 @@ TEST_F(SemaTest, TreatsExplicitAssignmentOperatorCallAsAnOrdinaryCall) {
   Analyze(R"(struct S {}
 ctor S() {}
 dtor S() {}
-func operator=(dst mut S, src copy S) {}
-func Use(src copy S) {
+func operator=(dst &mut S, src &copy S) {}
+func Use(src &copy S) {
   var dst S;
   operator =(dst, src);
 })");
@@ -3889,7 +4142,7 @@ func Use(left S, right S) { left + right; })");
 
 TEST_F(SemaTest, DoesNotUseStructOperatorForPointerOperands) {
   Analyze(R"(trivial struct S {}
-func operator+(left copy S, right copy S) {}
+func operator+(left &copy S, right &copy S) {}
 func Use(left *S, right *S) { left + right; })");
 
   ExpectError(2, 30, "binary operator '+' cannot be applied to types '*S' and '*S'", 12);
@@ -3897,24 +4150,24 @@ func Use(left *S, right *S) { left + right; })");
 
 TEST_F(SemaTest, ReportsSelectedOperatorArgumentConversionRisk) {
   Analyze(R"(trivial struct S {}
-func operator+(left copy S, right i8) {}
-func Use(left copy S, right i16) { left + right; })");
+func operator+(left &copy S, right i8) {}
+func Use(left &copy S, right i16) { left + right; })");
 
-  ExpectWarning(2, 42, "implicit integer conversion from 'i16' to 'i8' may truncate value", 5);
+  ExpectWarning(2, 43, "implicit integer conversion from 'i16' to 'i8' may truncate value", 5);
 }
 
 TEST_F(SemaTest, KeepsCompleteOperatorInterfaceAfterFunctionBodyError) {
   Analyze(R"(trivial struct S {}
-func operator+(left copy S, right copy S) { var bad i32; bad; }
-func Use(left copy S, right copy S) { left + right; })");
+func operator+(left &copy S, right &copy S) { var bad i32; bad; }
+func Use(left &copy S, right &copy S) { left + right; })");
 
-  ExpectError(1, 57, "use of uninitialized variable 'bad'", 3);
+  ExpectError(1, 59, "use of uninitialized variable 'bad'", 3);
 }
 
 TEST_F(SemaTest, DiagnosesUninitializedOperandAfterOperatorCallFormation) {
   Analyze(R"(trivial struct S { value i32; }
-func operator+(left copy S, right copy S) {}
-func Use(right copy S) {
+func operator+(left &copy S, right &copy S) {}
+func Use(right &copy S) {
   var left S;
   left + right;
 })");
@@ -3925,7 +4178,7 @@ func Use(right copy S) {
 TEST_F(SemaTest, KeepsOrdinaryAssignmentOutsideBaseValueSlicing) {
   Analyze(R"(trivial struct Base {}
 trivial struct Derived : Base {}
-func Use(base mut Base, derived mut Derived) {
+func Use(base &mut Base, derived &mut Derived) {
   base = derived;
 })");
   ExpectError(3, 9, "cannot assign to target: no implicit conversion from 'Derived' to 'Base'", 7);
@@ -3934,56 +4187,56 @@ func Use(base mut Base, derived mut Derived) {
 // Return conversions and result boundaries.
 
 TEST_F(SemaTest, AppliesReferenceBindingRulesToTailReturns) {
-  Analyze(R"(func bad_move(value i32) move i32 { value }
-func bad_mut() mut i32 { 1 }
-func bad_copy(value i32) copy u8 { value })");
+  Analyze(R"(func bad_move(value i32) &move i32 { value }
+func bad_mut() &mut i32 { 1 }
+func bad_copy(value i32) &copy u8 { value })");
 
-  ExpectError(0, 36, "cannot initialize return object: reference type 'move i32' cannot bind to lvalue of type 'i32'",
+  ExpectError(0, 37, "cannot initialize return object: reference type '&move i32' cannot bind to lvalue of type 'i32'",
               5);
-  ExpectError(1, 25,
-              "cannot initialize return object: reference type 'mut i32' cannot bind to pure rvalue of type 'i32'", 1);
-  ExpectError(2, 35, "cannot initialize return object: reference type 'copy u8' cannot bind to a value of type 'i32'",
+  ExpectError(1, 26,
+              "cannot initialize return object: reference type '&mut i32' cannot bind to pure rvalue of type 'i32'", 1);
+  ExpectError(2, 36, "cannot initialize return object: reference type '&copy u8' cannot bind to a value of type 'i32'",
               5);
 }
 
 TEST_F(SemaTest, AppliesReferenceBindingRulesToReturnStatements) {
-  Analyze(R"(func return_mut(value i32) mut i32 { return value; }
-func return_copy() copy i32 { return 1; }
-func return_move(value i32) move i32 { return move value; })");
+  Analyze(R"(func return_mut(value i32) &mut i32 { return value; }
+func return_copy() &copy i32 { return 1; }
+func return_move(value i32) &move i32 { return move value; })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
-|-FunctionDecl {{address}} <test.cw:1:1, col:53> return_mut 'func (i32) mut i32'
+|-FunctionDecl {{address}} <test.cw:1:1, col:54> return_mut 'func (i32) &mut i32'
 | |-ParmVarDecl {{address:return_mut_parameter}} <col:17, col:26> value 'i32'
 | | `-BuiltinType {{address}} <col:23, col:26> 'i32'
-| |-ReturnVarDecl {{address:return_mut_result}} <col:28, col:35> 'mut i32'
-| | `-ReferenceType {{address}} <col:28, col:35> 'mut'
-| |   `-BuiltinType {{address}} <col:32, col:35> 'i32'
-| `-CompoundStmt {{address}} <col:36, col:53>
-|   `-ReturnStmt {{address}} <col:38, col:51>
-|     `-ImplicitResultInitializationExpr {{address}} <col:45, col:50> 'void' ReturnVar {{address:return_mut_result}} 'mut i32'
-|       `-DeclRefExpr {{address}} <col:45, col:50> 'i32' lvalue ParmVar {{address:return_mut_parameter}} 'value' 'i32'
-|-FunctionDecl {{address}} <line:2:1, col:42> return_copy 'func () copy i32'
-| |-ReturnVarDecl {{address:return_copy_result}} <col:20, col:28> 'copy i32'
-| | `-ReferenceType {{address}} <col:20, col:28> 'copy'
-| |   `-BuiltinType {{address}} <col:25, col:28> 'i32'
-| `-CompoundStmt {{address}} <col:29, col:42>
-|   `-ReturnStmt {{address}} <col:31, col:40>
-|     `-ImplicitResultInitializationExpr {{address}} <col:38, col:39> 'void' ReturnVar {{address:return_copy_result}} 'copy i32'
-|       `-ImplicitCastExpr {{address}} <col:38, col:39> 'const i32' move-lvalue <NoOp>
-|         `-MaterializeTemporaryExpr {{address}} <col:38, col:39> 'i32' move-lvalue
-|           `-ImplicitCastExpr {{address}} <col:38, col:39> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-|             `-IntegerLiteral {{address}} <col:38, col:39> 'comptime_int' 1
-`-FunctionDecl {{address}} <line:3:1, col:60> return_move 'func (i32) move i32'
+| |-ReturnVarDecl {{address:return_mut_result}} <col:28, col:36> '&mut i32'
+| | `-ReferenceType {{address}} <col:28, col:36> '&mut'
+| |   `-BuiltinType {{address}} <col:33, col:36> 'i32'
+| `-CompoundStmt {{address}} <col:37, col:54>
+|   `-ReturnStmt {{address}} <col:39, col:52>
+|     `-ImplicitResultInitializationExpr {{address}} <col:46, col:51> 'void' ReturnVar {{address:return_mut_result}} '&mut i32'
+|       `-DeclRefExpr {{address}} <col:46, col:51> 'i32' lvalue ParmVar {{address:return_mut_parameter}} 'value' 'i32'
+|-FunctionDecl {{address}} <line:2:1, col:43> return_copy 'func () &copy i32'
+| |-ReturnVarDecl {{address:return_copy_result}} <col:20, col:29> '&copy i32'
+| | `-ReferenceType {{address}} <col:20, col:29> '&copy'
+| |   `-BuiltinType {{address}} <col:26, col:29> 'i32'
+| `-CompoundStmt {{address}} <col:30, col:43>
+|   `-ReturnStmt {{address}} <col:32, col:41>
+|     `-ImplicitResultInitializationExpr {{address}} <col:39, col:40> 'void' ReturnVar {{address:return_copy_result}} '&copy i32'
+|       `-ImplicitCastExpr {{address}} <col:39, col:40> 'const i32' move-lvalue <NoOp>
+|         `-MaterializeTemporaryExpr {{address}} <col:39, col:40> 'i32' move-lvalue
+|           `-ImplicitCastExpr {{address}} <col:39, col:40> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|             `-IntegerLiteral {{address}} <col:39, col:40> 'comptime_int' 1
+`-FunctionDecl {{address}} <line:3:1, col:61> return_move 'func (i32) &move i32'
   |-ParmVarDecl {{address:return_move_parameter}} <col:18, col:27> value 'i32'
   | `-BuiltinType {{address}} <col:24, col:27> 'i32'
-  |-ReturnVarDecl {{address:return_move_result}} <col:29, col:37> 'move i32'
-  | `-ReferenceType {{address}} <col:29, col:37> 'move'
-  |   `-BuiltinType {{address}} <col:34, col:37> 'i32'
-  `-CompoundStmt {{address}} <col:38, col:60>
-    `-ReturnStmt {{address}} <col:40, col:58>
-      `-ImplicitResultInitializationExpr {{address}} <col:47, col:57> 'void' ReturnVar {{address:return_move_result}} 'move i32'
-        `-UnaryOperator {{address}} <col:47, col:57> 'i32' move-lvalue 'move'
-          `-DeclRefExpr {{address}} <col:52, col:57> 'i32' lvalue ParmVar {{address:return_move_parameter}} 'value' 'i32')");
+  |-ReturnVarDecl {{address:return_move_result}} <col:29, col:38> '&move i32'
+  | `-ReferenceType {{address}} <col:29, col:38> '&move'
+  |   `-BuiltinType {{address}} <col:35, col:38> 'i32'
+  `-CompoundStmt {{address}} <col:39, col:61>
+    `-ReturnStmt {{address}} <col:41, col:59>
+      `-ImplicitResultInitializationExpr {{address}} <col:48, col:58> 'void' ReturnVar {{address:return_move_result}} '&move i32'
+        `-UnaryOperator {{address}} <col:48, col:58> 'i32' move-lvalue 'move'
+          `-DeclRefExpr {{address}} <col:53, col:58> 'i32' lvalue ParmVar {{address:return_move_parameter}} 'value' 'i32')");
 }
 
 TEST_F(SemaTest, AdaptsReturnExpressionsToCanonicalTypes) {
@@ -4132,19 +4385,19 @@ TEST_F(SemaTest, KeepsVariableBlockReturnExpressionUnpoisoned) {
 TEST_F(SemaTest, EnforcesSupportedLocalReferenceKindsBindingAndMoveOperands) {
   Analyze(R"(func local(value i32) {
   var fixed const i32 := value;
-  var read copy i32 := value;
-  var transfer move i32 := move value;
-  var missing mut i32;
-  var block mut i32 := { value }
-  var wrong mut i32 := fixed;
+  var read &copy i32 := value;
+  var transfer &move i32 := move value;
+  var missing &mut i32;
+  var block &mut i32 := { value }
+  var wrong &mut i32 := fixed;
   move fixed;
   move 1;
 })");
 
-  ExpectError(2, 11, "local 'copy i32' reference variables are not currently supported", 8);
-  ExpectError(3, 15, "local 'move i32' reference variables are not currently supported", 8);
-  ExpectError(6, 23,
-              "cannot initialize variable 'wrong': binding a reference of type 'mut i32' to a value of type 'const "
+  ExpectError(2, 11, "local '&copy i32' reference variables are not currently supported", 9);
+  ExpectError(3, 15, "local '&move i32' reference variables are not currently supported", 9);
+  ExpectError(6, 24,
+              "cannot initialize variable 'wrong': binding a reference of type '&mut i32' to a value of type 'const "
               "i32' would discard const",
               5);
   ExpectError(8, 2, "'move' requires an lvalue of object type, not 'i32'", 6);
@@ -4674,6 +4927,61 @@ var explicit u8 := 18446744073709551616;
         |-VarDecl {{address}} <col:5, col:16> explicit 'u8'
         | `-BuiltinType {{address}} <col:14, col:16> 'u8'
         `-IntegerLiteral {{address}} <col:20, col:40> 'comptime_int' 18446744073709551616 contains-errors)");
+}
+
+TEST_F(SemaTest, PreservesExactIntegersThroughNestedSigns) {
+  Analyze(R"(func Signs() {
+  -2147483648;
+  - -18446744073709551615;
+})");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, line:4:2> Signs 'func () void'
+  `-CompoundStmt {{address}} <line:1:14, line:4:2>
+    |-ExprStmt {{address}} <line:2:3, col:15>
+    | `-ImplicitCastExpr {{address}} <col:3, col:14> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-UnaryOperator {{address}} <col:3, col:14> 'comptime_int' '-'
+    |     `-IntegerLiteral {{address}} <col:4, col:14> 'comptime_int' 2147483648
+    `-ExprStmt {{address}} <line:3:3, col:27>
+      `-ImplicitCastExpr {{address}} <col:3, col:26> 'u64' pure-rvalue <ComptimeIntegerMaterialization>
+        `-UnaryOperator {{address}} <col:3, col:26> 'comptime_int' '-'
+          `-UnaryOperator {{address}} <col:5, col:26> 'comptime_int' '-'
+            `-IntegerLiteral {{address}} <col:6, col:26> 'comptime_int' 18446744073709551615)");
+}
+
+TEST_F(SemaTest, AcceptsRoundedAndUnderflowedFloatingLiterals) {
+  Analyze(R"(func Floats() {
+  var rounded := 1.000000059604644775390626f;
+  var subnormal := 1e-45f;
+  var double_subnormal := 5e-324;
+  var zero := 1e-400;
+  var negative_zero := -1e-400;
+  var exponent := 1E+2F;
+})");
+}
+
+TEST_F(SemaTest, ReportsFloatingLiteralOverflowWithoutLosingAst) {
+  Analyze(R"(func Floats() {
+  1e40f;
+  1e400;
+  var wide f64 := 1e40f;
+})");
+
+  ExpectError(1, 2, "floating-point literal is outside the range of 'f32'", 5);
+  ExpectError(2, 2, "floating-point literal is outside the range of 'f64'", 5);
+  ExpectError(3, 18, "floating-point literal is outside the range of 'f32'", 5);
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+`-FunctionDecl {{address}} <test.cw:1:1, line:5:2> Floats 'func () void' contains-errors
+  `-CompoundStmt {{address}} <line:1:15, line:5:2> contains-errors
+    |-ExprStmt {{address}} <line:2:3, col:9> contains-errors
+    | `-FloatLiteral {{address}} <col:3, col:8> 'f32' pure-rvalue +Inf contains-errors
+    |-ExprStmt {{address}} <line:3:3, col:9> contains-errors
+    | `-FloatLiteral {{address}} <col:3, col:8> 'f64' pure-rvalue +Inf contains-errors
+    `-DeclStmt {{address}} <line:4:3, col:25> contains-errors
+      `-VarGroupDecl {{address}} <col:3, col:25> contains-errors
+        |-VarDecl {{address}} <col:7, col:15> wide 'f64'
+        | `-BuiltinType {{address}} <col:12, col:15> 'f64'
+        `-FloatLiteral {{address}} <col:19, col:24> 'f32' pure-rvalue +Inf contains-errors)");
 }
 
 TEST_F(SemaTest, WarnsForNarrowingEvenWhenTheExactConstantValueFits) {
@@ -5212,7 +5520,7 @@ return condition ? large : single;
 TEST_F(SemaTest, PreservesConditionalObjectValueCategories) {
   Analyze(R"(func categories(flag bool, left i32, right i32) {
   var fixed const i32 := left;
-  var link mut i32 := flag ? left : right;
+  var link &mut i32 := flag ? left : right;
   var owned := flag ? left : fixed;
   var moved := flag ? move left : move right;
 })");
@@ -5233,16 +5541,16 @@ TEST_F(SemaTest, PreservesConditionalObjectValueCategories) {
     |   |   `-BuiltinType {{address}} <col:19, col:22> 'i32'
     |   `-ImplicitCastExpr {{address}} <col:26, col:30> 'i32' pure-rvalue <LValueToRValue>
     |     `-DeclRefExpr {{address}} <col:26, col:30> 'i32' lvalue ParmVar {{address:left}} 'left' 'i32'
-    |-DeclStmt {{address}} <line:3:3, col:43>
-    | `-VarGroupDecl {{address}} <col:3, col:43>
-    |   |-VarDecl {{address}} <col:7, col:19> link 'mut i32'
-    |   | `-ReferenceType {{address}} <col:12, col:19> 'mut'
-    |   |   `-BuiltinType {{address}} <col:16, col:19> 'i32'
-    |   `-ConditionalOperator {{address}} <col:23, col:42> 'i32' lvalue
-    |     |-ImplicitCastExpr {{address}} <col:23, col:27> 'bool' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:23, col:27> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
-    |     |-DeclRefExpr {{address}} <col:30, col:34> 'i32' lvalue ParmVar {{address:left}} 'left' 'i32'
-    |     `-DeclRefExpr {{address}} <col:37, col:42> 'i32' lvalue ParmVar {{address:right}} 'right' 'i32'
+    |-DeclStmt {{address}} <line:3:3, col:44>
+    | `-VarGroupDecl {{address}} <col:3, col:44>
+    |   |-VarDecl {{address}} <col:7, col:20> link '&mut i32'
+    |   | `-ReferenceType {{address}} <col:12, col:20> '&mut'
+    |   |   `-BuiltinType {{address}} <col:17, col:20> 'i32'
+    |   `-ConditionalOperator {{address}} <col:24, col:43> 'i32' lvalue
+    |     |-ImplicitCastExpr {{address}} <col:24, col:28> 'bool' pure-rvalue <LValueToRValue>
+    |     | `-DeclRefExpr {{address}} <col:24, col:28> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+    |     |-DeclRefExpr {{address}} <col:31, col:35> 'i32' lvalue ParmVar {{address:left}} 'left' 'i32'
+    |     `-DeclRefExpr {{address}} <col:38, col:43> 'i32' lvalue ParmVar {{address:right}} 'right' 'i32'
     |-DeclStmt {{address}} <line:4:3, col:36>
     | `-VarGroupDecl {{address}} <col:3, col:36>
     |   |-VarDecl {{address}} <col:7, col:12> owned 'i32'
@@ -5378,9 +5686,9 @@ trivial struct Operand {}
 ctor Holder(value *Base) {}
 dtor Holder() {}
 func Accept(value *Base) {}
-func Receive(this copy Operand, value *Base) {}
-func operator +(left copy Operand, right *Base) copy Operand { left }
-func Apply(derived *Derived, readonly *const Derived, callback *func (*Base) void, operand copy Operand) *Base {
+func Receive(this &copy Operand, value *Base) {}
+func operator +(left &copy Operand, right *Base) &copy Operand { left }
+func Apply(derived *Derived, readonly *const Derived, callback *func (*Base) void, operand &copy Operand) *Base {
   var initialized *Base := derived;
   var readonly_base *const Base := readonly;
   var assigned *Base;
@@ -5499,7 +5807,7 @@ func preserve(pointer *const i32) {
 }
 
 TEST_F(SemaTest, FormsObjectAddressesAndPreservesPointeeConst) {
-  Analyze(R"(func Inspect(mutable i32, readonly copy i32, link mut i32, source move i32,
+  Analyze(R"(func Inspect(mutable i32, readonly &copy i32, link &mut i32, source &move i32,
              pointer *const i32) {
 &mutable;
 &readonly;
@@ -5510,18 +5818,18 @@ TEST_F(SemaTest, FormsObjectAddressesAndPreservesPointeeConst) {
 })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
-`-FunctionDecl {{address}} <test.cw:1:1, line:9:2> Inspect 'func (i32, copy i32, mut i32, move i32, *const i32) void'
+`-FunctionDecl {{address}} <test.cw:1:1, line:9:2> Inspect 'func (i32, &copy i32, &mut i32, &move i32, *const i32) void'
   |-ParmVarDecl {{address:mutable}} <line:1:14, col:25> mutable 'i32'
   | `-BuiltinType {{address}} <col:22, col:25> 'i32'
-  |-ParmVarDecl {{address:readonly}} <col:27, col:44> readonly 'copy i32'
-  | `-ReferenceType {{address}} <col:36, col:44> 'copy'
-  |   `-BuiltinType {{address}} <col:41, col:44> 'i32'
-  |-ParmVarDecl {{address:link}} <col:46, col:58> link 'mut i32'
-  | `-ReferenceType {{address}} <col:51, col:58> 'mut'
-  |   `-BuiltinType {{address}} <col:55, col:58> 'i32'
-  |-ParmVarDecl {{address:source}} <col:60, col:75> source 'move i32'
-  | `-ReferenceType {{address}} <col:67, col:75> 'move'
-  |   `-BuiltinType {{address}} <col:72, col:75> 'i32'
+  |-ParmVarDecl {{address:readonly}} <col:27, col:45> readonly '&copy i32'
+  | `-ReferenceType {{address}} <col:36, col:45> '&copy'
+  |   `-BuiltinType {{address}} <col:42, col:45> 'i32'
+  |-ParmVarDecl {{address:link}} <col:47, col:60> link '&mut i32'
+  | `-ReferenceType {{address}} <col:52, col:60> '&mut'
+  |   `-BuiltinType {{address}} <col:57, col:60> 'i32'
+  |-ParmVarDecl {{address:source}} <col:62, col:78> source '&move i32'
+  | `-ReferenceType {{address}} <col:69, col:78> '&move'
+  |   `-BuiltinType {{address}} <col:75, col:78> 'i32'
   |-ParmVarDecl {{address:pointer}} <line:2:14, col:32> pointer '*const i32'
   | `-PointerType {{address}} <col:22, col:32>
   |   `-ConstType {{address}} <col:23, col:32>
@@ -5532,13 +5840,13 @@ TEST_F(SemaTest, FormsObjectAddressesAndPreservesPointeeConst) {
     |   `-DeclRefExpr {{address}} <col:2, col:9> 'i32' lvalue ParmVar {{address:mutable}} 'mutable' 'i32'
     |-ExprStmt {{address}} <line:4:1, col:11>
     | `-UnaryOperator {{address}} <col:1, col:10> '*const i32' pure-rvalue '&'
-    |   `-DeclRefExpr {{address}} <col:2, col:10> 'const i32' lvalue ParmVar {{address:readonly}} 'readonly' 'copy i32'
+    |   `-DeclRefExpr {{address}} <col:2, col:10> 'const i32' lvalue ParmVar {{address:readonly}} 'readonly' '&copy i32'
     |-ExprStmt {{address}} <line:5:1, col:7>
     | `-UnaryOperator {{address}} <col:1, col:6> '*i32' pure-rvalue '&'
-    |   `-DeclRefExpr {{address}} <col:2, col:6> 'i32' lvalue ParmVar {{address:link}} 'link' 'mut i32'
+    |   `-DeclRefExpr {{address}} <col:2, col:6> 'i32' lvalue ParmVar {{address:link}} 'link' '&mut i32'
     |-ExprStmt {{address}} <line:6:1, col:9>
     | `-UnaryOperator {{address}} <col:1, col:8> '*i32' pure-rvalue '&'
-    |   `-DeclRefExpr {{address}} <col:2, col:8> 'i32' lvalue ParmVar {{address:source}} 'source' 'move i32'
+    |   `-DeclRefExpr {{address}} <col:2, col:8> 'i32' lvalue ParmVar {{address:source}} 'source' '&move i32'
     |-ExprStmt {{address}} <line:7:1, col:11>
     | `-UnaryOperator {{address}} <col:1, col:10> '*const i32' pure-rvalue '&'
     |   `-UnaryOperator {{address}} <col:2, col:10> 'const i32' lvalue '*'
@@ -5602,7 +5910,7 @@ func Inspect(value i32) {
 }
 
 TEST_F(SemaTest, PreventsMutationThroughAddressOfConstObject) {
-  Analyze(R"(func Inspect(readonly copy i32) {
+  Analyze(R"(func Inspect(readonly &copy i32) {
   var pointer := &readonly;
   *pointer = 1;
 })");
@@ -5659,38 +5967,38 @@ null != null;
 }
 
 TEST_F(SemaTest, MaterializesNullPointerReferenceArgumentsAfterFormation) {
-  Analyze(R"(func TakeMove(value move *func () void) {}
-func TakeCopy(value copy *func () void) {}
+  Analyze(R"(func TakeMove(value &move *func () void) {}
+func TakeCopy(value &copy *func () void) {}
 func Use() {
   TakeMove(null);
   TakeCopy(null);
 })");
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
-|-FunctionDecl {{address:take_move}} <test.cw:1:1, col:43> TakeMove 'func (move *func () void) void'
-| |-ParmVarDecl {{address}} <col:15, col:39> value 'move *func () void'
-| | `-ReferenceType {{address}} <col:21, col:39> 'move'
-| |   `-PointerType {{address}} <col:26, col:39>
-| |     `-FunctionType {{address}} <col:27, col:39>
-| |       `-BuiltinType {{address}} <col:35, col:39> 'void'
-| `-CompoundStmt {{address}} <col:41, col:43>
-|-FunctionDecl {{address:take_copy}} <line:2:1, col:43> TakeCopy 'func (copy *func () void) void'
-| |-ParmVarDecl {{address}} <col:15, col:39> value 'copy *func () void'
-| | `-ReferenceType {{address}} <col:21, col:39> 'copy'
-| |   `-PointerType {{address}} <col:26, col:39>
-| |     `-FunctionType {{address}} <col:27, col:39>
-| |       `-BuiltinType {{address}} <col:35, col:39> 'void'
-| `-CompoundStmt {{address}} <col:41, col:43>
+|-FunctionDecl {{address:take_move}} <test.cw:1:1, col:44> TakeMove 'func (&move *func () void) void'
+| |-ParmVarDecl {{address}} <col:15, col:40> value '&move *func () void'
+| | `-ReferenceType {{address}} <col:21, col:40> '&move'
+| |   `-PointerType {{address}} <col:27, col:40>
+| |     `-FunctionType {{address}} <col:28, col:40>
+| |       `-BuiltinType {{address}} <col:36, col:40> 'void'
+| `-CompoundStmt {{address}} <col:42, col:44>
+|-FunctionDecl {{address:take_copy}} <line:2:1, col:44> TakeCopy 'func (&copy *func () void) void'
+| |-ParmVarDecl {{address}} <col:15, col:40> value '&copy *func () void'
+| | `-ReferenceType {{address}} <col:21, col:40> '&copy'
+| |   `-PointerType {{address}} <col:27, col:40>
+| |     `-FunctionType {{address}} <col:28, col:40>
+| |       `-BuiltinType {{address}} <col:36, col:40> 'void'
+| `-CompoundStmt {{address}} <col:42, col:44>
 `-FunctionDecl {{address}} <line:3:1, line:6:2> Use 'func () void'
   `-CompoundStmt {{address}} <line:3:12, line:6:2>
     |-ExprStmt {{address}} <line:4:3, col:18>
     | `-CallExpr {{address}} <col:3, col:17> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:11> 'func (move *func () void) void' Function {{address:take_move}} 'TakeMove' 'func (move *func () void) void'
+    |   |-DeclRefExpr {{address}} <col:3, col:11> 'func (&move *func () void) void' Function {{address:take_move}} 'TakeMove' 'func (&move *func () void) void'
     |   `-MaterializeTemporaryExpr {{address}} <col:12, col:16> '*func () void' move-lvalue
     |     `-ImplicitCastExpr {{address}} <col:12, col:16> '*func () void' pure-rvalue <NullToPointer>
     |       `-NullLiteral {{address}} <col:12, col:16> '<null>'
     `-ExprStmt {{address}} <line:5:3, col:18>
       `-CallExpr {{address}} <col:3, col:17> 'void'
-        |-DeclRefExpr {{address}} <col:3, col:11> 'func (copy *func () void) void' Function {{address:take_copy}} 'TakeCopy' 'func (copy *func () void) void'
+        |-DeclRefExpr {{address}} <col:3, col:11> 'func (&copy *func () void) void' Function {{address:take_copy}} 'TakeCopy' 'func (&copy *func () void) void'
         `-ImplicitCastExpr {{address}} <col:12, col:16> 'const *func () void' move-lvalue <NoOp>
           `-MaterializeTemporaryExpr {{address}} <col:12, col:16> '*func () void' move-lvalue
             `-ImplicitCastExpr {{address}} <col:12, col:16> '*func () void' pure-rvalue <NullToPointer>
@@ -5702,16 +6010,16 @@ TEST_F(SemaTest, UsesNullAcrossPointerInitializationAssignmentArgumentsAndResult
 trivial struct Fields {
   pointer *i32;
   callback *func () void;
-  slot virtual *func (mut Owner) void;
+  slot virtual *func (&mut Owner) void;
 }
 var global *i32 := null;
 var grouped *i32, callback *func () void := { null, null }
 func ReturnNull() *i32 { null }
 func Take(value *i32) {}
-func TakeCopy(value copy *i32) {}
-func TakeMove(value move *i32) {}
-func TakeSlot(value copy virtual *func (mut Owner) void) {}
-func TakeSlotMove(value move virtual *func (mut Owner) void) {}
+func TakeCopy(value &copy *i32) {}
+func TakeMove(value &move *i32) {}
+func TakeSlot(value &copy virtual *func (&mut Owner) void) {}
+func TakeSlotMove(value &move virtual *func (&mut Owner) void) {}
 func Use(index usize) {
   var pointer *i32 := null;
   var nested **const i32 := (null);
@@ -5722,7 +6030,7 @@ func Use(index usize) {
   fields.pointer := null;
   fields.callback := null;
   fields.slot := null;
-  var reference mut *i32 := pointer;
+  var reference &mut *i32 := pointer;
   reference = null;
   global = null;
   callback = null;
@@ -5748,11 +6056,11 @@ func Use(index usize) {
 TEST_F(SemaTest, AllowsPointerEqualityAndCommonConditionalTargetsSymmetrically) {
   Analyze(R"(trivial struct Base {}
 trivial struct Derived : Base {}
-func Common(value move *const *const i32) {}
-func BaseValue(value move *const Base) {}
+func Common(value &move *const *const i32) {}
+func BaseValue(value &move *const Base) {}
 func Check(flag bool, p *i32, cp *const i32, pp **i32, cpp **const i32,
            base *Base, derived *const Derived, callback *func () void,
-           slot virtual *func (mut Base) void) {
+           slot virtual *func (&mut Base) void) {
   p == p;
   p != p;
   p == cp;
@@ -5779,21 +6087,21 @@ func Check(flag bool, p *i32, cp *const i32, pp **i32, cpp **const i32,
   BaseValue(flag ? derived : base);
   var selected := flag ? p : null;
   var reversed := flag ? null : p;
-  var same mut *i32 := flag ? selected : reversed;
+  var same &mut *i32 := flag ? selected : reversed;
   same = null;
   var selected_callback := flag ? callback : null;
   var selected_slot := flag ? null : slot;
   selected_callback == null;
   selected_slot != null;
-  var same_callback mut *func () void := flag ? callback : selected_callback;
+  var same_callback &mut *func () void := flag ? callback : selected_callback;
   same_callback = null;
 })");
 }
 
 TEST_F(SemaTest, OrdersNullReferenceModesAndOtherArgumentsThroughOrdinaryOverloadRules) {
   Analyze(R"(func NeedInteger(value i32) {}
-func Ref(value copy *i32) bool { false }
-func Ref(value move *i32) i32 { 1 }
+func Ref(value &copy *i32) bool { false }
+func Ref(value &move *i32) i32 { 1 }
 func Other(value *i32, test bool) bool { false }
 func Other(value *const i32, test i32) i32 { 1 }
 func Reverse(value *const i32, test i32) i32 { 1 }
@@ -5879,7 +6187,7 @@ d == b;
     `-ExprStmt {{address}} <line:4:1, col:8>
       `-BinaryOperator {{address}} <col:1, col:7> 'bool' pure-rvalue '=='
         |-ImplicitCastExpr {{address}} <col:1, col:2> '*const Base' pure-rvalue <Qualification>
-        | `-ImplicitCastExpr {{address}} <col:1, col:2> '*Base' pure-rvalue <DerivedToBase> path Struct {{address:base}} 'Base'
+        | `-ImplicitCastExpr {{address}} <col:1, col:2> '*Base' pure-rvalue <BaseSubobject> path Struct {{address:base}} 'Base'
         |   `-ImplicitCastExpr {{address}} <col:1, col:2> '*Derived' pure-rvalue <LValueToRValue>
         |     `-DeclRefExpr {{address}} <col:1, col:2> '*Derived' lvalue ParmVar {{address:d}} 'd' '*Derived'
         `-ImplicitCastExpr {{address}} <col:6, col:7> '*const Base' pure-rvalue <LValueToRValue>
@@ -5887,10 +6195,10 @@ d == b;
 }
 
 TEST_F(SemaTest, PreservesPointerConditionalCategoriesAndMergesDeeperConstBarriers) {
-  Analyze(R"(func Common(value move *const *const *const i32) {}
-func Copy(value copy *i32) {}
-func Move(value move *i32) {}
-func Use(flag bool, p *i32, fixed copy *i32, deep *const **i32, deeper ***const i32) {
+  Analyze(R"(func Common(value &move *const *const *const i32) {}
+func Copy(value &copy *i32) {}
+func Move(value &move *i32) {}
+func Use(flag bool, p *i32, fixed &copy *i32, deep *const **i32, deeper ***const i32) {
   Common(flag ? deep : deeper);
   Common(flag ? deeper : deep);
   Copy(flag ? p : fixed);
@@ -5962,7 +6270,7 @@ var callback *func () void := flag ? &F : null;
 TEST_F(SemaTest, RejectsFunctionPointerEqualityBeyondNullChecks) {
   Analyze(R"(trivial struct Owner {}
 func F() {}
-func Use(f *func () void, s virtual *func (mut Owner) void) {
+func Use(f *func () void, s virtual *func (&mut Owner) void) {
 f == f;
 f != f;
 s == s;
@@ -5977,16 +6285,16 @@ empty == empty;
 })");
   ExpectError(3, 0, "binary operator '==' cannot be applied to types '*func () void' and '*func () void'", 6);
   ExpectError(4, 0, "binary operator '!=' cannot be applied to types '*func () void' and '*func () void'", 6);
+  ExpectError(5, 0,
+              "binary operator '==' cannot be applied to types 'virtual *func (&mut Owner) void' and 'virtual *func "
+              "(&mut Owner) void'",
+              6);
+  ExpectError(6, 0,
+              "binary operator '!=' cannot be applied to types 'virtual *func (&mut Owner) void' and 'virtual *func "
+              "(&mut Owner) void'",
+              6);
   ExpectError(
-      5, 0,
-      "binary operator '==' cannot be applied to types 'virtual *func (mut Owner) void' and 'virtual *func (mut Owner) void'",
-      6);
-  ExpectError(
-      6, 0,
-      "binary operator '!=' cannot be applied to types 'virtual *func (mut Owner) void' and 'virtual *func (mut Owner) void'",
-      6);
-  ExpectError(
-      7, 0, "binary operator '==' cannot be applied to types '*func () void' and 'virtual *func (mut Owner) void'", 6);
+      7, 0, "binary operator '==' cannot be applied to types '*func () void' and 'virtual *func (&mut Owner) void'", 6);
   ExpectError(
       8, 0,
       "binary operator '==' cannot be applied to type '*func () void' and a function address without a target type", 7);
@@ -6062,175 +6370,178 @@ TEST_P(NullTargetOrderTest, PreservesAmbiguityInBothDeclarationOrders) {
 INSTANTIATE_TEST_SUITE_P(NullTargets, NullTargetOrderTest,
                          ::testing::Values(NullTargetPair{"*i32", "*const i32"}, NullTargetPair{"*Derived", "*Base"},
                                            NullTargetPair{"*i32", "*func () void"},
-                                           NullTargetPair{"*func () void", "virtual *func (mut Base) void"},
-                                           NullTargetPair{"move *i32", "copy *const i32"},
-                                           NullTargetPair{"*i32", "copy *i32"}, NullTargetPair{"*i32", "move *i32"},
+                                           NullTargetPair{"*func () void", "virtual *func (&mut Base) void"},
+                                           NullTargetPair{"&move *i32", "&copy *const i32"},
+                                           NullTargetPair{"*i32", "&copy *i32"}, NullTargetPair{"*i32", "&move *i32"},
                                            NullTargetPair{"*i32", "*f64"}, NullTargetPair{"**i32", "**const i32"}));
 
 TEST_F(SemaTest, LeavesNullUnconvertedWhenMutableReferenceBindingFails) {
   Analyze(R"(func Use() {
-var p mut *i32 := null;
+var p &mut *i32 := null;
 })");
-  ExpectError(1, 18,
-              "cannot initialize variable 'p': reference type 'mut *i32' cannot bind to pure rvalue of type '*i32'", 4);
+  ExpectError(
+      1, 19, "cannot initialize variable 'p': reference type '&mut *i32' cannot bind to pure rvalue of type '*i32'", 4);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-FunctionDecl {{address}} <test.cw:1:1, line:3:2> Use 'func () void' contains-errors
   `-CompoundStmt {{address}} <line:1:12, line:3:2> contains-errors
-    `-DeclStmt {{address}} <line:2:1, col:24> contains-errors
-      `-VarGroupDecl {{address}} <col:1, col:24> contains-errors
-        |-VarDecl {{address}} <col:5, col:15> p 'mut *i32'
-        | `-ReferenceType {{address}} <col:7, col:15> 'mut'
-        |   `-PointerType {{address}} <col:11, col:15>
-        |     `-BuiltinType {{address}} <col:12, col:15> 'i32'
-        `-NullLiteral {{address}} <col:19, col:23> '<null>' contains-errors)");
+    `-DeclStmt {{address}} <line:2:1, col:25> contains-errors
+      `-VarGroupDecl {{address}} <col:1, col:25> contains-errors
+        |-VarDecl {{address}} <col:5, col:16> p '&mut *i32'
+        | `-ReferenceType {{address}} <col:7, col:16> '&mut'
+        |   `-PointerType {{address}} <col:12, col:16>
+        |     `-BuiltinType {{address}} <col:13, col:16> 'i32'
+        `-NullLiteral {{address}} <col:20, col:24> '<null>' contains-errors)");
 }
 
 TEST_F(SemaTest, ReportsNonPointerAndMutableReferenceCandidatesAsNotViableForNull) {
   Analyze(R"(func Pick(value i32) {}
 func Pick(value bool) {}
-func Pick(value mut *i32) {}
+func Pick(value &mut *i32) {}
 func Use() { Pick(null); })");
   ExpectError(3, 13, "no matching function for call to 'Pick'", 10);
   ExpectNote(0, 0, "candidate function is not viable: no implicit conversion from '<null>' to 'i32' for argument 1", 0);
   ExpectNote(1, 0, "candidate function is not viable: no implicit conversion from '<null>' to 'bool' for argument 1",
              0);
-  ExpectNote(
-      2, 0,
-      "candidate function is not viable: reference type 'mut *i32' cannot bind to pure rvalue of type '*i32' for argument 1",
-      0);
+  ExpectNote(2, 0,
+             "candidate function is not viable: reference type '&mut *i32' cannot bind to pure rvalue of type '*i32' "
+             "for argument 1",
+             0);
 }
 
 // Const moving lvalues.
 
 TEST_F(SemaTest, PreservesMovingCategoryWhenBindingCopyReferences) {
-  Analyze(R"(func Copy(x copy i32) {}
-func Use(x copy i32, y mut i32) {
+  Analyze(R"(func Copy(x &copy i32) {}
+func Use(x &copy i32, y &mut i32) {
   Copy(move x);
   Copy(move y);
 })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
-|-FunctionDecl {{address:copy}} <test.cw:1:1, col:25> Copy 'func (copy i32) void'
-| |-ParmVarDecl {{address}} <col:11, col:21> x 'copy i32'
-| | `-ReferenceType {{address}} <col:13, col:21> 'copy'
-| |   `-BuiltinType {{address}} <col:18, col:21> 'i32'
-| `-CompoundStmt {{address}} <col:23, col:25>
-`-FunctionDecl {{address}} <line:2:1, line:5:2> Use 'func (copy i32, mut i32) void'
-  |-ParmVarDecl {{address:x}} <line:2:10, col:20> x 'copy i32'
-  | `-ReferenceType {{address}} <col:12, col:20> 'copy'
-  |   `-BuiltinType {{address}} <col:17, col:20> 'i32'
-  |-ParmVarDecl {{address:y}} <col:22, col:31> y 'mut i32'
-  | `-ReferenceType {{address}} <col:24, col:31> 'mut'
-  |   `-BuiltinType {{address}} <col:28, col:31> 'i32'
-  `-CompoundStmt {{address}} <col:33, line:5:2>
+|-FunctionDecl {{address:copy}} <test.cw:1:1, col:26> Copy 'func (&copy i32) void'
+| |-ParmVarDecl {{address}} <col:11, col:22> x '&copy i32'
+| | `-ReferenceType {{address}} <col:13, col:22> '&copy'
+| |   `-BuiltinType {{address}} <col:19, col:22> 'i32'
+| `-CompoundStmt {{address}} <col:24, col:26>
+`-FunctionDecl {{address}} <line:2:1, line:5:2> Use 'func (&copy i32, &mut i32) void'
+  |-ParmVarDecl {{address:x}} <line:2:10, col:21> x '&copy i32'
+  | `-ReferenceType {{address}} <col:12, col:21> '&copy'
+  |   `-BuiltinType {{address}} <col:18, col:21> 'i32'
+  |-ParmVarDecl {{address:y}} <col:23, col:33> y '&mut i32'
+  | `-ReferenceType {{address}} <col:25, col:33> '&mut'
+  |   `-BuiltinType {{address}} <col:30, col:33> 'i32'
+  `-CompoundStmt {{address}} <col:35, line:5:2>
     |-ExprStmt {{address}} <line:3:3, col:16>
     | `-CallExpr {{address}} <col:3, col:15> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (copy i32) void' Function {{address:copy}} 'Copy' 'func (copy i32) void'
+    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy i32) void' Function {{address:copy}} 'Copy' 'func (&copy i32) void'
     |   `-UnaryOperator {{address}} <col:8, col:14> 'const i32' move-lvalue 'move'
-    |     `-DeclRefExpr {{address}} <col:13, col:14> 'const i32' lvalue ParmVar {{address:x}} 'x' 'copy i32'
+    |     `-DeclRefExpr {{address}} <col:13, col:14> 'const i32' lvalue ParmVar {{address:x}} 'x' '&copy i32'
     `-ExprStmt {{address}} <line:4:3, col:16>
       `-CallExpr {{address}} <col:3, col:15> 'void'
-        |-DeclRefExpr {{address}} <col:3, col:7> 'func (copy i32) void' Function {{address:copy}} 'Copy' 'func (copy i32) void'
+        |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy i32) void' Function {{address:copy}} 'Copy' 'func (&copy i32) void'
         `-ImplicitCastExpr {{address}} <col:8, col:14> 'const i32' move-lvalue <NoOp>
           `-UnaryOperator {{address}} <col:8, col:14> 'i32' move-lvalue 'move'
-            `-DeclRefExpr {{address}} <col:13, col:14> 'i32' lvalue ParmVar {{address:y}} 'y' 'mut i32')");
+            `-DeclRefExpr {{address}} <col:13, col:14> 'i32' lvalue ParmVar {{address:y}} 'y' '&mut i32')");
 }
 
 TEST_F(SemaTest, SelectsCopyOperationsForConstMovingObjectsWithBothOperations) {
   Analyze(R"(struct T {}
-ctor T(x copy T) {}
-ctor T(x move T) {}
+ctor T(x &copy T) {}
+ctor T(x &move T) {}
 dtor T() {}
-func operator=(x mut T, y copy T) {}
-func operator=(x mut T, y move T) {}
-func Use(x mut T, y copy T) T {
+func operator=(x &mut T, y &copy T) {}
+func operator=(x &mut T, y &move T) {}
+func Use(x &mut T, y &copy T) T {
   x = move y;
   move y
 })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:t}} <test.cw:1:1, col:12> T
-|-ConstructorDecl {{address:copy_ctor}} <line:2:1, col:20> T target Struct {{address:t}} 'T' 'func (copy T) void'
-| |-ParmVarDecl {{address}} <col:8, col:16> x 'copy T'
-| | `-ReferenceType {{address}} <col:10, col:16> 'copy'
-| |   `-NamedType {{address}} <col:15, col:16> 'T'
-| `-CompoundStmt {{address}} <col:18, col:20>
-|-ConstructorDecl {{address:move_ctor}} <line:3:1, col:20> T target Struct {{address:t}} 'T' 'func (move T) void'
-| |-ParmVarDecl {{address}} <col:8, col:16> x 'move T'
-| | `-ReferenceType {{address}} <col:10, col:16> 'move'
-| |   `-NamedType {{address}} <col:15, col:16> 'T'
-| `-CompoundStmt {{address}} <col:18, col:20>
+|-ConstructorDecl {{address:copy_ctor}} <line:2:1, col:21> T target Struct {{address:t}} 'T' 'func (&copy T) void'
+| |-ParmVarDecl {{address}} <col:8, col:17> x '&copy T'
+| | `-ReferenceType {{address}} <col:10, col:17> '&copy'
+| |   `-NamedType {{address}} <col:16, col:17> 'T'
+| `-CompoundStmt {{address}} <col:19, col:21>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-ConstructorDecl {{address:move_ctor}} <line:3:1, col:21> T target Struct {{address:t}} 'T' 'func (&move T) void'
+| |-ParmVarDecl {{address}} <col:8, col:17> x '&move T'
+| | `-ReferenceType {{address}} <col:10, col:17> '&move'
+| |   `-NamedType {{address}} <col:16, col:17> 'T'
+| `-CompoundStmt {{address}} <col:19, col:21>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <line:4:1, col:12> T target Struct {{address:t}} 'T' 'func () void'
 | `-CompoundStmt {{address}} <col:10, col:12>
-|-FunctionDecl {{address:copy_assign}} <line:5:1, col:37> operator= 'func (mut T, copy T) void'
-| |-ParmVarDecl {{address}} <col:16, col:23> x 'mut T'
-| | `-ReferenceType {{address}} <col:18, col:23> 'mut'
-| |   `-NamedType {{address}} <col:22, col:23> 'T'
-| |-ParmVarDecl {{address}} <col:25, col:33> y 'copy T'
-| | `-ReferenceType {{address}} <col:27, col:33> 'copy'
-| |   `-NamedType {{address}} <col:32, col:33> 'T'
-| `-CompoundStmt {{address}} <col:35, col:37>
-|-FunctionDecl {{address:move_assign}} <line:6:1, col:37> operator= 'func (mut T, move T) void'
-| |-ParmVarDecl {{address}} <col:16, col:23> x 'mut T'
-| | `-ReferenceType {{address}} <col:18, col:23> 'mut'
-| |   `-NamedType {{address}} <col:22, col:23> 'T'
-| |-ParmVarDecl {{address}} <col:25, col:33> y 'move T'
-| | `-ReferenceType {{address}} <col:27, col:33> 'move'
-| |   `-NamedType {{address}} <col:32, col:33> 'T'
-| `-CompoundStmt {{address}} <col:35, col:37>
-`-FunctionDecl {{address}} <line:7:1, line:10:2> Use 'func (mut T, copy T) T'
-  |-ParmVarDecl {{address:x}} <line:7:10, col:17> x 'mut T'
-  | `-ReferenceType {{address}} <col:12, col:17> 'mut'
-  |   `-NamedType {{address}} <col:16, col:17> 'T'
-  |-ParmVarDecl {{address:y}} <col:19, col:27> y 'copy T'
-  | `-ReferenceType {{address}} <col:21, col:27> 'copy'
-  |   `-NamedType {{address}} <col:26, col:27> 'T'
-  |-ReturnVarDecl {{address:result}} <col:29, col:30> 'T'
-  | `-NamedType {{address}} <col:29, col:30> 'T'
-  `-CompoundStmt {{address}} <col:31, line:10:2>
+|-FunctionDecl {{address:copy_assign}} <line:5:1, col:39> operator= 'func (&mut T, &copy T) void'
+| |-ParmVarDecl {{address}} <col:16, col:24> x '&mut T'
+| | `-ReferenceType {{address}} <col:18, col:24> '&mut'
+| |   `-NamedType {{address}} <col:23, col:24> 'T'
+| |-ParmVarDecl {{address}} <col:26, col:35> y '&copy T'
+| | `-ReferenceType {{address}} <col:28, col:35> '&copy'
+| |   `-NamedType {{address}} <col:34, col:35> 'T'
+| `-CompoundStmt {{address}} <col:37, col:39>
+|-FunctionDecl {{address:move_assign}} <line:6:1, col:39> operator= 'func (&mut T, &move T) void'
+| |-ParmVarDecl {{address}} <col:16, col:24> x '&mut T'
+| | `-ReferenceType {{address}} <col:18, col:24> '&mut'
+| |   `-NamedType {{address}} <col:23, col:24> 'T'
+| |-ParmVarDecl {{address}} <col:26, col:35> y '&move T'
+| | `-ReferenceType {{address}} <col:28, col:35> '&move'
+| |   `-NamedType {{address}} <col:34, col:35> 'T'
+| `-CompoundStmt {{address}} <col:37, col:39>
+`-FunctionDecl {{address}} <line:7:1, line:10:2> Use 'func (&mut T, &copy T) T'
+  |-ParmVarDecl {{address:x}} <line:7:10, col:18> x '&mut T'
+  | `-ReferenceType {{address}} <col:12, col:18> '&mut'
+  |   `-NamedType {{address}} <col:17, col:18> 'T'
+  |-ParmVarDecl {{address:y}} <col:20, col:29> y '&copy T'
+  | `-ReferenceType {{address}} <col:22, col:29> '&copy'
+  |   `-NamedType {{address}} <col:28, col:29> 'T'
+  |-ReturnVarDecl {{address:result}} <col:31, col:32> 'T'
+  | `-NamedType {{address}} <col:31, col:32> 'T'
+  `-CompoundStmt {{address}} <col:33, line:10:2>
     |-ExprStmt {{address}} <line:8:3, col:14>
     | `-OperatorCallExpr {{address}} <col:3, col:13> 'void'
-    |   |-DeclRefExpr {{address}} <col:5, col:6> 'func (mut T, copy T) void' Function {{address:copy_assign}} 'operator=' 'func (mut T, copy T) void'
-    |   |-DeclRefExpr {{address}} <col:3, col:4> 'T' lvalue ParmVar {{address:x}} 'x' 'mut T'
+    |   |-DeclRefExpr {{address}} <col:5, col:6> 'func (&mut T, &copy T) void' Function {{address:copy_assign}} 'operator=' 'func (&mut T, &copy T) void'
+    |   |-DeclRefExpr {{address}} <col:3, col:4> 'T' lvalue ParmVar {{address:x}} 'x' '&mut T'
     |   `-UnaryOperator {{address}} <col:7, col:13> 'const T' move-lvalue 'move'
-    |     `-DeclRefExpr {{address}} <col:12, col:13> 'const T' lvalue ParmVar {{address:y}} 'y' 'copy T'
+    |     `-DeclRefExpr {{address}} <col:12, col:13> 'const T' lvalue ParmVar {{address:y}} 'y' '&copy T'
     `-ImplicitResultInitializationExpr {{address}} <line:9:3, col:9> 'void' ReturnVar {{address:result}} 'T'
-      `-ConstructionExpr {{address}} <col:3, col:9> 'T' pure-rvalue complete-object Constructor {{address:copy_ctor}} 'T' 'func (copy T) void'
+      `-ConstructionExpr {{address}} <col:3, col:9> 'T' pure-rvalue complete-object Constructor {{address:copy_ctor}} 'T' 'func (&copy T) void'
         `-UnaryOperator {{address}} <col:3, col:9> 'const T' move-lvalue 'move'
-          `-DeclRefExpr {{address}} <col:8, col:9> 'const T' lvalue ParmVar {{address:y}} 'y' 'copy T')");
+          `-DeclRefExpr {{address}} <col:8, col:9> 'const T' lvalue ParmVar {{address:y}} 'y' '&copy T'
+)");
 }
 
 TEST_F(SemaTest, MergesConstOnMovingConditionalWithoutConvertingItsBranches) {
-  Analyze(R"(func F(b bool, x mut i32, y copy i32) {
+  Analyze(R"(func F(b bool, x &mut i32, y &copy i32) {
   b ? move x : move y;
 })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
-`-FunctionDecl {{address}} <test.cw:1:1, line:3:2> F 'func (bool, mut i32, copy i32) void'
+`-FunctionDecl {{address}} <test.cw:1:1, line:3:2> F 'func (bool, &mut i32, &copy i32) void'
   |-ParmVarDecl {{address:b}} <line:1:8, col:14> b 'bool'
   | `-BuiltinType {{address}} <col:10, col:14> 'bool'
-  |-ParmVarDecl {{address:x}} <col:16, col:25> x 'mut i32'
-  | `-ReferenceType {{address}} <col:18, col:25> 'mut'
-  |   `-BuiltinType {{address}} <col:22, col:25> 'i32'
-  |-ParmVarDecl {{address:y}} <col:27, col:37> y 'copy i32'
-  | `-ReferenceType {{address}} <col:29, col:37> 'copy'
-  |   `-BuiltinType {{address}} <col:34, col:37> 'i32'
-  `-CompoundStmt {{address}} <col:39, line:3:2>
+  |-ParmVarDecl {{address:x}} <col:16, col:26> x '&mut i32'
+  | `-ReferenceType {{address}} <col:18, col:26> '&mut'
+  |   `-BuiltinType {{address}} <col:23, col:26> 'i32'
+  |-ParmVarDecl {{address:y}} <col:28, col:39> y '&copy i32'
+  | `-ReferenceType {{address}} <col:30, col:39> '&copy'
+  |   `-BuiltinType {{address}} <col:36, col:39> 'i32'
+  `-CompoundStmt {{address}} <col:41, line:3:2>
     `-ExprStmt {{address}} <line:2:3, col:23>
       `-ConditionalOperator {{address}} <col:3, col:22> 'const i32' move-lvalue
         |-ImplicitCastExpr {{address}} <col:3, col:4> 'bool' pure-rvalue <LValueToRValue>
         | `-DeclRefExpr {{address}} <col:3, col:4> 'bool' lvalue ParmVar {{address:b}} 'b' 'bool'
         |-UnaryOperator {{address}} <col:7, col:13> 'i32' move-lvalue 'move'
-        | `-DeclRefExpr {{address}} <col:12, col:13> 'i32' lvalue ParmVar {{address:x}} 'x' 'mut i32'
+        | `-DeclRefExpr {{address}} <col:12, col:13> 'i32' lvalue ParmVar {{address:x}} 'x' '&mut i32'
         `-UnaryOperator {{address}} <col:16, col:22> 'const i32' move-lvalue 'move'
-          `-DeclRefExpr {{address}} <col:21, col:22> 'const i32' lvalue ParmVar {{address:y}} 'y' 'copy i32')");
+          `-DeclRefExpr {{address}} <col:21, col:22> 'const i32' lvalue ParmVar {{address:y}} 'y' '&copy i32')");
 }
 
 TEST_F(SemaTest, ConsumesConstMovingFieldAndArrayProjections) {
   Analyze(R"(trivial struct S { value const i32; }
-func Copy(value copy i32) {}
-func Borrow(value copy i32) copy i32 { value }
-func Use(object mut S, array mut [1] const i32, index usize) i32 {
+func Copy(value &copy i32) {}
+func Borrow(value &copy i32) &copy i32 { value }
+func Use(object &mut S, array &mut [1] const i32, index usize) i32 {
   S().value;
   Copy(S().value);
   var field := (move object).value;
@@ -6244,7 +6555,7 @@ func Use(object mut S, array mut [1] const i32, index usize) i32 {
 
 TEST_F(SemaTest, PreservesConstMovingCategoryOfFieldAndElementProjections) {
   Analyze(R"(trivial struct S { x const i32; }
-func F(s mut S, a mut [1] const i32, i usize) {
+func F(s &mut S, a &mut [1] const i32, i usize) {
   (move s).x;
   (move a)[i];
 })");
@@ -6254,45 +6565,45 @@ func F(s mut S, a mut [1] const i32, i usize) {
 | `-FieldDecl {{address:x}} <col:20, col:32> x 'const i32'
 |   `-ConstType {{address}} <col:22, col:31>
 |     `-BuiltinType {{address}} <col:28, col:31> 'i32'
-`-FunctionDecl {{address}} <line:2:1, line:5:2> F 'func (mut S, mut [1] const i32, usize) void'
-  |-ParmVarDecl {{address:s}} <line:2:8, col:15> s 'mut S'
-  | `-ReferenceType {{address}} <col:10, col:15> 'mut'
-  |   `-NamedType {{address}} <col:14, col:15> 'S'
-  |-ParmVarDecl {{address:a}} <col:17, col:36> a 'mut [1] const i32'
-  | `-ReferenceType {{address}} <col:19, col:36> 'mut'
-  |   `-ArrayType {{address}} <col:23, col:36>
-  |     |-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' 1
-  |     `-ConstType {{address}} <col:27, col:36>
-  |       `-BuiltinType {{address}} <col:33, col:36> 'i32'
-  |-ParmVarDecl {{address:i}} <col:38, col:45> i 'usize'
-  | `-BuiltinType {{address}} <col:40, col:45> 'usize'
-  `-CompoundStmt {{address}} <col:47, line:5:2>
+`-FunctionDecl {{address}} <line:2:1, line:5:2> F 'func (&mut S, &mut [1] const i32, usize) void'
+  |-ParmVarDecl {{address:s}} <line:2:8, col:16> s '&mut S'
+  | `-ReferenceType {{address}} <col:10, col:16> '&mut'
+  |   `-NamedType {{address}} <col:15, col:16> 'S'
+  |-ParmVarDecl {{address:a}} <col:18, col:38> a '&mut [1] const i32'
+  | `-ReferenceType {{address}} <col:20, col:38> '&mut'
+  |   `-ArrayType {{address}} <col:25, col:38>
+  |     |-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' 1
+  |     `-ConstType {{address}} <col:29, col:38>
+  |       `-BuiltinType {{address}} <col:35, col:38> 'i32'
+  |-ParmVarDecl {{address:i}} <col:40, col:47> i 'usize'
+  | `-BuiltinType {{address}} <col:42, col:47> 'usize'
+  `-CompoundStmt {{address}} <col:49, line:5:2>
     |-ExprStmt {{address}} <line:3:3, col:14>
     | `-MemberExpr {{address}} <col:3, col:13> 'const i32' move-lvalue .x Field {{address:x}} 'x' 'const i32'
     |   `-ParenExpr {{address}} <col:3, col:11> 'S' move-lvalue
     |     `-UnaryOperator {{address}} <col:4, col:10> 'S' move-lvalue 'move'
-    |       `-DeclRefExpr {{address}} <col:9, col:10> 'S' lvalue ParmVar {{address:s}} 's' 'mut S'
+    |       `-DeclRefExpr {{address}} <col:9, col:10> 'S' lvalue ParmVar {{address:s}} 's' '&mut S'
     `-ExprStmt {{address}} <line:4:3, col:15>
       `-SubscriptExpr {{address}} <col:3, col:14> 'const i32' move-lvalue
         |-ParenExpr {{address}} <col:3, col:11> '[1] const i32' move-lvalue
         | `-UnaryOperator {{address}} <col:4, col:10> '[1] const i32' move-lvalue 'move'
-        |   `-DeclRefExpr {{address}} <col:9, col:10> '[1] const i32' lvalue ParmVar {{address:a}} 'a' 'mut [1] const i32'
+        |   `-DeclRefExpr {{address}} <col:9, col:10> '[1] const i32' lvalue ParmVar {{address:a}} 'a' '&mut [1] const i32'
         `-ImplicitCastExpr {{address}} <col:12, col:13> 'usize' pure-rvalue <LValueToRValue>
           `-DeclRefExpr {{address}} <col:12, col:13> 'usize' lvalue ParmVar {{address:i}} 'i' 'usize')");
 }
 
 TEST_F(SemaTest, UsesConstMovingSourcesAcrossValueAndReferenceCallContexts) {
   Analyze(R"(struct T {}
-ctor T(x copy T) {}
-ctor T(x move T) {}
+ctor T(x &copy T) {}
+ctor T(x &move T) {}
 dtor T() {}
-func operator=(x mut T, y copy T) {}
-func operator=(x mut T, y move T) {}
+func operator=(x &mut T, y &copy T) {}
+func operator=(x &mut T, y &move T) {}
 func Take(x T) {}
-func Read(x copy T) {}
-func Rank(x move T) i64 { 1 }
-func Rank(x copy T) i32 { 1 }
-func Use(x mut T, y copy T, b bool, value *func (T) void, ref *func (copy T) void) i32 {
+func Read(x &copy T) {}
+func Rank(x &move T) i64 { 1 }
+func Rank(x &copy T) i32 { 1 }
+func Use(x &mut T, y &copy T, b bool, value *func (T) void, ref *func (&copy T) void) i32 {
   Take(move y);
   (move y).Take();
   (move y).Read();
@@ -6308,20 +6619,20 @@ func Use(x mut T, y copy T, b bool, value *func (T) void, ref *func (copy T) voi
 
 TEST_F(SemaTest, CopiesConstMovingArraysAndBaseSubobjects) {
   Analyze(R"(struct Base {}
-ctor Base(x copy Base) {}
-ctor Base(x move Base) {}
+ctor Base(x &copy Base) {}
+ctor Base(x &move Base) {}
 dtor Base() {}
-func operator=(x mut Base, y copy Base) {}
-func operator=(x mut Base, y move Base) {}
+func operator=(x &mut Base, y &copy Base) {}
+func operator=(x &mut Base, y &move Base) {}
 struct Derived : Base {}
-ctor Derived(x copy Base) { this.Base := x; }
+ctor Derived(x &copy Base) { this.Base := x; }
 dtor Derived() {}
-func Read(x copy Base) {}
-func Project(x copy Derived) Base {
+func Read(x &copy Base) {}
+func Project(x &copy Derived) Base {
   Read(move x);
   move x
 }
-func Arrays(x mut [1] [1] Base, y copy [1] [1] Base, z mut [1] [0] const Base) {
+func Arrays(x &mut [1] [1] Base, y &copy [1] [1] Base, z &mut [1] [0] const Base) {
   var copied [1] [1] Base := move y;
   var empty [1] [0] const Base := move z;
   x = move y;
@@ -6331,45 +6642,45 @@ func Arrays(x mut [1] [1] Base, y copy [1] [1] Base, z mut [1] [0] const Base) {
 TEST_F(SemaTest, MovesWholeObjectWhileCopyingItsConstMember) {
   Analyze(R"(struct Item {}
 ctor Item() {}
-ctor Item(x copy Item) {}
-ctor Item(x move Item) {}
+ctor Item(x &copy Item) {}
+ctor Item(x &move Item) {}
 dtor Item() {}
 struct Whole { fixed const Item; mutable Item; }
 ctor Whole() { this.fixed := Item(); this.mutable := Item(); }
-ctor Whole(x move Whole) {
+ctor Whole(x &move Whole) {
   this.fixed := (move x).fixed;
   this.mutable := (move x).mutable;
 }
 dtor Whole() {}
-func Use(x mut Whole) Whole { move x })");
+func Use(x &mut Whole) Whole { move x })");
 }
 
 TEST_F(SemaTest, RejectsMutableAndMoveReferenceBindingsFromConstMovingSources) {
-  Analyze(R"(func Mut(x mut i32) {}
-func Move(x move i32) {}
-func Use(x copy i32) {
+  Analyze(R"(func Mut(x &mut i32) {}
+func Move(x &move i32) {}
+func Use(x &copy i32) {
   Mut(move x);
   Move(move x);
 })");
 
   ExpectError(3, 2, "no matching function for call to 'Mut'", 11);
   ExpectNote(0, 0,
-             "candidate function is not viable: binding a reference of type 'mut i32' to a value of type "
-             "'const i32' would discard const for argument 1",
+             "candidate function is not viable: binding a reference of type '&mut i32' to a value of type 'const i32' "
+             "would discard const for argument 1",
              0);
   ExpectError(4, 2, "no matching function for call to 'Move'", 12);
   ExpectNote(1, 0,
-             "candidate function is not viable: binding a reference of type 'move i32' to a value of type "
-             "'const i32' would discard const for argument 1",
+             "candidate function is not viable: binding a reference of type '&move i32' to a value of type 'const i32' "
+             "would discard const for argument 1",
              0);
 }
 
 TEST_F(SemaTest, ReportsMissingCopyForConstMovingObjectsDespiteMoveOperations) {
   Analyze(R"(struct T {}
-ctor T(x move T) {}
+ctor T(x &move T) {}
 dtor T() {}
-func operator=(x mut T, y move T) {}
-func Use(x mut T, y copy T) T {
+func operator=(x &mut T, y &move T) {}
+func Use(x &mut T, y &copy T) T {
   x = move y;
   move y
 })");
@@ -6380,14 +6691,14 @@ func Use(x mut T, y copy T) T {
 
 TEST_F(SemaTest, ReportsMissingCopyForInheritedArrayConstIncludingZeroLength) {
   Analyze(R"(struct T {}
-ctor T(x move T) {}
+ctor T(x &move T) {}
 dtor T() {}
-func operator=(x mut T, y move T) {}
-func Root(x mut [1] [1] T, y copy [1] [1] T) {
+func operator=(x &mut T, y &move T) {}
+func Root(x &mut [1] [1] T, y &copy [1] [1] T) {
   var value [1] [1] T := move y;
   x = move y;
 }
-func Leaf(y mut [1] [0] const T) {
+func Leaf(y &mut [1] [0] const T) {
   var value [1] [0] const T := move y;
 })");
 
@@ -6398,9 +6709,9 @@ func Leaf(y mut [1] [0] const T) {
 
 TEST_F(SemaTest, ChecksEachMixedConditionalBranchUsingItsOwnConstPermission) {
   Analyze(R"(struct T {}
-ctor T(x move T) {}
+ctor T(x &move T) {}
 dtor T() {}
-func Use(b bool, x copy T, y mut T) {
+func Use(b bool, x &copy T, y &mut T) {
   b ? move x : y;
   b ? move y : x;
 })");
@@ -6411,7 +6722,7 @@ func Use(b bool, x copy T, y mut T) {
 
 TEST_F(SemaTest, PreservesPointeeLvaluesWhenMovingConstPointers) {
   Analyze(R"(trivial struct S { value i32; }
-func Use(p copy *S, q copy *i32) {
+func Use(p &copy *S, q &copy *i32) {
   (move p)->value = 1;
   *(move q) = 1;
   var address *i32 := &(move p)->value;
@@ -6419,7 +6730,7 @@ func Use(p copy *S, q copy *i32) {
 }
 
 TEST_F(SemaTest, RejectsModificationAddressAndRepeatedMoveOfConstMovingObjects) {
-  Analyze(R"(func Use(x copy i32) {
+  Analyze(R"(func Use(x &copy i32) {
   (move x) = 1;
   &(move x);
   move (move x);
@@ -6515,9 +6826,9 @@ TEST_F(SemaTest, CountsDecodedStringLiteralBytesWithoutImplicitTerminator) {
 
 TEST_F(SemaTest, UsesStringLiteralsThroughOrdinaryArrayConversions) {
   Analyze(R"(var global := "abc";
-func Read(value copy [3] u8, index usize) u8 { value[index] }
+func Read(value &copy [3] u8, index usize) u8 { value[index] }
 func Echo(value [3] u8) [3] u8 { value }
-func Borrow() copy [3] u8 { "abc" }
+func Borrow() &copy [3] u8 { "abc" }
 func Use(index usize) {
   var text := "abc";
   text[index] = 'x';
@@ -6579,7 +6890,7 @@ flag ? "yes" : "no";
 }
 
 TEST_F(SemaTest, RejectsStringLiteralMutationAndInitialization) {
-  Analyze(R"(func Mut(value mut [3] u8) {}
+  Analyze(R"(func Mut(value &mut [3] u8) {}
 func F(index usize) {
 "abc"[index] = 'x';
 "abc" := "xyz";
@@ -6593,9 +6904,131 @@ Mut("abc");
               5);
   ExpectError(4, 0, "no matching function for call to 'Mut'", 10);
   ExpectNote(0, 0,
-             "candidate function is not viable: binding a reference of type 'mut [3] u8' to a value of type "
-             "'const [3] u8' would discard const for argument 1",
+             "candidate function is not viable: binding a reference of type '&mut [3] u8' to a value of type 'const "
+             "[3] u8' would discard const for argument 1",
              0);
+}
+
+// Aggregate assignment.
+
+TEST_F(SemaTest, KeepsTrivialStructAssignmentSourceObjects) {
+  Analyze(R"(trivial struct S {}
+func Assign(dst &mut S, src &copy S) {
+  dst = src;
+  dst = S();
+})");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+|-StructDecl {{address}} <test.cw:1:1, col:20> S trivial
+`-FunctionDecl {{address}} <line:2:1, line:5:2> Assign 'func (&mut S, &copy S) void'
+  |-ParmVarDecl {{address:dst}} <line:2:13, col:23> dst '&mut S'
+  | `-ReferenceType {{address}} <col:17, col:23> '&mut'
+  |   `-NamedType {{address}} <col:22, col:23> 'S'
+  |-ParmVarDecl {{address:src}} <col:25, col:36> src '&copy S'
+  | `-ReferenceType {{address}} <col:29, col:36> '&copy'
+  |   `-NamedType {{address}} <col:35, col:36> 'S'
+  `-CompoundStmt {{address}} <col:38, line:5:2>
+    |-ExprStmt {{address}} <line:3:3, col:13>
+    | `-BinaryOperator {{address}} <col:3, col:12> 'S' lvalue '='
+    |   |-DeclRefExpr {{address}} <col:3, col:6> 'S' lvalue ParmVar {{address:dst}} 'dst' '&mut S'
+    |   `-DeclRefExpr {{address}} <col:9, col:12> 'const S' lvalue ParmVar {{address:src}} 'src' '&copy S'
+    `-ExprStmt {{address}} <line:4:3, col:13>
+      `-BinaryOperator {{address}} <col:3, col:12> 'S' lvalue '='
+        |-DeclRefExpr {{address}} <col:3, col:6> 'S' lvalue ParmVar {{address:dst}} 'dst' '&mut S'
+        `-MaterializeTemporaryExpr {{address}} <col:9, col:12> 'S' move-lvalue
+          `-ConstructionExpr {{address}} <col:9, col:12> 'S' pure-rvalue complete-object target <col:9, col:10> 'S')");
+}
+
+TEST_F(SemaTest, KeepsTrivialArrayAssignmentSourceObjects) {
+  Analyze(R"(func Assign(dst &mut [1] i32, src &mut [1] i32) {
+  dst = move src;
+  dst = [1] i32 { 7 };
+})");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, line:4:2> Assign 'func (&mut [1] i32, &mut [1] i32) void'
+  |-ParmVarDecl {{address:dst}} <line:1:13, col:29> dst '&mut [1] i32'
+  | `-ReferenceType {{address}} <col:17, col:29> '&mut'
+  |   `-ArrayType {{address}} <col:22, col:29>
+  |     |-IntegerLiteral {{address}} <col:23, col:24> 'comptime_int' 1
+  |     `-BuiltinType {{address}} <col:26, col:29> 'i32'
+  |-ParmVarDecl {{address:src}} <col:31, col:47> src '&mut [1] i32'
+  | `-ReferenceType {{address}} <col:35, col:47> '&mut'
+  |   `-ArrayType {{address}} <col:40, col:47>
+  |     |-IntegerLiteral {{address}} <col:41, col:42> 'comptime_int' 1
+  |     `-BuiltinType {{address}} <col:44, col:47> 'i32'
+  `-CompoundStmt {{address}} <col:49, line:4:2>
+    |-ExprStmt {{address}} <line:2:3, col:18>
+    | `-BinaryOperator {{address}} <col:3, col:17> '[1] i32' lvalue '='
+    |   |-DeclRefExpr {{address}} <col:3, col:6> '[1] i32' lvalue ParmVar {{address:dst}} 'dst' '&mut [1] i32'
+    |   `-UnaryOperator {{address}} <col:9, col:17> '[1] i32' move-lvalue 'move'
+    |     `-DeclRefExpr {{address}} <col:14, col:17> '[1] i32' lvalue ParmVar {{address:src}} 'src' '&mut [1] i32'
+    `-ExprStmt {{address}} <line:3:3, col:23>
+      `-BinaryOperator {{address}} <col:3, col:22> '[1] i32' lvalue '='
+        |-DeclRefExpr {{address}} <col:3, col:6> '[1] i32' lvalue ParmVar {{address:dst}} 'dst' '&mut [1] i32'
+        `-MaterializeTemporaryExpr {{address}} <col:9, col:22> '[1] i32' move-lvalue
+          `-ArrayValueExpr {{address}} <col:9, col:22> '[1] i32' pure-rvalue
+            |-ArrayType {{address}} <col:9, col:16>
+            | |-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' 1
+            | `-BuiltinType {{address}} <col:13, col:16> 'i32'
+            `-ImplicitCastExpr {{address}} <col:19, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+              `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' 7)");
+}
+
+TEST_F(SemaTest, MaterializesNonTrivialArrayAssignmentResult) {
+  Analyze(R"(struct S {}
+ctor S() {}
+dtor S() {}
+func operator=(dst &mut S, src &copy S) {}
+func Assign(dst &mut [0] S) {
+  dst = [0] S {};
+})");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+|-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
+|-ConstructorDecl {{address}} <line:2:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+| `-CompoundStmt {{address}} <col:10, col:12>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-DestructorDecl {{address}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+| `-CompoundStmt {{address}} <col:10, col:12>
+|-FunctionDecl {{address:assignment}} <line:4:1, col:43> operator= 'func (&mut S, &copy S) void'
+| |-ParmVarDecl {{address}} <col:16, col:26> dst '&mut S'
+| | `-ReferenceType {{address}} <col:20, col:26> '&mut'
+| |   `-NamedType {{address}} <col:25, col:26> 'S'
+| |-ParmVarDecl {{address}} <col:28, col:39> src '&copy S'
+| | `-ReferenceType {{address}} <col:32, col:39> '&copy'
+| |   `-NamedType {{address}} <col:38, col:39> 'S'
+| `-CompoundStmt {{address}} <col:41, col:43>
+`-FunctionDecl {{address}} <line:5:1, line:7:2> Assign 'func (&mut [0] S) void'
+  |-ParmVarDecl {{address:dst}} <line:5:13, col:27> dst '&mut [0] S'
+  | `-ReferenceType {{address}} <col:17, col:27> '&mut'
+  |   `-ArrayType {{address}} <col:22, col:27>
+  |     |-IntegerLiteral {{address}} <col:23, col:24> 'comptime_int' 0
+  |     `-NamedType {{address}} <col:26, col:27> 'S'
+  `-CompoundStmt {{address}} <col:29, line:7:2>
+    `-ExprStmt {{address}} <line:6:3, col:18>
+      `-ArrayAssignmentExpr {{address}} <col:3, col:17> '[0] S' lvalue Function {{address:assignment}} 'operator=' 'func (&mut S, &copy S) void'
+        |-DeclRefExpr {{address}} <col:3, col:6> '[0] S' lvalue ParmVar {{address:dst}} 'dst' '&mut [0] S'
+        `-MaterializeTemporaryExpr {{address}} <col:9, col:17> '[0] S' move-lvalue
+          `-ArrayValueExpr {{address}} <col:9, col:17> '[0] S' pure-rvalue
+            `-ArrayType {{address}} <col:9, col:14>
+              |-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' 0
+              `-NamedType {{address}} <col:13, col:14> 'S'
+)");
+}
+
+TEST_F(SemaTest, ChecksInitializationOfAggregateAssignmentSources) {
+  Analyze(R"(trivial struct S { value i32; }
+func Struct(dst &mut S) {
+  var src S;
+  dst = src;
+}
+func Array(dst &mut [1] i32) {
+  var src [1] i32;
+  dst = src;
+})");
+  ExpectError(3, 8, "use of uninitialized variable 'src'", 3);
+  ExpectError(7, 8, "use of uninitialized variable 'src'", 3);
 }
 
 // Fixed arrays.
@@ -6605,7 +7038,7 @@ TEST_F(SemaTest, AcceptsFixedArrayTypeFormsAndCanonicalLengthIdentity) {
 func Take(value [4] i32) {}
 func Types(equivalent [2 + 2] i32, zero [0] Value,
            callbacks [3] *func () void,
-           slots [3] virtual *func (copy Value) void,
+           slots [3] virtual *func (&copy Value) void,
            nested [2] [3] const Value) {
   Take(equivalent);
 })");
@@ -6623,13 +7056,13 @@ func Use(array [1] i32) { Take(array); })");
 TEST_F(SemaTest, AcceptsCompleteNestedAndZeroLengthArrayValues) {
   Analyze(R"(struct Value {}
 ctor Value(number i32) {}
-ctor Value(other copy Value) {}
-ctor Value(other move Value) {}
+ctor Value(other &copy Value) {}
+ctor Value(other &move Value) {}
 dtor Value() {}
 func NonTrivialValues() [2] Value {
   [2] Value { Value(1), Value(2) }
 }
-func ConstElementFallback(source mut [1] const Value) {
+func ConstElementFallback(source &mut [1] const Value) {
   var copied [1] const Value := move source;
 }
 func Arrays(index usize) i32 {
@@ -6641,11 +7074,11 @@ func Arrays(index usize) i32 {
 
 TEST_F(SemaTest, FormsFunctionAddressesConversionsAndCopiesInArrayValues) {
   Analyze(R"(struct Value {}
-ctor Value(other copy Value) {}
+ctor Value(other &copy Value) {}
 dtor Value() {}
 func Select(value i32) {}
 func Select(value i64) {}
-func Values(source copy Value, number i32) {
+func Values(source &copy Value, number i32) {
   var callbacks [1] *func (i32) void := [1] *func (i32) void { &Select };
   var numbers [1] i64 := [1] i64 { number };
   var objects [1] Value := [1] Value { source };
@@ -6670,17 +7103,37 @@ TEST_F(SemaTest, DiagnosesInvalidArrayLengthExpressions) {
   ExpectError(6, 17, "array length is outside the range of 'usize'", 20);
 }
 
+TEST_F(SemaTest, ChecksEachTypedArrayLengthOperationBeforeContinuing) {
+  Analyze(R"(func Lengths() {
+  var valid [(2147483647 + 0) - 2147483647] i32;
+  var unsigned_zero [18446744073709551615 - 18446744073709551615] i32;
+  var overflow [(2147483647 + 1) - 1] i32;
+  var unsigned_sum [18446744073709551615 + 18446744073709551615] i32;
+  var unsigned_difference [9223372036854775808 - 18446744073709551615] i32;
+  var unsigned_product [9223372036854775808 * 9223372036854775808] i32;
+  var negation [-(-2147483648 + 0)] i32;
+  var conversion [-1 + 18446744073709551615] i32;
+})");
+
+  ExpectError(3, 17, "array length constant expression overflows its integer type", 14);
+  ExpectError(4, 20, "array length constant expression overflows its integer type", 43);
+  ExpectError(5, 27, "array length constant expression overflows its integer type", 42);
+  ExpectError(6, 24, "array length constant expression overflows its integer type", 41);
+  ExpectError(7, 16, "array length constant expression overflows its integer type", 18);
+  ExpectError(8, 18, "array length constant expression overflows its integer type", 2);
+}
+
 TEST_F(SemaTest, RejectsNonObjectArrayElementTypes) {
-  Analyze("func InvalidElements(voids [1] void, refs [1] mut i32) {}");
+  Analyze("func InvalidElements(voids [1] void, refs [1] &mut i32) {}");
 
   ExpectError(0, 31, "array element type 'void' is not an object type", 4);
-  ExpectError(0, 46, "array element type 'mut i32' is not an object type", 7);
+  ExpectError(0, 46, "array element type '&mut i32' is not an object type", 8);
 }
 
 TEST_F(SemaTest, RejectsAbstractElementsInsideArrayPointers) {
   Analyze(R"(struct Abstract {
   virtual {
-    abstract func F(this mut Abstract) void;
+    abstract func F(this &mut Abstract) void;
   }
 }
 ctor Abstract() {}
@@ -6743,7 +7196,7 @@ TEST_F(SemaTest, RequiresExactUsizeArraySubscripts) {
 
 TEST_F(SemaTest, PassesAndReturnsFixedArraysByValueIncludingIndirectCalls) {
   Analyze(R"(func Echo(value [1] i32) [1] i32 { value }
-func Invoke(callback *func ([1] i32) [1] i32, value mut [1] i32) [1] i32 {
+func Invoke(callback *func ([1] i32) [1] i32, value &mut [1] i32) [1] i32 {
   callback(value)
 })");
 }
@@ -6753,10 +7206,10 @@ TEST_F(SemaTest, DefersNonTrivialArrayFormationUntilAfterOverloadSelection) {
 ctor Missing() {}
 dtor Missing() {}
 func Select(value [1] Missing, rank i16) {}
-func Select(value copy [1] Missing, rank i32) {}
-func Use(value mut [1] Missing, rank i16) { Select(value, rank); })");
+func Select(value &copy [1] Missing, rank i32) {}
+func Use(value &mut [1] Missing, rank i16) { Select(value, rank); })");
 
-  ExpectError(5, 51,
+  ExpectError(5, 52,
               "cannot initialize parameter 1 of function 'Select': no copy constructor is available for '[1] "
               "Missing'",
               5);
@@ -6766,7 +7219,7 @@ TEST_F(SemaTest, AppliesObjectFormationRulesToMixedArrayConditionalBranches) {
   Analyze(R"(struct Missing {}
 ctor Missing() {}
 dtor Missing() {}
-func Select(flag bool, existing mut [1] Missing) {
+func Select(flag bool, existing &mut [1] Missing) {
   flag ? existing : [1] Missing { Missing() };
   flag ? move existing : [1] Missing { Missing() };
 })");
@@ -6781,59 +7234,61 @@ func Select(flag bool, existing mut [1] Missing) {
 
 TEST_F(SemaTest, RecordsNonTrivialArrayConstructionAndAssignmentOperations) {
   Analyze(R"(struct Value {}
-ctor Value(other copy Value) {}
+ctor Value(other &copy Value) {}
 dtor Value() {}
-func operator=(dst mut Value, src copy Value) {}
-func Arrays(source mut [1] Value) {
+func operator=(dst &mut Value, src &copy Value) {}
+func Arrays(source &mut [1] Value) {
   var copied [1] Value := move source;
   copied = move source;
 })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address:copy_constructor}} <line:2:1, col:32> Value target Struct {{address:structure}} 'Value' 'func (copy Value) void'
-| |-ParmVarDecl {{address:copy_source}} <col:12, col:28> other 'copy Value'
-| | `-ReferenceType {{address}} <col:18, col:28> 'copy'
-| |   `-NamedType {{address}} <col:23, col:28> 'Value'
-| `-CompoundStmt {{address}} <col:30, col:32>
+|-ConstructorDecl {{address:copy_constructor}} <line:2:1, col:33> Value target Struct {{address:structure}} 'Value' 'func (&copy Value) void'
+| |-ParmVarDecl {{address:copy_source}} <col:12, col:29> other '&copy Value'
+| | `-ReferenceType {{address}} <col:18, col:29> '&copy'
+| |   `-NamedType {{address}} <col:24, col:29> 'Value'
+| `-CompoundStmt {{address}} <col:31, col:33>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
 | `-CompoundStmt {{address}} <col:14, col:16>
-|-FunctionDecl {{address:copy_assignment}} <line:4:1, col:49> operator= 'func (mut Value, copy Value) void'
-| |-ParmVarDecl {{address:assignment_target}} <col:16, col:29> dst 'mut Value'
-| | `-ReferenceType {{address}} <col:20, col:29> 'mut'
-| |   `-NamedType {{address}} <col:24, col:29> 'Value'
-| |-ParmVarDecl {{address:assignment_source}} <col:31, col:45> src 'copy Value'
-| | `-ReferenceType {{address}} <col:35, col:45> 'copy'
-| |   `-NamedType {{address}} <col:40, col:45> 'Value'
-| `-CompoundStmt {{address}} <col:47, col:49>
-`-FunctionDecl {{address}} <line:5:1, line:8:2> Arrays 'func (mut [1] Value) void'
-  |-ParmVarDecl {{address:array_source}} <line:5:13, col:33> source 'mut [1] Value'
-  | `-ReferenceType {{address}} <col:20, col:33> 'mut'
-  |   `-ArrayType {{address}} <col:24, col:33>
-  |     |-IntegerLiteral {{address}} <col:25, col:26> 'comptime_int' 1
-  |     `-NamedType {{address}} <col:28, col:33> 'Value'
-  `-CompoundStmt {{address}} <col:35, line:8:2>
+|-FunctionDecl {{address:copy_assignment}} <line:4:1, col:51> operator= 'func (&mut Value, &copy Value) void'
+| |-ParmVarDecl {{address:assignment_target}} <col:16, col:30> dst '&mut Value'
+| | `-ReferenceType {{address}} <col:20, col:30> '&mut'
+| |   `-NamedType {{address}} <col:25, col:30> 'Value'
+| |-ParmVarDecl {{address:assignment_source}} <col:32, col:47> src '&copy Value'
+| | `-ReferenceType {{address}} <col:36, col:47> '&copy'
+| |   `-NamedType {{address}} <col:42, col:47> 'Value'
+| `-CompoundStmt {{address}} <col:49, col:51>
+`-FunctionDecl {{address}} <line:5:1, line:8:2> Arrays 'func (&mut [1] Value) void'
+  |-ParmVarDecl {{address:array_source}} <line:5:13, col:34> source '&mut [1] Value'
+  | `-ReferenceType {{address}} <col:20, col:34> '&mut'
+  |   `-ArrayType {{address}} <col:25, col:34>
+  |     |-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' 1
+  |     `-NamedType {{address}} <col:29, col:34> 'Value'
+  `-CompoundStmt {{address}} <col:36, line:8:2>
     |-DeclStmt {{address}} <line:6:3, col:39>
     | `-VarGroupDecl {{address}} <col:3, col:39>
     |   |-VarDecl {{address:copied}} <col:7, col:23> copied '[1] Value'
     |   | `-ArrayType {{address}} <col:14, col:23>
     |   |   |-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' 1
     |   |   `-NamedType {{address}} <col:18, col:23> 'Value'
-    |   `-ArrayConstructionExpr {{address}} <col:27, col:38> '[1] Value' pure-rvalue Constructor {{address:copy_constructor}} 'Value' 'func (copy Value) void'
+    |   `-ArrayConstructionExpr {{address}} <col:27, col:38> '[1] Value' pure-rvalue Constructor {{address:copy_constructor}} 'Value' 'func (&copy Value) void'
     |     `-UnaryOperator {{address}} <col:27, col:38> '[1] Value' move-lvalue 'move'
-    |       `-DeclRefExpr {{address}} <col:32, col:38> '[1] Value' lvalue ParmVar {{address:array_source}} 'source' 'mut [1] Value'
+    |       `-DeclRefExpr {{address}} <col:32, col:38> '[1] Value' lvalue ParmVar {{address:array_source}} 'source' '&mut [1] Value'
     `-ExprStmt {{address}} <line:7:3, col:24>
-      `-ArrayAssignmentExpr {{address}} <col:3, col:23> '[1] Value' lvalue Function {{address:copy_assignment}} 'operator=' 'func (mut Value, copy Value) void'
+      `-ArrayAssignmentExpr {{address}} <col:3, col:23> '[1] Value' lvalue Function {{address:copy_assignment}} 'operator=' 'func (&mut Value, &copy Value) void'
         |-DeclRefExpr {{address}} <col:3, col:9> '[1] Value' lvalue Var {{address:copied}} 'copied' '[1] Value'
         `-UnaryOperator {{address}} <col:12, col:23> '[1] Value' move-lvalue 'move'
-          `-DeclRefExpr {{address}} <col:17, col:23> '[1] Value' lvalue ParmVar {{address:array_source}} 'source' 'mut [1] Value')");
+          `-DeclRefExpr {{address}} <col:17, col:23> '[1] Value' lvalue ParmVar {{address:array_source}} 'source' '&mut [1] Value'
+)");
 }
 
 TEST_F(SemaTest, RequiresLeafAssignmentForNestedNonTrivialArrays) {
   Analyze(R"(struct Missing {}
 ctor Missing() {}
 dtor Missing() {}
-func Assign(dst mut [1] [1] Missing, src copy [1] [1] Missing) {
+func Assign(dst &mut [1] [1] Missing, src &copy [1] [1] Missing) {
   dst = src;
 })");
 
@@ -6841,7 +7296,7 @@ func Assign(dst mut [1] [1] Missing, src copy [1] [1] Missing) {
 }
 
 TEST_F(SemaTest, RejectsWholeArrayAssignmentWhenElementsAreConst) {
-  Analyze(R"(func ConstElements(dst mut [1] const i32, src copy [1] const i32) {
+  Analyze(R"(func ConstElements(dst &mut [1] const i32, src &copy [1] const i32) {
   dst = src;
 })");
 
@@ -7054,28 +7509,28 @@ TEST_F(SemaTest, DoesNotInferAnExplicitlyInvalidGlobalType) {
 }
 
 TEST_F(SemaTest, RejectsInferredAbstractGlobalAndLocalValueObjects) {
-  Analyze(R"(struct Abstract { virtual { abstract func Observe(self copy Abstract); } }
+  Analyze(R"(struct Abstract { virtual { abstract func Observe(self &copy Abstract); } }
 ctor Abstract() {}
-ctor Abstract(source copy Abstract) {}
+ctor Abstract(source &copy Abstract) {}
 dtor Abstract() {}
-struct Concrete : Abstract { virtual { override func Observe(self copy Concrete); } }
-func Observe(self copy Concrete) {}
+struct Concrete : Abstract { virtual { override func Observe(self &copy Concrete); } }
+func Observe(self &copy Concrete) {}
 ctor Concrete() { this.Abstract := Abstract(); }
 dtor Concrete() {}
 var concrete := Concrete();
-func Borrow() mut Abstract { concrete }
+func Borrow() &mut Abstract { concrete }
 var global := Borrow();
-func Copy(source copy Abstract) { var local := source; })");
+func Copy(source &copy Abstract) { var local := source; })");
   ExpectError(10, 14, "variable type 'Abstract' is abstract", 8);
-  ExpectError(11, 47, "variable type 'Abstract' is abstract", 6);
+  ExpectError(11, 48, "variable type 'Abstract' is abstract", 6);
 }
 
 TEST_F(SemaTest, InfersGlobalOwnedObjectsFromReferencesWithoutAllowingGlobalReferences) {
   Analyze(R"(var source := 1;
-func Borrow() mut i32 { source }
+func Borrow() &mut i32 { source }
 var owned := Borrow();
-var link mut i32 := source;)");
-  ExpectError(3, 9, "global reference variables are not currently supported", 7);
+var link &mut i32 := source;)");
+  ExpectError(3, 9, "global reference variables are not currently supported", 8);
 }
 
 TEST_F(SemaTest, RequiresInitializersForEmptyNonemptyTrivialAndNontrivialGlobals) {
@@ -7102,20 +7557,15 @@ var later := 1;
 func Read() i32 { later })");
 }
 
-TEST_P(ConfiguredSemaTest, AppliesConfiguredArgumentOrderInsideGlobalInitialization) {
+TEST_F(SemaTest, EvaluatesArgumentsLeftToRightInsideGlobalInitialization) {
   Analyze(R"(func Call(first i32, second i32) {}
 var global i32 := {
   var first i32, second i32;
   Call(first, second);
   1
 })");
-  if (GetParam() == cw::ABIKind::Itanium) {
-    ExpectError(3, 7, "use of uninitialized variable 'first'", 5);
-    ExpectError(3, 14, "use of uninitialized variable 'second'", 6);
-  } else {
-    ExpectError(3, 14, "use of uninitialized variable 'second'", 6);
-    ExpectError(3, 7, "use of uninitialized variable 'first'", 5);
-  }
+  ExpectError(3, 7, "use of uninitialized variable 'first'", 5);
+  ExpectError(3, 14, "use of uninitialized variable 'second'", 6);
 }
 
 TEST_F(SemaTest, RejectsReturnFromGlobalInitializerAndContinuesSemanticAnalysis) {
@@ -7260,7 +7710,7 @@ TEST_F(SemaTest, ReportsReadOfUninitializedVariable) {
 TEST_F(SemaTest, ChecksOnlyTheSelectedBaseRangeForDerivedToBaseReferenceBinding) {
   Analyze(R"(trivial struct Base { initialized i32; }
 trivial struct Derived : Base { pending i32; }
-func ReadBase(value copy Base) {}
+func ReadBase(value &copy Base) {}
 func Check(source i32) {
   var object Derived;
   object.Base.initialized := source;
@@ -7386,7 +7836,7 @@ TEST_F(SemaTest, RejectsGroupedInitializationWithoutApplyingItsStateEffect) {
 
 TEST_F(SemaTest, RejectsParenthesesInInitializationTargetsWithoutApplyingTheirStateEffect) {
   Analyze(R"(trivial struct Pair { field i32; }
-func f(object mut Pair, source i32) {
+func f(object &mut Pair, source i32) {
   var value i32;
   (value) := source;
   (object).field := source;
@@ -7422,7 +7872,7 @@ TEST_F(SemaTest, SupportsDelayedConstInitializationButRejectsAssignment) {
 TEST_F(SemaTest, RequiresInitializedReferentForDelayedReferenceBinding) {
   Analyze(R"(func f() {
   var value i32;
-  var link mut i32;
+  var link &mut i32;
   link := value;
 })");
 
@@ -7430,7 +7880,7 @@ TEST_F(SemaTest, RequiresInitializedReferentForDelayedReferenceBinding) {
 }
 
 TEST_F(SemaTest, RejectsAssignmentThroughCopyReference) {
-  Analyze(R"(func f(link copy i32, source i32) {
+  Analyze(R"(func f(link &copy i32, source i32) {
   link = source;
 })");
 
@@ -7575,7 +8025,7 @@ TEST_F(SemaTest, ReportsImplicitResultAfterExplicitInitialization) {
 
 TEST_F(SemaTest, AcceptsDelayedReferenceBindingAndReferentAssignment) {
   Analyze(R"(func f(source i32) {
-  var link mut i32;
+  var link &mut i32;
   link := source;
   link = 2;
 })");
@@ -7584,10 +8034,10 @@ TEST_F(SemaTest, AcceptsDelayedReferenceBindingAndReferentAssignment) {
 TEST_F(SemaTest, RejectsFieldInitializationThroughTransparentReferences) {
   Analyze(R"(trivial struct Pair { value i32; }
 func bind(source Pair) {
-  var link mut Pair;
+  var link &mut Pair;
   link := source;
 }
-func update(pair mut Pair) {
+func update(pair &mut Pair) {
   pair.value := 1;
   pair.value = 2;
 })");
@@ -7597,7 +8047,7 @@ func update(pair mut Pair) {
 
 TEST_F(SemaTest, ReportsUseOfUnboundReference) {
   Analyze(R"(func f() {
-  var link mut i32;
+  var link &mut i32;
   link;
 })");
 
@@ -7885,8 +8335,8 @@ TEST_F(SemaTest, KeepsUserAssignmentResultIdentityOpaqueInChainedAssignment) {
   Analyze(R"(struct Value {}
 ctor Value() {}
 dtor Value() {}
-func operator=(dst mut Value, src copy Value) mut Value { return dst; }
-func Chain(second copy Value, third copy Value) {
+func operator=(dst &mut Value, src &copy Value) &mut Value { return dst; }
+func Chain(second &copy Value, third &copy Value) {
   var first Value;
   (first = second) = third;
 })");
@@ -7937,11 +8387,14 @@ TEST_F(SemaTest, ChecksFinalIfMergeInVoidFunction) {
 
 TEST_F(SemaTest, TracksTrivialStructFieldsAcrossNestingAndInheritance) {
   Analyze(R"(trivial struct Inner { left i32; right i32; }
-trivial struct Base { inherited i32; }
-trivial struct Aggregate : Base { inner Inner; tail i32; }
+trivial struct Base { inherited i32; second i32; }
+trivial struct Middle : Base {}
+trivial struct Aggregate : Middle { inner Inner; tail i32; }
 func Complete() {
   var value Aggregate;
   value.inherited := 1;
+  value.inherited;
+  value.second := 2;
   value.inner.left := 2;
   value.inner.right := 3;
   value.tail := 4;
@@ -7952,21 +8405,52 @@ func Missing() {
   value.inner.left := 1;
   value.inner.left;
   value.inner;
+}
+func MissingInherited() {
+  var value Aggregate;
+  value.inherited := 1;
+  value.second;
+  value.second := 2;
+  value.inherited := 3;
 })");
 
-  ExpectError(13, 2, "cannot initialize subobject of 'value' before preceding subobjects are fully initialized", 16);
-  ExpectError(15, 2, "use of uninitialized variable 'value'", 5);
+  ExpectError(16, 2, "cannot initialize subobject of 'value' before preceding subobjects are fully initialized", 16);
+  ExpectError(18, 2, "use of uninitialized variable 'value'", 5);
+  ExpectError(23, 2, "use of uninitialized variable 'value'", 5);
+  ExpectError(25, 2, "repeated initialization of variable 'value'", 15);
+}
+
+TEST_F(SemaTest, PreservesInheritedFieldInitializationTargetRestrictions) {
+  Analyze(R"(trivial struct Base { value i32; }
+trivial struct Derived : Base {}
+func Parenthesized() {
+  var object Derived;
+  (object).value := 1;
+}
+func Indirect(object &mut Derived, pointer *Derived) {
+  object.value := 1;
+  pointer->value := 1;
+}
+func Element(i usize) {
+  var objects [1]Derived;
+  objects[i].value := 1;
+})");
+
+  ExpectError(4, 2, "initialization target must not contain grouping parentheses", 14);
+  ExpectError(7, 2, "cannot initialize a subobject through a reference", 12);
+  ExpectError(8, 2, "initialization target must name an object directly or through '.'", 14);
+  ExpectError(12, 2, "cannot initialize an array element or its subobject separately", 16);
 }
 
 TEST_F(SemaTest, ChecksReferenceBindingBeforeTransparentFieldAccess) {
   Analyze(R"(trivial struct Pair { x i32; }
-func ReadBound(pair mut Pair) { pair.x; }
+func ReadBound(pair &mut Pair) { pair.x; }
 func ReadUnbound() {
-  var pair mut Pair;
+  var pair &mut Pair;
   pair.x;
 }
 func AssignUnbound() {
-  var pair mut Pair;
+  var pair &mut Pair;
   pair.x = 1;
 })");
 
@@ -8084,7 +8568,7 @@ dtor Object() {})");
 
 TEST_F(SemaTest, EvaluatesSpecialAssignmentSourceBeforeCheckingItsTarget) {
   Analyze(R"(struct Object {}
-func operator=(dst mut Object, src copy Object) {}
+func operator=(dst &mut Object, src &copy Object) {}
 ctor Object() {}
 dtor Object() {}
 func Assign() {
@@ -8112,7 +8596,7 @@ func Initialize() {
 
 TEST_F(SemaTest, InitializesAggregateRangesAtomically) {
   Analyze(R"(trivial struct Pair { first i32; second i32; }
-func Initialize(source copy Pair) {
+func Initialize(source &copy Pair) {
   var target Pair;
   target.first := 1;
   target := source;
@@ -8184,16 +8668,16 @@ func Subobject() {
 }
 
 TEST_F(SemaTest, KeepsLexicalQueuesIndependentAndExcludesReferenceBindings) {
-  Analyze(R"(func Use(source mut i32, condition bool) {
+  Analyze(R"(func Use(source &mut i32, condition bool) {
   var first i32;
-  var reference mut i32 := source;
+  var reference &mut i32 := source;
   {
     var nested i32 := 1;
   }
   var second i32;
   if condition { first := 1; second := 2; }
   else { first := 3; second := 4; }
-  var unbound mut i32;
+  var unbound &mut i32;
   var third i32 := 5;
 })");
 }
@@ -8258,45 +8742,33 @@ TEST_F(SemaTest, KeepsZeroLengthArraysUninitializedUntilWholeFormation) {
   ExpectError(5, 2, "repeated initialization of variable 'empty'", 5);
 }
 
-// Configured argument evaluation order.
+// Fixed expression evaluation order.
 
-TEST_P(ConfiguredSemaTest, EvaluatesArgumentsIncludingReceiverInConfiguredOrder) {
+TEST_F(SemaTest, EvaluatesArgumentsIncludingReceiverLeftToRight) {
   Analyze(R"(func Call(first i32, second i32) {}
 func Use() {
   var first i32, second i32;
   Call(first, second);
   first.Call(second);
 })");
-  if (GetParam() == cw::ABIKind::Itanium) {
-    ExpectError(3, 7, "use of uninitialized variable 'first'", 5);
-    ExpectError(3, 14, "use of uninitialized variable 'second'", 6);
-    ExpectError(4, 2, "use of uninitialized variable 'first'", 5);
-    ExpectError(4, 13, "use of uninitialized variable 'second'", 6);
-  } else {
-    ExpectError(3, 14, "use of uninitialized variable 'second'", 6);
-    ExpectError(3, 7, "use of uninitialized variable 'first'", 5);
-    ExpectError(4, 13, "use of uninitialized variable 'second'", 6);
-    ExpectError(4, 2, "use of uninitialized variable 'first'", 5);
-  }
+  ExpectError(3, 7, "use of uninitialized variable 'first'", 5);
+  ExpectError(3, 14, "use of uninitialized variable 'second'", 6);
+  ExpectError(4, 2, "use of uninitialized variable 'first'", 5);
+  ExpectError(4, 13, "use of uninitialized variable 'second'", 6);
 }
 
-TEST_P(ConfiguredSemaTest, KeepsArgumentControlFlowBetweenOrderedSiblings) {
+TEST_F(SemaTest, KeepsArgumentControlFlowBetweenOrderedSiblings) {
   Analyze(R"(func Call(first i32, second i32) {}
 func Use(condition bool) {
   var first i32, second i32, third i32;
   Call(condition ? first : second, third);
 })");
-  if (GetParam() == cw::ABIKind::Microsoft) {
-    ExpectError(3, 35, "use of uninitialized variable 'third'", 5);
-  }
   ExpectError(3, 19, "use of uninitialized variable 'first'", 5);
   ExpectError(3, 27, "use of uninitialized variable 'second'", 6);
-  if (GetParam() == cw::ABIKind::Itanium) {
-    ExpectError(3, 35, "use of uninitialized variable 'third'", 5);
-  }
+  ExpectError(3, 35, "use of uninitialized variable 'third'", 5);
 }
 
-TEST_P(ConfiguredSemaTest, KeepsAssignmentRightFirstAndArrayElementsLeftFirst) {
+TEST_F(SemaTest, KeepsAssignmentRightFirstAndArrayElementsLeftFirst) {
   Analyze(R"(func Use() {
   var first i32, second i32;
   first = second;
@@ -8308,12 +8780,12 @@ TEST_P(ConfiguredSemaTest, KeepsAssignmentRightFirstAndArrayElementsLeftFirst) {
   ExpectError(3, 19, "use of uninitialized variable 'second'", 6);
 }
 
-TEST_P(ConfiguredSemaTest, AppliesArgumentOrderToConstructorsAndCallableObjects) {
+TEST_F(SemaTest, AppliesArgumentOrderToConstructorsAndCallableObjects) {
   Analyze(R"(struct Object {}
 ctor Object(first i32, second i32) {}
 dtor Object() {}
 trivial struct Callable {}
-func operator()(receiver copy Callable, value i32) {}
+func operator()(receiver &copy Callable, value i32) {}
 func Construct() {
   var first i32, second i32;
   Object(first, second);
@@ -8323,39 +8795,30 @@ func Invoke() {
   var value i32;
   receiver(value);
 })");
-  if (GetParam() == cw::ABIKind::Itanium) {
-    ExpectError(7, 9, "use of uninitialized variable 'first'", 5);
-    ExpectError(7, 16, "use of uninitialized variable 'second'", 6);
-    ExpectError(12, 2, "use of uninitialized variable 'receiver'", 8);
-    ExpectError(12, 11, "use of uninitialized variable 'value'", 5);
-  } else {
-    ExpectError(7, 16, "use of uninitialized variable 'second'", 6);
-    ExpectError(7, 9, "use of uninitialized variable 'first'", 5);
-    ExpectError(12, 11, "use of uninitialized variable 'value'", 5);
-    ExpectError(12, 2, "use of uninitialized variable 'receiver'", 8);
-  }
+  ExpectError(7, 9, "use of uninitialized variable 'first'", 5);
+  ExpectError(7, 16, "use of uninitialized variable 'second'", 6);
+  ExpectError(12, 2, "use of uninitialized variable 'receiver'", 8);
+  ExpectError(12, 11, "use of uninitialized variable 'value'", 5);
 }
 
-TEST_P(ConfiguredSemaTest, AppliesArgumentOrderToOperatorsButKeepsAssignmentException) {
-  Analyze(R"(trivial struct Value {}
-func operator+(first copy Value, second copy Value) {}
+TEST_F(SemaTest, AppliesArgumentOrderToOperatorsButKeepsAssignmentException) {
+  Analyze(R"(struct Value {}
+ctor Value() {}
+dtor Value() {}
+func operator+(first &copy Value, second &copy Value) {}
+func operator=(first &mut Value, second &copy Value) {}
 func Use() {
   var first Value, second Value;
   first + second;
   first = second;
 })");
-  if (GetParam() == cw::ABIKind::Itanium) {
-    ExpectError(4, 2, "use of uninitialized variable 'first'", 5);
-    ExpectError(4, 10, "use of uninitialized variable 'second'", 6);
-  } else {
-    ExpectError(4, 10, "use of uninitialized variable 'second'", 6);
-    ExpectError(4, 2, "use of uninitialized variable 'first'", 5);
-  }
-  ExpectError(5, 10, "use of uninitialized variable 'second'", 6);
-  ExpectError(5, 2, "use of uninitialized variable 'first'", 5);
+  ExpectError(7, 2, "use of uninitialized variable 'first'", 5);
+  ExpectError(7, 10, "use of uninitialized variable 'second'", 6);
+  ExpectError(8, 10, "use of uninitialized variable 'second'", 6);
+  ExpectError(8, 2, "use of uninitialized variable 'first'", 5);
 }
 
-TEST_P(ConfiguredSemaTest, OrdersShortCircuitArgumentAndArrowReceiverOnce) {
+TEST_F(SemaTest, OrdersShortCircuitArgumentAndArrowReceiverOnce) {
   Analyze(R"(func Call(first bool, second bool) {}
 func Use(condition bool) {
   var first bool, second bool;
@@ -8363,17 +8826,51 @@ func Use(condition bool) {
   Call(condition && first, second);
   pointer->Call(second);
 })");
-  if (GetParam() == cw::ABIKind::Itanium) {
-    ExpectError(4, 20, "use of uninitialized variable 'first'", 5);
-    ExpectError(4, 27, "use of uninitialized variable 'second'", 6);
-    ExpectError(5, 2, "use of uninitialized variable 'pointer'", 7);
-    ExpectError(5, 16, "use of uninitialized variable 'second'", 6);
-  } else {
-    ExpectError(4, 27, "use of uninitialized variable 'second'", 6);
-    ExpectError(4, 20, "use of uninitialized variable 'first'", 5);
-    ExpectError(5, 16, "use of uninitialized variable 'second'", 6);
-    ExpectError(5, 2, "use of uninitialized variable 'pointer'", 7);
-  }
+  ExpectError(4, 20, "use of uninitialized variable 'first'", 5);
+  ExpectError(4, 27, "use of uninitialized variable 'second'", 6);
+  ExpectError(5, 2, "use of uninitialized variable 'pointer'", 7);
+  ExpectError(5, 16, "use of uninitialized variable 'second'", 6);
+}
+
+TEST_F(SemaTest, KeepsSubscriptLocationDistinctFromElementReadAcrossBranches) {
+  Analyze(R"(func Read(flag bool, first usize, second usize) {
+  var values [1] i32;
+  values[flag ? first : second];
+}
+func Initialize(flag bool, first usize, second usize) {
+  var values [1] i32;
+  values[flag ? first : second] := 1;
+}
+func Select(flag bool, index usize) {
+  var first [1] i32, second [1] i32;
+  (flag ? first : second)[index];
+})");
+
+  ExpectError(6, 2, "cannot initialize an array element or its subobject separately", 29);
+  ExpectError(2, 2, "use of uninitialized variable 'values'", 6);
+  ExpectError(10, 10, "use of uninitialized variable 'first'", 5);
+  ExpectError(10, 18, "use of uninitialized variable 'second'", 6);
+}
+
+TEST_F(SemaTest, EvaluatesCallTargetAndConstructionAddressBeforeArguments) {
+  Analyze(R"(struct Object {}
+ctor Object(first i32, second i32) {}
+dtor Object() {}
+func Invoke(condition bool) {
+  var callback *func(i32, i32) void;
+  var address *Object;
+  var first i32, second i32;
+  callback(first, second);
+  ctor (address) Object(condition ? first : second, first);
+})");
+
+  ExpectError(7, 2, "use of uninitialized variable 'callback'", 8);
+  ExpectError(7, 11, "use of uninitialized variable 'first'", 5);
+  ExpectError(7, 18, "use of uninitialized variable 'second'", 6);
+  ExpectError(8, 8, "use of uninitialized variable 'address'", 7);
+  ExpectError(8, 36, "use of uninitialized variable 'first'", 5);
+  ExpectError(8, 44, "use of uninitialized variable 'second'", 6);
+  ExpectError(8, 52, "use of uninitialized variable 'first'", 5);
 }
 
 // Cross-stage error suppression and diagnostic ordering.
@@ -8498,9 +8995,7 @@ field **MissingField;
 TEST_F(SemaTest, SuppressesSemanticDiagnosticsForIncompleteTypeSyntax) {
   Analyze("func f() * {}");
 
-  ExpectError(0, 11,
-              "expected one of '[', 'virtual', 'const', 'mut', 'copy', 'move', '*', 'func', built-in type, identifier",
-              1);
+  ExpectError(0, 11, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier", 1);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-FunctionDecl {{address}} <test.cw:1:1, col:14> f contains-errors
   |-ReturnVarDecl {{address}} <col:10, col:11> contains-errors

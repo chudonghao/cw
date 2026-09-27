@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <limits>
@@ -20,7 +21,7 @@
 #include <variant>
 
 #include <boost/assert.hpp>
-#include <boost/multiprecision/cpp_int.hpp>
+
 #include <fmt/format.h>
 
 #include "ASTContext.h"
@@ -36,7 +37,6 @@ namespace cw {
 
 namespace {
 
-using boost::multiprecision::cpp_int;
 using namespace sema_detail;
 
 std::vector<ConversionSource> MakeConversionSources(const std::vector<const Expr*>& expressions) {
@@ -275,6 +275,20 @@ enum class ConstructorPrologueStatus { NotRequired, Valid, InvalidAttempt, Missi
 
 enum class ConstructorInitializationTargetKind { Other, ValidPrologue, InvalidPrologue };
 
+// Initialization syntax is checked against the written access path. Implicit object
+// adjustment must not turn inherited field access into explicit base initialization.
+const Expr* IgnoreImplicitBaseSubobjectCasts(const Expr* expression) {
+  while (expression && expression->GetKind() == NodeKind::ImplicitCastExpr) {
+    const auto& cast = static_cast<const ImplicitCastExpr&>(*expression);
+    if (cast.conversion_kind != ImplicitConversionKind::BaseSubobject || !cast.type ||
+        cast.type.GetTypePtr()->GetKind() != TypeKind::Struct) {
+      break;
+    }
+    expression = cast.SubExpr.get();
+  }
+  return expression;
+}
+
 ConstructorInitializationTargetKind ClassifyConstructorInitializationTarget(const ConstructorDecl& constructor,
                                                                             const Expr* target) {
   if (!target || !constructor.target_type) {
@@ -283,9 +297,10 @@ ConstructorInitializationTargetKind ClassifyConstructorInitializationTarget(cons
 
   bool contains_parentheses = false;
   const auto ignore_parentheses = [&](const Expr* expression) {
+    expression = IgnoreImplicitBaseSubobjectCasts(expression);
     while (expression && expression->GetKind() == NodeKind::ParenExpr) {
       contains_parentheses = true;
-      expression = static_cast<const ParenExpr*>(expression)->SubExpr.get();
+      expression = IgnoreImplicitBaseSubobjectCasts(static_cast<const ParenExpr*>(expression)->SubExpr.get());
     }
     return expression;
   };
@@ -373,7 +388,7 @@ ConstructorPrologueStatus ClassifyConstructorPrologue(const ConstructorDecl& dec
 }
 
 bool InitializationTargetContainsParentheses(const Expr* target) {
-  while (target) {
+  while ((target = IgnoreImplicitBaseSubobjectCasts(target))) {
     if (target->GetKind() == NodeKind::ParenExpr) {
       return true;
     }
@@ -476,54 +491,14 @@ bool HasFunctionResultObject(const FunctionDecl& declaration) {
   return !declaration.ReturnVar->type || !declaration.ReturnVar->type.GetTypePtr()->IsVoid();
 }
 
-bool FitsSignedInteger(const cpp_int& value, unsigned bit_width) {
-  const cpp_int boundary = cpp_int{1} << (bit_width - 1);
-  return value >= -boundary && value < boundary;
-}
-
-bool FitsUnsignedInteger(const cpp_int& value, unsigned bit_width) {
-  return value >= 0 && value < (cpp_int{1} << bit_width);
-}
-
-std::optional<cpp_int> EvaluateComptimeInteger(const Expr& expression) {
-  if (!expression.type || expression.type.GetTypePtr()->GetKind() != TypeKind::ComptimeInt) {
-    return std::nullopt;
-  }
-
-  switch (expression.GetKind()) {
-    case NodeKind::IntegerLiteral:
-      return static_cast<const IntegerLiteral&>(expression).value;
-    case NodeKind::UnaryOperator: {
-      const auto& unary_expression = static_cast<const UnaryOperator&>(expression);
-      if (!unary_expression.Operand) {
-        return std::nullopt;
-      }
-      auto value = EvaluateComptimeInteger(*unary_expression.Operand);
-      if (!value) {
-        return std::nullopt;
-      }
-      if (unary_expression.op == expr::plus) {
-        return value;
-      }
-      if (unary_expression.op == expr::minus) {
-        *value = -*value;
-        return value;
-      }
-      return std::nullopt;
-    }
-    default:
-      return std::nullopt;
-  }
-}
-
-const BuiltinType* DefaultIntegerType(ASTContext& ast_context, const cpp_int& value) {
-  if (FitsSignedInteger(value, 32)) {
+const BuiltinType* DefaultIntegerType(ASTContext& ast_context, const llvm::APSInt& value) {
+  if (value.isSigned() ? value.isSignedIntN(32) : value.isIntN(31)) {
     return ast_context.GetBuiltinType(BuiltinTypeKind::I32);
   }
-  if (FitsSignedInteger(value, 64)) {
+  if (value.isRepresentableByInt64()) {
     return ast_context.GetBuiltinType(BuiltinTypeKind::I64);
   }
-  if (FitsUnsignedInteger(value, 64)) {
+  if (value.isNonNegative() && value.isIntN(64)) {
     return ast_context.GetBuiltinType(BuiltinTypeKind::U64);
   }
   return nullptr;
@@ -814,13 +789,13 @@ std::string TypeSpelling(const Type& type) {
       const char* prefix = nullptr;
       switch (reference_type.GetMode()) {
         case ReferenceMode::Mut:
-          prefix = "mut ";
+          prefix = "&mut ";
           break;
         case ReferenceMode::Copy:
-          prefix = "copy ";
+          prefix = "&copy ";
           break;
         case ReferenceMode::Move:
-          prefix = "move ";
+          prefix = "&move ";
           break;
       }
       return std::string(prefix) + TypeSpelling(*reference_type.GetReferentType());
@@ -839,6 +814,21 @@ std::string TypeSpelling(QualType type) {
     result = "const " + result;
   }
   return result;
+}
+
+std::string FormatLayoutFailure(const LayoutFailure& failure, std::uint64_t max_object_size) {
+  switch (failure.kind) {
+    case LayoutFailureKind::ArrayTooLarge:
+      BOOST_ASSERT(failure.array);
+      return fmt::format("array of {} elements of type '{}' is too large; maximum object size is {} bytes",
+                         failure.array->GetLength(), TypeSpelling(failure.array->GetElementType()), max_object_size);
+    case LayoutFailureKind::StructTooLarge:
+      BOOST_ASSERT(failure.structure);
+      return fmt::format("structure '{}' is too large; maximum object size is {} bytes", failure.structure->name,
+                         max_object_size);
+  }
+  BOOST_ASSERT(false && "unknown layout failure");
+  return {};
 }
 
 const char* FunctionExpressionDescription(QualType type) {
@@ -909,7 +899,7 @@ std::string FormatVirtualReturnFailure(const FunctionDecl& function, const Funct
     case VirtualReturnFailureKind::ReferenceCategoryMismatch:
       return message + " because their reference categories differ";
     case VirtualReturnFailureKind::ReferencePermissionMismatch:
-      return message + " because a 'copy' return cannot satisfy the overridden 'mut' return";
+      return message + " because a '&copy' return cannot satisfy the overridden '&mut' return";
   }
   BOOST_ASSERT(false && "unsupported virtual return failure kind");
   return message;
@@ -1331,8 +1321,6 @@ std::string DefiniteInitializationMessage(const DefiniteInitializationFinding& f
 
 void Sema::SetDiagnosticEngine(DiagnosticEngine* diagnostic_engine) { diagnostic_engine_ = diagnostic_engine; }
 
-void Sema::SetSources(const std::vector<Source>* sources) { sources_ = sources; }
-
 void Sema::SetASTContext(ASTContext* ast_context) { ast_context_ = ast_context; }
 
 void Sema::ResetRunState() {
@@ -1340,11 +1328,15 @@ void Sema::ResetRunState() {
   global_variables_.clear();
   loop_depth_ = 0;
   current_function_ = nullptr;
+  type_layouts_ready_ = false;
+  layout_prerequisites_.clear();
+  pending_layout_uses_.clear();
+  checked_struct_layouts_.clear();
+  invalid_layout_types_.clear();
 }
 
 void Sema::operator()() {
   BOOST_ASSERT(diagnostic_engine_);
-  BOOST_ASSERT(sources_);
   BOOST_ASSERT(ast_context_);
 
   TranslationUnitDecl* translation_unit = ast_context_->GetTranslationUnitDecl();
@@ -1369,7 +1361,133 @@ Sema::InheritedVirtualSlots Sema::CompleteTypeSemantics(TranslationUnitDecl& tra
   BindLifecycleDeclarations(translation_unit);
   ComputeStructTriviality(translation_unit, lifecycle_declarations);
   ValidateLifecycleRequirements(translation_unit, lifecycle_declarations);
+  ValidateInitialLayouts(translation_unit);
   return inherited_virtual_slots;
+}
+
+bool Sema::HasLayoutPrerequisites(const Type& type) {
+  if (const auto* array = type.AsArrayType()) {
+    return HasLayoutPrerequisites(*array->GetElementType().GetTypePtr());
+  }
+  if (const auto* record = type.AsStructType()) {
+    const auto& declaration = *record->GetDeclaration();
+    if (const auto it = layout_prerequisites_.find(&declaration); it != layout_prerequisites_.end()) {
+      return it->second;
+    }
+    const bool ready = !declaration.is_invalid && declaration.triviality != TypeTriviality::Unknown &&
+                       declaration.triviality != TypeTriviality::Invalid &&
+                       (!declaration.base_type || HasLayoutPrerequisites(*declaration.base_type)) &&
+                       std::all_of(declaration.Fields.begin(), declaration.Fields.end(), [&](const auto& field) {
+                         return field && field->type && field->type.GetTypePtr()->IsObject() &&
+                                HasLayoutPrerequisites(*field->type.GetTypePtr());
+                       });
+    layout_prerequisites_.emplace(&declaration, ready);
+    return ready;
+  }
+  return type.IsObject();
+}
+
+void Sema::ValidateInitialLayouts(TranslationUnitDecl& translation_unit) {
+  // Type semantics are now stable, including forward-referenced bases and fields.
+  // Visit declarations even when no expression ever constructs an object of that type.
+  type_layouts_ready_ = true;
+  for (const auto& declaration : translation_unit.Decls) {
+    if (declaration && declaration->GetKind() == NodeKind::StructDecl) {
+      ValidateStructLayout(static_cast<StructDecl&>(*declaration));
+    }
+  }
+  for (const auto& [syntax, type] : pending_layout_uses_) {
+    if (!syntax->ContainsErrors()) {
+      ValidateLayoutUse(*syntax, *type);
+    }
+  }
+  pending_layout_uses_.clear();
+  PropagateContainsErrors(translation_unit);
+}
+
+bool Sema::ValidateStructLayout(StructDecl& declaration) {
+  if (const auto it = checked_struct_layouts_.find(&declaration); it != checked_struct_layouts_.end()) {
+    return it->second;
+  }
+  if (!HasLayoutPrerequisites(*ast_context_->GetStructType(&declaration))) {
+    return true;  // Existing type errors already explain why no final layout can be queried.
+  }
+  bool valid = true;
+  if (declaration.base_type) {
+    valid = ValidateStructLayout(*const_cast<StructDecl*>(declaration.base_type->GetDeclaration()));
+  }
+  for (const auto& field : declaration.Fields) {
+    valid = ValidateObjectLayout(*field, *field->type.GetTypePtr()) && valid;
+    InheritErrors(declaration, field.get());
+  }
+  if (valid) {
+    const auto result = ast_context_->GetStructLayout(declaration);
+    if (const auto* failure = std::get_if<LayoutFailure>(&result)) {
+      const SourceRange range = failure->field ? failure->field->range : declaration.name_range;
+      Diagnose(declaration, kErrorDiagnostic, range,
+               FormatLayoutFailure(*failure, ast_context_->GetTargetInfo().GetMaxObjectSize()));
+      valid = false;
+    }
+  }
+  declaration.contains_errors |= !valid;
+  checked_struct_layouts_.emplace(&declaration, valid);
+  return valid;
+}
+
+bool Sema::ValidateObjectLayout(Node& owner, const Type& type) {
+  if (!HasLayoutPrerequisites(type)) {
+    return true;
+  }
+  if (invalid_layout_types_.count(&type)) {
+    owner.contains_errors = true;
+    return false;
+  }
+  if (const auto* record = type.AsStructType()) {
+    const bool valid = ValidateStructLayout(*const_cast<StructDecl*>(record->GetDeclaration()));
+    owner.contains_errors |= !valid;
+    return valid;
+  }
+  if (const auto* array = type.AsArrayType()) {
+    if (!ValidateObjectLayout(owner, *array->GetElementType().GetTypePtr())) {
+      invalid_layout_types_.insert(&type);
+      return false;
+    }
+  }
+  const auto result = ast_context_->GetTypeLayout(type);
+  if (const auto* failure = std::get_if<LayoutFailure>(&result)) {
+    Diagnose(owner, kErrorDiagnostic, owner.range,
+             FormatLayoutFailure(*failure, ast_context_->GetTargetInfo().GetMaxObjectSize()));
+    invalid_layout_types_.insert(&type);
+    return false;
+  }
+  return true;
+}
+
+bool Sema::ValidateLayoutUse(Node& owner, const Type& type) {
+  // Pointers break storage dependencies, but do not legalize an invalid type in
+  // their pointee or function signature. Do not recurse through struct fields here.
+  if (const auto* pointer = type.AsPointerType()) {
+    return ValidateLayoutUse(owner, *pointer->GetPointee().GetTypePtr());
+  }
+  if (const auto* reference = type.AsReferenceType()) {
+    return ValidateLayoutUse(owner, *reference->GetReferentType());
+  }
+  if (const auto* slot = type.AsVirtualSlotType()) {
+    return ValidateLayoutUse(owner, *slot->GetEntryPointerType());
+  }
+  if (const auto* function = type.AsFunctionType()) {
+    bool valid = ValidateLayoutUse(owner, *function->GetReturnType());
+    for (const Type* parameter : function->GetParameterTypes()) {
+      valid = ValidateLayoutUse(owner, *parameter) && valid;
+    }
+    return valid;
+  }
+  if (const auto* array = type.AsArrayType()) {
+    if (!ValidateLayoutUse(owner, *array->GetElementType().GetTypePtr())) {
+      return false;
+    }
+  }
+  return !type.IsObject() || ValidateObjectLayout(owner, type);
 }
 
 void Sema::CompleteCallableInterfaces(TranslationUnitDecl& translation_unit,
@@ -1674,8 +1792,8 @@ Sema::InheritedVirtualSlots Sema::ValidateVirtualHierarchy(TranslationUnitDecl& 
           receiver_declaration_type ? receiver_declaration_type.GetTypePtr()->AsReferenceType() : nullptr;
       if (!receiver) {
         Diagnose(*function, kErrorDiagnostic, NamedDeclarationRange(*function),
-                 fmt::format("virtual function '{}' must declare a first receiver parameter of type 'mut {}', "
-                             "'copy {}', or 'move {}'",
+                 fmt::format("virtual function '{}' must declare a first receiver parameter of type '&mut {}', "
+                             "'&copy {}', or '&move {}'",
                              function->name, structure->name, structure->name, structure->name));
         function->is_invalid = true;
         continue;
@@ -2189,7 +2307,7 @@ bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
         destination.GetReferentType()->GetKind() == TypeKind::Struct &&
         source.GetReferentType() == destination.GetReferentType()) {
       Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-               "same-type assignment cannot use a 'mut' source parameter");
+               "same-type assignment cannot use a '&mut' source parameter");
       return false;
     }
   }
@@ -2636,10 +2754,35 @@ void Sema::AnalyzeFunction(FunctionDecl& declaration) {
   BOOST_ASSERT(loop_depth_ == 0);
 }
 
+namespace {
+
+// The analysis reports statement identities after convergence. Insert only after
+// their full expressions, so CodeGen finishes temporary cleanup before activation.
+class ConstructorCompletionInserter final : public ASTVisitor {
+  const std::vector<const ExprStmt*>& completions_;
+
+ public:
+  explicit ConstructorCompletionInserter(const std::vector<const ExprStmt*>& completions) : completions_(completions) {}
+
+  void Visit(CompoundStmt& statement) override {
+    statement.Traverse(*this);
+    std::vector<std::unique_ptr<Stmt>> statements;
+    for (auto& child : statement.Stmts) {
+      const bool completes = std::find(completions_.begin(), completions_.end(), child.get()) != completions_.end();
+      statements.push_back(std::move(child));
+      if (completes) {
+        statements.push_back(std::make_unique<ImplicitThisInitializationCompleteStmt>());
+      }
+    }
+    statement.Stmts = std::move(statements);
+  }
+};
+
+}  // namespace
+
 void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) {
-  const ABIKind abi = ast_context_->GetABIKind();
-  const auto global_cfg = CFGBuilder::Build(translation_unit, abi);
-  for (const auto& finding : DefiniteInitializationAnalysis::Run(translation_unit, *global_cfg, abi)) {
+  const auto global_cfg = CFGBuilder::Build(translation_unit);
+  for (const auto& finding : DefiniteInitializationAnalysis::Run(translation_unit, *global_cfg).findings) {
     BOOST_ASSERT(finding.owner);
     Diagnose(*const_cast<Node*>(finding.owner), kErrorDiagnostic, finding.range,
              DefiniteInitializationMessage(finding));
@@ -2658,14 +2801,15 @@ void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) 
       continue;
     }
 
-    std::unique_ptr<CFG> cfg = CFGBuilder::Build(function, abi);
+    std::unique_ptr<CFG> cfg = CFGBuilder::Build(function);
     BOOST_ASSERT(cfg);
     const ConstructorPrologueStatus constructor_prologue_status =
         function.GetKind() == NodeKind::ConstructorDecl
             ? ClassifyConstructorPrologue(static_cast<const ConstructorDecl&>(function))
             : ConstructorPrologueStatus::NotRequired;
     // A failed constructor prologue already explains missing or out-of-order base initialization.
-    for (const DefiniteInitializationFinding& finding : DefiniteInitializationAnalysis::Run(function, *cfg, abi)) {
+    const auto result = DefiniteInitializationAnalysis::Run(function, *cfg);
+    for (const DefiniteInitializationFinding& finding : result.findings) {
       if ((finding.kind == DefiniteInitializationFindingKind::UninitializedResult ||
            finding.kind == DefiniteInitializationFindingKind::OutOfOrderSubobjectInitialization) &&
           !finding.declaration &&
@@ -2676,6 +2820,14 @@ void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) 
       BOOST_ASSERT(finding.owner);
       Node& owner = *const_cast<Node*>(finding.owner);
       Diagnose(owner, kErrorDiagnostic, finding.range, DefiniteInitializationMessage(finding));
+    }
+    if (function.GetKind() == NodeKind::ConstructorDecl && !function.ContainsErrors() && result.findings.empty()) {
+      ConstructorCompletionInserter inserter(result.this_initialization_completions);
+      function.Body->Accept(inserter);
+      if (result.this_complete_at_entry) {
+        function.Body->Stmts.insert(function.Body->Stmts.begin(),
+                                    std::make_unique<ImplicitThisInitializationCompleteStmt>());
+      }
     }
   }
 }
@@ -3115,8 +3267,12 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
     case NodeKind::FloatLiteral: {
       const auto& literal = static_cast<const FloatLiteral&>(*expression);
       expression->type = QualType(ast_context_->GetBuiltinType(
-          std::holds_alternative<float>(literal.value) ? BuiltinTypeKind::F32 : BuiltinTypeKind::F64));
+          &literal.value.getSemantics() == &llvm::APFloat::IEEEsingle() ? BuiltinTypeKind::F32 : BuiltinTypeKind::F64));
       expression->value_category = ValueCategory::PureRValue;
+      if (literal.value.isInfinity()) {
+        Diagnose(*expression, kErrorDiagnostic, expression->range,
+                 fmt::format("floating-point literal is outside the range of '{}'", TypeSpelling(expression->type)));
+      }
       break;
     }
     case NodeKind::NullLiteral:
@@ -3191,15 +3347,20 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
       break;
     case NodeKind::ConditionalOperator: {
       auto& conditional_expression = static_cast<ConditionalOperator&>(*expression);
+      // A conditional prvalue forms a complete result before a base can consume it.
+      const ConstructionResultContext* branch_context =
+          construction_context && construction_context->construction_kind == ConstructionKind::BaseSubobject
+              ? nullptr
+              : construction_context;
       conditional_expression.Cond = AnalyzeExpr(std::move(conditional_expression.Cond));
       conditional_expression.Then = AnalyzeExpr(std::move(conditional_expression.Then), ComptimeIntMode::Materialize,
-                                                ExpressionUse::General, construction_context);
+                                                ExpressionUse::General, branch_context);
       conditional_expression.Else = AnalyzeExpr(std::move(conditional_expression.Else), ComptimeIntMode::Materialize,
-                                                ExpressionUse::General, construction_context);
+                                                ExpressionUse::General, branch_context);
       InheritErrors(conditional_expression, conditional_expression.Cond.get());
       InheritErrors(conditional_expression, conditional_expression.Then.get());
       InheritErrors(conditional_expression, conditional_expression.Else.get());
-      AnalyzeConditionalOperator(conditional_expression, construction_context);
+      AnalyzeConditionalOperator(conditional_expression, branch_context);
       break;
     }
     case NodeKind::MemberExpr: {
@@ -3323,6 +3484,9 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
   if (!expression->ContainsErrors() && expression->type &&
       expression->type.GetTypePtr()->GetKind() == TypeKind::ComptimeInt && mode == ComptimeIntMode::Materialize) {
     MaterializeComptimeInteger(expression);
+  }
+  if (type_layouts_ready_ && !expression->ContainsErrors() && expression->type) {
+    ValidateLayoutUse(*expression, *expression->type.GetTypePtr());
   }
   return expression;
 }
@@ -3887,6 +4051,15 @@ std::unique_ptr<Expr> Sema::AnalyzeSimpleAssignment(std::unique_ptr<Expr> expres
     const auto& assignment_plan = std::get<ObjectAssignmentPlan>(assignment_result);
     switch (assignment_plan.kind) {
       case ObjectAssignmentKind::Builtin:
+        if (!target_type.GetTypePtr()->IsScalar()) {
+          // Aggregate assignment consumes a source object, not an early copy of its contents.
+          if (expression.RHS->value_category == ValueCategory::PureRValue) {
+            MaterializeObject(expression.RHS);
+          }
+          expression.type = target_type;
+          expression.value_category = ValueCategory::LValue;
+          return expression_node;
+        }
         break;
       case ObjectAssignmentKind::OperatorCall: {
         BOOST_ASSERT(assignment_plan.selected_assignment);
@@ -3919,6 +4092,9 @@ std::unique_ptr<Expr> Sema::AnalyzeSimpleAssignment(std::unique_ptr<Expr> expres
       }
       case ObjectAssignmentKind::ArrayAssign: {
         BOOST_ASSERT(assignment_plan.selected_assignment);
+        if (expression.RHS->value_category == ValueCategory::PureRValue) {
+          MaterializeObject(expression.RHS);
+        }
         auto assignment = std::make_unique<ArrayAssignmentExpr>();
         assignment->range = expression.range;
         assignment->operator_range = expression.operator_range;
@@ -4011,6 +4187,7 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
     preliminary_root = preliminary_root->GetKind() == NodeKind::MemberExpr
                            ? static_cast<const MemberExpr*>(preliminary_root)->Base.get()
                            : static_cast<const BaseSubobjectExpr*>(preliminary_root)->Base.get();
+    preliminary_root = IgnoreImplicitBaseSubobjectCasts(preliminary_root);
   }
   const bool targets_constructor_base_path =
       current_function_ && current_function_->GetKind() == NodeKind::ConstructorDecl && preliminary_root &&
@@ -4032,6 +4209,7 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
       access_operator = base_subobject.op;
       has_declaration = base_subobject.GetDeclaration();
     }
+    base = IgnoreImplicitBaseSubobjectCasts(base);
     if (access_operator == expr::arrow || !has_declaration || !base || !base->type) {
       if (target_is_valid) {
         Diagnose(*expression.Target, kErrorDiagnostic, expression.Target->range,
@@ -4253,6 +4431,17 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
   const bool initializes_reference = target_declaration && path.empty() && target_declaration->type &&
                                      target_declaration->type.GetTypePtr()->AsReferenceType();
   const QualType target_type = initializes_reference ? target_declaration->type : expression.Target->type;
+  if (construction_context.construction_kind == ConstructionKind::BaseSubobject &&
+      expression.Source->value_category == ValueCategory::PureRValue &&
+      expression.Source->type.WithoutConst() == target_type.WithoutConst()) {
+    const Expr* source = expression.Source->IgnoreParens();
+    const bool directly_constructs_base =
+        source->GetKind() == NodeKind::ConstructionExpr &&
+        static_cast<const ConstructionExpr*>(source)->construction_kind == ConstructionKind::BaseSubobject;
+    if (!directly_constructs_base) {
+      MaterializeObject(expression.Source);
+    }
+  }
   ConvertExpression(expression.Source, target_type, expression,
                     fmt::format("cannot initialize {}: ", DescribeInitializationTarget(*expression.Target)),
                     construction_context.construction_kind);
@@ -4609,6 +4798,20 @@ std::unique_ptr<Expr> Sema::AnalyzeMemberExpr(std::unique_ptr<Expr> expression_n
 
   if (expression.op == expr::period && expression.Base->value_category == ValueCategory::PureRValue) {
     MaterializeObject(expression.Base);
+  }
+
+  if (!base_path.empty()) {
+    // Lookup already selected the owning struct. Preserve that path without reading
+    // the object or requesting a by-value conversion that could copy its base.
+    auto base = std::make_unique<ImplicitCastExpr>();
+    base->range = expression.Base->range;
+    const QualType object_type(ast_context_->GetStructType(current), result_is_const);
+    base->type = expression.op == expr::period ? object_type : QualType(ast_context_->GetPointerType(object_type));
+    base->value_category = expression.Base->value_category;
+    base->conversion_kind = ImplicitConversionKind::BaseSubobject;
+    base->base_path = std::move(base_path);
+    base->SubExpr = std::move(expression.Base);
+    expression.Base = std::move(base);
   }
 
   expression.declaration = selected_field;
@@ -5510,7 +5713,8 @@ bool Sema::MaterializeComptimeInteger(std::unique_ptr<Expr>& expression) {
   BOOST_ASSERT(expression->type);
   BOOST_ASSERT(expression->type.GetTypePtr()->GetKind() == TypeKind::ComptimeInt);
 
-  const auto value = EvaluateComptimeInteger(*expression);
+  const auto evaluated = EvaluateConstantInteger(*expression, *ast_context_);
+  const auto* value = std::get_if<llvm::APSInt>(&evaluated);
   BOOST_ASSERT(value && "all currently supported comptime integers are evaluable");
   if (!value) {
     return false;
@@ -5673,7 +5877,7 @@ void Sema::CheckExplicitThisParameters(FunctionDecl& declaration) {
       Diagnose(*parameter, kErrorDiagnostic, parameter->name_range, "'this' parameter must be the first parameter");
     } else if (parameter->type && !(parameter->type && parameter->type.GetTypePtr()->AsReferenceType())) {
       Diagnose(*parameter, kErrorDiagnostic, parameter->name_range,
-               "'this' parameter must have type 'mut T', 'copy T', or 'move T'");
+               "'this' parameter must have type '&mut T', '&copy T', or '&move T'");
     }
     InheritErrors(declaration, parameter.get());
   }
@@ -6070,6 +6274,18 @@ bool Sema::ResolveTypeUse(TypeSyntax* type_syntax, TypeUseKind use, QualType& re
 }
 
 QualType Sema::ResolveType(TypeSyntax& type_syntax) {
+  const QualType type = ResolveTypeImpl(type_syntax);
+  if (type && !type_syntax.ContainsErrors()) {
+    if (type_layouts_ready_) {
+      ValidateLayoutUse(type_syntax, *type.GetTypePtr());
+    } else {
+      pending_layout_uses_.emplace_back(&type_syntax, type.GetTypePtr());
+    }
+  }
+  return type;
+}
+
+QualType Sema::ResolveTypeImpl(TypeSyntax& type_syntax) {
   switch (type_syntax.GetKind()) {
     case NodeKind::BuiltinTypeSyntax:
       return QualType(ast_context_->GetBuiltinType(static_cast<BuiltinTypeSyntax&>(type_syntax).kind));
@@ -6234,7 +6450,7 @@ QualType Sema::ResolveType(TypeSyntax& type_syntax) {
       }
 
       const auto evaluated = EvaluateConstantInteger(*array_syntax.Length, *ast_context_);
-      const auto* value = std::get_if<cpp_int>(&evaluated);
+      const auto* value = std::get_if<llvm::APSInt>(&evaluated);
       if (!value) {
         const auto& failure = std::get<ConstantIntegerFailure>(evaluated);
         const SourceRange failure_range = failure.expression ? failure.expression->range : array_syntax.Length->range;
@@ -6260,13 +6476,13 @@ QualType Sema::ResolveType(TypeSyntax& type_syntax) {
         }
         return QualType{};
       }
-      if (*value < 0) {
+      if (value->isNegative()) {
         Diagnose(array_syntax, kErrorDiagnostic, array_syntax.Length->range, "array length cannot be negative");
         return QualType{};
       }
       const auto* usize_type = ast_context_->GetBuiltinType(BuiltinTypeKind::USize);
-      const cpp_int maximum = (cpp_int{1} << ast_context_->GetIntegerBitWidth(*usize_type)) - 1;
-      if (*value > maximum || *value > std::numeric_limits<ArrayLength>::max()) {
+      if (!value->isIntN(ast_context_->GetIntegerBitWidth(*usize_type)) ||
+          !value->isIntN(std::numeric_limits<ArrayLength>::digits)) {
         Diagnose(array_syntax, kErrorDiagnostic, array_syntax.Length->range,
                  "array length is outside the range of 'usize'");
         return QualType{};
@@ -6280,7 +6496,7 @@ QualType Sema::ResolveType(TypeSyntax& type_syntax) {
       if (!ValidateTypeUse(*array_syntax.ElementType, element_type, TypeUseKind::ArrayElement)) {
         return QualType{};
       }
-      return QualType(ast_context_->GetArrayType(element_type, value->convert_to<ArrayLength>()));
+      return QualType(ast_context_->GetArrayType(element_type, static_cast<ArrayLength>(value->getZExtValue())));
     }
     default:
       BOOST_ASSERT(false && "unsupported type node");
@@ -6290,6 +6506,9 @@ QualType Sema::ResolveType(TypeSyntax& type_syntax) {
 
 bool Sema::ValidateTypeUse(Node& owner, QualType type, TypeUseKind use) {
   BOOST_ASSERT(type);
+  if (type_layouts_ready_ && !ValidateLayoutUse(owner, *type.GetTypePtr())) {
+    return false;
+  }
 
   if (type.GetTypePtr()->IsVoid() || type.GetTypePtr()->AsFunctionType()) {
     switch (use) {
@@ -6518,27 +6737,7 @@ void Sema::Diagnose(Node& owner, DiagnosticSeverity severity, const SourceRange&
 }
 
 void Sema::EmitDiagnostic(DiagnosticSeverity severity, const SourceRange& range, std::string message) {
-  std::filesystem::path path;
-  int line = 0;
-  int column = 0;
-  std::string line_source;
-  int size = 0;
-
-  const SourceLocation& begin = range.begin;
-  if (begin.file >= 0 && begin.file < static_cast<int>(sources_->size())) {
-    const Source& source = (*sources_)[begin.file];
-    path = source.path;
-    line = begin.line;
-    column = begin.column;
-    line_source = LineSource(source, begin.pos);
-
-    if (range.end.IsValid() && range.end.file == begin.file && range.end.line == begin.line &&
-        range.end.pos > begin.pos) {
-      size = range.end.pos - begin.pos;
-    }
-  }
-
-  diagnostic_engine_->Add(severity, std::move(path), line, column, std::move(message), std::move(line_source), size);
+  diagnostic_engine_->Add(severity, range, std::move(message));
 }
 
 void Sema::DiagnoseConflict(Node& current_owner, const SourceRange& current_range, const std::string& message,

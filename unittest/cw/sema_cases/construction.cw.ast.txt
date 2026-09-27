@@ -4,6 +4,7 @@ TranslationUnitDecl {{address}}
 | |-ParmVarDecl {{address:constructor_value}} <col:24, col:33> value 'i32'
 | | `-BuiltinType {{address}} <col:30, col:33> 'i32'
 | `-CompoundStmt {{address}} <col:35, col:37>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-DestructorDecl {{address}} <line:5:1, col:28> ConstructionValue target Struct {{address:construction_value}} 'ConstructionValue' 'func () void'
 | `-CompoundStmt {{address}} <col:26, col:28>
 `-FunctionDecl {{address}} <line:7:1, line:10:2> Construction 'func (*ConstructionValue, i16) void'

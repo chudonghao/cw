@@ -7,7 +7,7 @@
 
 #include <variant>
 
-#include <boost/multiprecision/cpp_int.hpp>
+#include <llvm/ADT/APSInt.h>
 
 namespace cw {
 
@@ -28,7 +28,7 @@ struct ConstantIntegerFailure {
   const Expr* expression{};
 };
 
-using ConstantIntegerResult = std::variant<boost::multiprecision::cpp_int, ConstantIntegerFailure>;
+using ConstantIntegerResult = std::variant<llvm::APSInt, ConstantIntegerFailure>;
 
 /// \brief Evaluates the deliberately small integer constant-expression subset.
 ConstantIntegerResult EvaluateConstantInteger(const Expr& expression, const ASTContext& ast_context);

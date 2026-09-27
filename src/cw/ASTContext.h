@@ -10,7 +10,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ABI.h"
+#include "TargetInfo.h"
+#include "TypeLayout.h"
+#include "VTableLayout.h"
 #include "ast.h"
 
 namespace cw {
@@ -68,7 +70,10 @@ class ASTContext {
     std::size_t operator()(const ReferenceTypeKey& key) const;
   };
 
-  const ABIKind abi_;
+  const TargetInfo target_info_;
+  mutable std::unordered_map<const Type*, TypeLayoutResult> type_layouts_;
+  mutable std::unordered_map<const StructDecl*, std::variant<StructLayout, LayoutFailure>> struct_layouts_;
+  mutable std::unordered_map<const StructDecl*, VTableLayout> vtable_layouts_;
   std::vector<std::unique_ptr<Type>> types_;  ///< Owned semantic types.
   const ComptimeIntType* comptime_int_type_{};
   const NullType* null_type_{};
@@ -84,7 +89,7 @@ class ASTContext {
   std::unique_ptr<TranslationUnitDecl> translation_unit_;  ///< Owned AST root.
 
  public:
-  explicit ASTContext(ABIKind abi = ABIKind::Itanium);
+  explicit ASTContext(TargetInfo target_info);
   ~ASTContext();
 
   ASTContext(const ASTContext&) = delete;
@@ -92,7 +97,16 @@ class ASTContext {
   ASTContext(ASTContext&&) = delete;
   ASTContext& operator=(ASTContext&&) = delete;
 
-  ABIKind GetABIKind() const { return abi_; }
+  const TargetInfo& GetTargetInfo() const { return target_info_; }
+
+  /// \brief Queries a runtime object type after its layout dependencies are complete and valid.
+  TypeLayoutResult GetTypeLayout(const Type& type) const;
+
+  /// \brief Returns an owned layout or size failure; the declaration must have completed type semantics.
+  StructLayoutResult GetStructLayout(const StructDecl& declaration) const;
+
+  /// \brief Queries the primary vtable after callable interfaces and overrides are complete and valid.
+  const VTableLayout& GetVTableLayout(const StructDecl& declaration) const;
 
   /// \brief Returns the owned translation unit.
   TranslationUnitDecl* GetTranslationUnitDecl();

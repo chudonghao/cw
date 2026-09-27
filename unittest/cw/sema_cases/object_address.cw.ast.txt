@@ -2,19 +2,19 @@ TranslationUnitDecl {{address}}
 |-StructDecl {{address:struct}} <object_address.cw:1:1, line:3:2> Addressed trivial
 | `-FieldDecl {{address:field}} <line:2:3, col:13> value 'i32'
 |   `-BuiltinType {{address}} <col:9, col:12> 'i32'
-`-FunctionDecl {{address}} <line:5:1, line:13:2> ObjectAddress 'func (Addressed, copy Addressed, *i32, bool, i32, i32) void'
+`-FunctionDecl {{address}} <line:5:1, line:13:2> ObjectAddress 'func (Addressed, &copy Addressed, *i32, bool, i32, i32) void'
   |-ParmVarDecl {{address:object}} <line:5:20, col:36> object 'Addressed'
   | `-NamedType {{address}} <col:27, col:36> 'Addressed'
-  |-ParmVarDecl {{address:readonly}} <col:38, col:61> readonly 'copy Addressed'
-  | `-ReferenceType {{address}} <col:47, col:61> 'copy'
-  |   `-NamedType {{address}} <col:52, col:61> 'Addressed'
-  |-ParmVarDecl {{address:pointer}} <col:63, col:75> pointer '*i32'
-  | `-PointerType {{address}} <col:71, col:75>
-  |   `-BuiltinType {{address}} <col:72, col:75> 'i32'
-  |-ParmVarDecl {{address:condition}} <col:77, col:91> condition 'bool'
-  | `-BuiltinType {{address}} <col:87, col:91> 'bool'
-  |-ParmVarDecl {{address:first}} <col:93, col:102> first 'i32'
-  | `-BuiltinType {{address}} <col:99, col:102> 'i32'
+  |-ParmVarDecl {{address:readonly}} <col:38, col:62> readonly '&copy Addressed'
+  | `-ReferenceType {{address}} <col:47, col:62> '&copy'
+  |   `-NamedType {{address}} <col:53, col:62> 'Addressed'
+  |-ParmVarDecl {{address:pointer}} <col:64, col:76> pointer '*i32'
+  | `-PointerType {{address}} <col:72, col:76>
+  |   `-BuiltinType {{address}} <col:73, col:76> 'i32'
+  |-ParmVarDecl {{address:condition}} <col:78, col:92> condition 'bool'
+  | `-BuiltinType {{address}} <col:88, col:92> 'bool'
+  |-ParmVarDecl {{address:first}} <col:94, col:103> first 'i32'
+  | `-BuiltinType {{address}} <col:100, col:103> 'i32'
   |-ParmVarDecl {{address:second}} <line:6:20, col:30> second 'i32'
   | `-BuiltinType {{address}} <col:27, col:30> 'i32'
   `-CompoundStmt {{address}} <col:32, line:13:2>
@@ -23,7 +23,7 @@ TranslationUnitDecl {{address}}
     |   `-DeclRefExpr {{address}} <col:4, col:10> 'Addressed' lvalue ParmVar {{address:object}} 'object' 'Addressed'
     |-ExprStmt {{address}} <line:8:3, col:13>
     | `-UnaryOperator {{address}} <col:3, col:12> '*const Addressed' pure-rvalue '&'
-    |   `-DeclRefExpr {{address}} <col:4, col:12> 'const Addressed' lvalue ParmVar {{address:readonly}} 'readonly' 'copy Addressed'
+    |   `-DeclRefExpr {{address}} <col:4, col:12> 'const Addressed' lvalue ParmVar {{address:readonly}} 'readonly' '&copy Addressed'
     |-ExprStmt {{address}} <line:9:3, col:17>
     | `-UnaryOperator {{address}} <col:3, col:16> '*i32' pure-rvalue '&'
     |   `-MemberExpr {{address}} <col:4, col:16> 'i32' lvalue .value Field {{address:field}} 'value' 'i32'

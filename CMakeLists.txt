@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(cw VERSION 0.1 LANGUAGES CXX)
+project(cw VERSION 0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,6 +12,7 @@ set(Boost_USE_STATIC_LIBS ON)
 find_package(Boost REQUIRED COMPONENTS program_options charconv)
 
 find_package(fmt REQUIRED)
+find_package(LLVM REQUIRED CONFIG)
 
 add_subdirectory(src)
 

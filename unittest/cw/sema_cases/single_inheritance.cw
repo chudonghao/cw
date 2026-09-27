@@ -19,7 +19,7 @@ ctor SingleInheritance(value i32) {
 
 dtor SingleInheritance() {}
 
-func ReadBase(value copy SingleInheritance) i32 {
+func ReadBase(value &copy SingleInheritance) i32 {
   return value.Base.value;
 }
 
@@ -35,10 +35,10 @@ trivial struct Middle : Root {}
 
 trivial struct Leaf : Middle {}
 
-func ReadIndirectBase(value copy Leaf) i32 {
+func ReadIndirectBase(value &copy Leaf) i32 {
   return value.Root.root;
 }
 
-func ReadExplicitBasePath(value copy Leaf) i32 {
+func ReadExplicitBasePath(value &copy Leaf) i32 {
   return value.Middle.Root.root;
 }

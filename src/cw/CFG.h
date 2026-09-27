@@ -51,6 +51,7 @@ class CFGElement {
 /// \brief The context in which an expression region is evaluated.
 enum class CFGExpressionContext {
   Ordinary,
+  ObjectLocation,  ///< Locate a projection's base without reading the whole object.
   InitializationTarget,
 };
 

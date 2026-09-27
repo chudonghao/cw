@@ -9,7 +9,8 @@
 #include <string>
 #include <variant>
 
-#include <boost/multiprecision/cpp_int.hpp>
+#include <llvm/ADT/APFloat.h>
+#include <llvm/ADT/APSInt.h>
 
 #include "BuiltinTypes.h"
 #include "ExprGrammar.h"
@@ -148,7 +149,7 @@ struct BoolProperty {
 };
 
 struct IntegerProperty {
-  boost::multiprecision::cpp_int value{};
+  llvm::APSInt value{1, true};
 };
 
 struct CharacterProperty {
@@ -156,7 +157,7 @@ struct CharacterProperty {
 };
 
 struct FloatProperty {
-  std::variant<std::monostate, float, double> value{};
+  llvm::APFloat value{llvm::APFloat::IEEEdouble()};
 };
 
 struct StringProperty {

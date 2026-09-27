@@ -5,11 +5,11 @@
 
 #include "Literal.h"
 
+#include <algorithm>
 #include <utility>
 
-#include <boost/parser/parser.hpp>
-
-namespace bp = boost::parser;
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Error.h>
 
 namespace cw {
 
@@ -59,16 +59,19 @@ std::optional<IntegerProperty> ParseIntegerLiteral(std::string_view spelling) {
     return std::nullopt;
   }
 
-  // Keep source integers unbounded; Sema checks representability at materialization.
-  boost::multiprecision::cpp_int value = 0;
   for (char c : spelling) {
     const auto digit = DigitValue(c);
     if (!digit || *digit >= base) {
       return std::nullopt;
     }
-    value *= base;
-    value += *digit;
   }
+
+  // Grow to preserve the complete source value; language typing happens in Sema.
+  llvm::APSInt value(1, true);
+  if (llvm::StringRef(spelling).getAsInteger(base, static_cast<llvm::APInt&>(value))) {
+    return std::nullopt;
+  }
+  value = value.trunc(std::max(1u, value.getActiveBits()));
   return IntegerProperty{std::move(value)};
 }
 
@@ -127,20 +130,22 @@ std::optional<CharacterProperty> ParseCharacterLiteral(std::string_view spelling
 }
 
 std::optional<FloatProperty> ParseFloatLiteral(std::string_view spelling) {
-  if (!spelling.empty() && (spelling.back() == 'f' || spelling.back() == 'F')) {
+  const bool single = !spelling.empty() && (spelling.back() == 'f' || spelling.back() == 'F');
+  if (single) {
     spelling.remove_suffix(1);
-    auto result = bp::parse(spelling, bp::float_);
-    if (result) {
-      return FloatProperty{*result};
-    }
+  }
+  if (spelling.empty() || spelling.find_first_not_of("0123456789.eE+-") != std::string_view::npos) {
     return std::nullopt;
   }
 
-  auto result = bp::parse(spelling, bp::double_);
-  if (result) {
-    return FloatProperty{*result};
+  llvm::APFloat value(single ? llvm::APFloat::IEEEsingle() : llvm::APFloat::IEEEdouble());
+  auto result = value.convertFromString(llvm::StringRef(spelling), llvm::APFloat::rmNearestTiesToEven);
+  if (!result) {
+    llvm::consumeError(result.takeError());
+    return std::nullopt;
   }
-  return std::nullopt;
+  // Preserve overflow for Sema to diagnose; inexact and underflow results are valid.
+  return FloatProperty{std::move(value)};
 }
 
 std::optional<StringProperty> ParseStringLiteral(std::string_view spelling) {

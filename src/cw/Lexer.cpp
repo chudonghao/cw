@@ -151,7 +151,8 @@ struct MultiSourceLexer : lex::lexer<lex::lexertl::lexer<lex::lexertl::token<Cha
     rules.add(R"(0[xX][0-9a-fA-F]+)", tok::integer_literal);  // Hex: 0xFF
     rules.add(R"([0-9]+)", tok::integer_literal);             // Decimal: 123
     rules.add(R"(\'([^'\\]|\\.+?)\')", tok::character_literal);
-    rules.add(R"(([0-9]*\.[0-9]+|[0-9]+\.[0-9]*)([eE][+-]?[0-9]+)?[fF]?)", tok::float_literal);
+    rules.add(R"((([0-9]*\.[0-9]+|[0-9]+\.[0-9]*)([eE][+\-]?[0-9]+)?|[0-9]+[eE][+\-]?[0-9]+)[fF]?)",
+              tok::float_literal);
     rules.add(R"(\"([^"\\]|\\.)*\")", tok::string_literal);
 
     // Keywords precede identifiers so equal-length matches retain their keyword kind.

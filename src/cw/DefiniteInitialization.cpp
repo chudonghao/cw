@@ -270,12 +270,12 @@ bool RangeIsEntirely(const ObjectState& object, std::size_t begin, std::size_t e
   return true;
 }
 
-const ImplicitCastExpr* AsObjectDerivedToBaseCast(const Expr* expression) {
+const ImplicitCastExpr* AsObjectBaseSubobjectCast(const Expr* expression) {
   if (!expression || expression->GetKind() != NodeKind::ImplicitCastExpr) {
     return nullptr;
   }
   const auto* cast = static_cast<const ImplicitCastExpr*>(expression);
-  if (cast->conversion_kind != ImplicitConversionKind::DerivedToBase || !cast->type ||
+  if (cast->conversion_kind != ImplicitConversionKind::BaseSubobject || !cast->type ||
       cast->type.GetTypePtr()->GetKind() != TypeKind::Struct || cast->base_path.empty()) {
     return nullptr;
   }
@@ -289,7 +289,7 @@ const Expr* SkipLocatingWrappers(const Expr* expression) {
         expression = static_cast<const ParenExpr*>(expression)->SubExpr.get();
         break;
       case NodeKind::ImplicitCastExpr: {
-        if (AsObjectDerivedToBaseCast(expression)) {
+        if (AsObjectBaseSubobjectCast(expression)) {
           return expression;
         }
         // NoOp is access to the same object, including through a base projection.
@@ -330,32 +330,6 @@ const SubobjectRange* FindAtomicPrefix(const ObjectLayout& layout, const Subobje
     }
   }
   return result;
-}
-
-bool FindFieldSuffix(const StructDecl& structure, const FieldDecl& field, SubobjectPath& suffix,
-                     std::unordered_set<const StructDecl*>& visited) {
-  if (!visited.insert(&structure).second) {
-    return false;
-  }
-  for (const auto& direct_field : structure.Fields) {
-    if (direct_field.get() != &field) {
-      continue;
-    }
-    suffix.push_back(PathSegment::Field(field));
-    visited.erase(&structure);
-    return true;
-  }
-  if (structure.base_type && structure.base_type->GetDeclaration()) {
-    const StructDecl& base = *structure.base_type->GetDeclaration();
-    suffix.push_back(PathSegment::Base(base));
-    if (FindFieldSuffix(base, field, suffix, visited)) {
-      visited.erase(&structure);
-      return true;
-    }
-    suffix.pop_back();
-  }
-  visited.erase(&structure);
-  return false;
 }
 
 const VarDecl* AsVariable(const ValueDecl* declaration) {
@@ -458,24 +432,6 @@ SourceRange PreferredRange(const Node& owner, TrackedRoot root) {
   return owner.range;
 }
 
-bool IsAssignmentOperatorCall(const OperatorCallExpr& expression) {
-  if (expression.Args.size() != 2 || !expression.Args[0] || !expression.Args[1] || !expression.Callee ||
-      expression.Callee->GetKind() != NodeKind::DeclRefExpr) {
-    return false;
-  }
-  const ValueDecl* declaration = static_cast<const DeclRefExpr&>(*expression.Callee).declaration;
-  if (!declaration) {
-    return false;
-  }
-  switch (declaration->GetKind()) {
-    case NodeKind::FunctionDecl:
-    case NodeKind::VirtualFunctionDecl:
-      return static_cast<const FunctionDecl*>(declaration)->name == "=";
-    default:
-      return false;
-  }
-}
-
 bool GetAssignmentOperands(const Expr& expression, const Expr*& lhs, const Expr*& rhs) {
   if (expression.GetKind() == NodeKind::BinaryOperator) {
     const auto& binary = static_cast<const BinaryOperator&>(expression);
@@ -488,7 +444,7 @@ bool GetAssignmentOperands(const Expr& expression, const Expr*& lhs, const Expr*
   }
   if (expression.GetKind() == NodeKind::OperatorCallExpr) {
     const auto& call = static_cast<const OperatorCallExpr&>(expression);
-    if (!IsAssignmentOperatorCall(call)) {
+    if (!call.IsSimpleAssignment()) {
       return false;
     }
     lhs = call.Args[0].get();
@@ -508,7 +464,6 @@ class AnalysisEngine {
   const Decl& owner_;
   const FunctionDecl* function_;
   const CFG& cfg_;
-  const ABIKind abi_;
   std::vector<Environment> inputs_;
   std::vector<Environment> outputs_;
   std::vector<bool> reachable_;
@@ -516,23 +471,24 @@ class AnalysisEngine {
   std::unordered_set<const VarDecl*> indexed_declarations_;
   std::unordered_map<const Node*, std::vector<const VarDecl*>> scope_declarations_;
   std::unordered_map<const VarDecl*, const Node*> declaration_scopes_;
-  std::unordered_set<const InitializationExpr*> valid_initializations_;
+  std::unordered_map<const InitializationExpr*, const ExprStmt*> valid_initializations_;
+  std::vector<const ExprStmt*> this_initialization_completions_;
   std::unordered_map<const VarDecl*, ObjectLayout> variable_layouts_;
   ObjectLayout this_layout_;
   bool tracks_this_{};
   bool this_is_destructor_{};
+  bool this_is_delegating_{};
   std::unordered_map<FindingKey, std::size_t, FindingKeyHash> finding_indices_;
   std::vector<DefiniteInitializationFinding> findings_;
   std::size_t current_program_point_{};
   std::size_t current_intra_program_order_{};
 
  public:
-  AnalysisEngine(const Decl& owner, const CFG& cfg, ABIKind abi)
+  AnalysisEngine(const Decl& owner, const CFG& cfg)
       : owner_(owner),
         function_(owner.GetKind() == NodeKind::TranslationUnitDecl ? nullptr
                                                                    : &static_cast<const FunctionDecl&>(owner)),
         cfg_(cfg),
-        abi_(abi),
         inputs_(cfg.Blocks().size()),
         outputs_(cfg.Blocks().size()),
         reachable_(cfg.Blocks().size()) {
@@ -545,11 +501,12 @@ class AnalysisEngine {
     ComputeReachability();
   }
 
-  std::vector<DefiniteInitializationFinding> Run() {
+  DefiniteInitializationResult Run() {
     // Diagnose only the fixed point; intermediate loop states can produce transient conflicts.
     Solve();
     CollectFindings();
-    return std::move(findings_);
+    return {std::move(findings_), std::move(this_initialization_completions_),
+            tracks_this_ && !this_is_destructor_ && !this_is_delegating_ && this_layout_.leaves.empty()};
   }
 
  private:
@@ -662,7 +619,14 @@ class AnalysisEngine {
         case NodeKind::ExprStmt: {
           const auto& expression_statement = static_cast<const ExprStmt&>(*child);
           if (expression_statement.Expr && expression_statement.Expr->GetKind() == NodeKind::InitializationExpr) {
-            valid_initializations_.insert(static_cast<const InitializationExpr*>(expression_statement.Expr.get()));
+            const auto& initialization = static_cast<const InitializationExpr&>(*expression_statement.Expr);
+            valid_initializations_.emplace(&initialization, &expression_statement);
+            const Expr* source = initialization.Source ? initialization.Source->IgnoreParens() : nullptr;
+            if (source && source->GetKind() == NodeKind::ConstructionExpr &&
+                static_cast<const ConstructionExpr&>(*source).construction_kind == ConstructionKind::Delegating) {
+              // The target constructor owns the completion boundary, including for an empty current object.
+              this_is_delegating_ = true;
+            }
           }
           break;
         }
@@ -720,7 +684,7 @@ class AnalysisEngine {
     const Expr* current = SkipLocatingWrappers(expression);
     while (current &&
            (current->GetKind() == NodeKind::MemberExpr || current->GetKind() == NodeKind::BaseSubobjectExpr ||
-            current->GetKind() == NodeKind::SubscriptExpr || AsObjectDerivedToBaseCast(current))) {
+            current->GetKind() == NodeKind::SubscriptExpr || AsObjectBaseSubobjectCast(current))) {
       if (current->GetKind() == NodeKind::MemberExpr) {
         const auto& member = static_cast<const MemberExpr&>(*current);
         if (member.op == expr::arrow || !member.declaration) {
@@ -774,7 +738,7 @@ class AnalysisEngine {
       return access;
     }
 
-    // Expand inherited field access into the canonical path used by the flat layout.
+    // Validate the recorded AST path; inherited fields already include their base segments.
     const ObjectLayout* layout = LayoutFor(access.root);
     if (!layout) {
       return access;
@@ -804,12 +768,11 @@ class AnalysisEngine {
         path.push_back(segment);
         current_type = QualType(structure->base_type);
       } else {
-        SubobjectPath suffix;
-        std::unordered_set<const StructDecl*> visited;
-        if (!FindFieldSuffix(*structure, *segment.field, suffix, visited)) {
+        if (std::none_of(structure->Fields.begin(), structure->Fields.end(),
+                         [&](const auto& field) { return field.get() == segment.field; })) {
           return access;
         }
-        path.insert(path.end(), suffix.begin(), suffix.end());
+        path.push_back(segment);
         current_type = segment.field->type;
       }
     }
@@ -1056,6 +1019,9 @@ class AnalysisEngine {
       case CFGExpressionContext::Ordinary:
         WalkExpression(expression, excluded, environment, collect);
         break;
+      case CFGExpressionContext::ObjectLocation:
+        WalkLocatingBase(expression, excluded, environment, collect);
+        break;
       case CFGExpressionContext::InitializationTarget:
         WalkInitializationTarget(expression, excluded, environment, collect);
         break;
@@ -1075,13 +1041,7 @@ class AnalysisEngine {
 
   void WalkArguments(const std::vector<std::unique_ptr<Expr>>& arguments,
                      const std::unordered_set<const Expr*>& excluded, Environment& environment, bool collect) {
-    if (AreArgumentsEvaluatedRightToLeft(abi_)) {
-      for (auto argument = arguments.rbegin(); argument != arguments.rend(); ++argument) {
-        WalkChild(*argument, excluded, environment, collect);
-      }
-    } else {
-      for (const auto& argument : arguments) WalkChild(argument, excluded, environment, collect);
-    }
+    for (const auto& argument : arguments) WalkChild(argument, excluded, environment, collect);
   }
 
   void WalkOrderedAssignmentOperands(const Expr* lhs, const Expr* rhs, const std::unordered_set<const Expr*>& excluded,
@@ -1201,13 +1161,8 @@ class AnalysisEngine {
         const auto& call = static_cast<const ReceiverCallExpr&>(expression);
         // Arrow dereference is already explicit; evaluate the receiver only once.
         WalkChild(call.Callee, excluded, environment, collect);
-        if (!AreArgumentsEvaluatedRightToLeft(abi_)) {
-          WalkChild(call.Receiver, excluded, environment, collect);
-        }
+        WalkChild(call.Receiver, excluded, environment, collect);
         WalkArguments(call.Args, excluded, environment, collect);
-        if (AreArgumentsEvaluatedRightToLeft(abi_)) {
-          WalkChild(call.Receiver, excluded, environment, collect);
-        }
         return;
       }
       case NodeKind::ConstructionExpr: {
@@ -1231,7 +1186,7 @@ class AnalysisEngine {
       }
       case NodeKind::ImplicitCastExpr: {
         const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
-        if (AsObjectDerivedToBaseCast(&cast)) {
+        if (AsObjectBaseSubobjectCast(&cast)) {
           if (cast.SubExpr) {
             WalkLocatingBase(*cast.SubExpr, excluded, environment, collect);
           }
@@ -1434,7 +1389,17 @@ class AnalysisEngine {
     if (access.begin == access.end && expression.Target->GetKind() == NodeKind::ThisExpr) {
       return;
     }
+    const bool track_completion =
+        collect && tracks_this_ && !this_is_destructor_ && !this_is_delegating_ && access.root == ThisRoot();
+    const auto this_state = track_completion ? environment.find(ThisRoot()) : environment.end();
+    const bool was_complete =
+        this_state != environment.end() &&
+        RangeIsEntirely(this_state->second, 0, this_state->second.leaves.size(), InitializationState::Initialized);
     ApplyInitialization(expression, expression.Target->range, access, environment, collect);
+    if (track_completion && !was_complete && this_state != environment.end() &&
+        RangeIsEntirely(this_state->second, 0, this_state->second.leaves.size(), InitializationState::Initialized)) {
+      this_initialization_completions_.push_back(valid_initializations_.at(&expression));
+    }
   }
 
   void ApplyResultInitialization(const ImplicitResultInitializationExpr& expression, Environment& environment,
@@ -1704,14 +1669,13 @@ class AnalysisEngine {
 
 }  // namespace
 
-std::vector<DefiniteInitializationFinding> DefiniteInitializationAnalysis::Run(const FunctionDecl& function,
-                                                                               const CFG& cfg, ABIKind abi) {
-  return AnalysisEngine(function, cfg, abi).Run();
+DefiniteInitializationResult DefiniteInitializationAnalysis::Run(const FunctionDecl& function, const CFG& cfg) {
+  return AnalysisEngine(function, cfg).Run();
 }
 
-std::vector<DefiniteInitializationFinding> DefiniteInitializationAnalysis::Run(
-    const TranslationUnitDecl& translation_unit, const CFG& cfg, ABIKind abi) {
-  return AnalysisEngine(translation_unit, cfg, abi).Run();
+DefiniteInitializationResult DefiniteInitializationAnalysis::Run(const TranslationUnitDecl& translation_unit,
+                                                                 const CFG& cfg) {
+  return AnalysisEngine(translation_unit, cfg).Run();
 }
 
 }  // namespace cw

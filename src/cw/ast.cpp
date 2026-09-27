@@ -5,9 +5,52 @@
 
 #include "ast.h"
 
+#include <boost/assert.hpp>
+
 #include "ASTVisitor.h"
 
 namespace cw {
+
+namespace {
+
+const StructType* GetElementStruct(const Type& type) {
+  const Type* element = &type;
+  while (const auto* array = element->AsArrayType()) {
+    element = array->GetElementType().GetTypePtr();
+  }
+  return element->AsStructType();
+}
+
+bool HasInheritedFields(const StructDecl& declaration) {
+  for (auto* base = declaration.base_type; base; base = base->GetDeclaration()->base_type) {
+    if (!base->GetDeclaration()->Fields.empty()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ComputeCXX11StandardLayout(const StructDecl& declaration) {
+  if (declaration.IsPolymorphic() ||
+      (declaration.base_type && !declaration.base_type->GetDeclaration()->IsCXX11StandardLayout()) ||
+      (!declaration.Fields.empty() && HasInheritedFields(declaration))) {
+    return false;
+  }
+  for (const auto& field : declaration.Fields) {
+    if (const auto* record = GetElementStruct(*field->type.GetTypePtr())) {
+      if (!record->GetDeclaration()->IsCXX11StandardLayout()) {
+        return false;
+      }
+      // Use the original C++11 first-member rule, not later standard-layout revisions.
+      if (field == declaration.Fields.front() && declaration.base_type == record) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+}  // namespace
 
 const ComptimeIntType* Type::AsComptimeIntType() const {
   return GetKind() == TypeKind::ComptimeInt ? static_cast<const ComptimeIntType*>(this) : nullptr;
@@ -136,8 +179,8 @@ const char* to_string(ImplicitConversionKind kind) {
       return "FloatToInteger";
     case ImplicitConversionKind::Qualification:
       return "Qualification";
-    case ImplicitConversionKind::DerivedToBase:
-      return "DerivedToBase";
+    case ImplicitConversionKind::BaseSubobject:
+      return "BaseSubobject";
   }
   return "Unknown";
 }
@@ -266,6 +309,25 @@ void VarDecl::Traverse(ASTVisitor& visitor) {
   }
 }
 
+bool StructDecl::IsPolymorphic() const {
+  return (VirtualDecl && !VirtualDecl->Functions.empty()) ||
+         (base_type && base_type->GetDeclaration()->IsPolymorphic());
+}
+
+bool StructDecl::IsEmpty() const {
+  return Fields.empty() && (!VirtualDecl || VirtualDecl->Functions.empty()) &&
+         (!base_type || base_type->GetDeclaration()->IsEmpty());
+}
+
+bool StructDecl::IsCXX11StandardLayout() const {
+  BOOST_ASSERT(!is_invalid);
+  BOOST_ASSERT(triviality == TypeTriviality::Trivial || triviality == TypeTriviality::NonTrivial);
+  if (!cxx11_standard_layout_.has_value()) {
+    cxx11_standard_layout_ = ComputeCXX11StandardLayout(*this);
+  }
+  return *cxx11_standard_layout_;
+}
+
 void StructDecl::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
 void StructDecl::Traverse(ASTVisitor& visitor) {
   if (VirtualDecl) {
@@ -334,6 +396,9 @@ void ExprStmt::Traverse(ASTVisitor& visitor) {
     Expr->Accept(visitor);
   }
 }
+
+void ImplicitThisInitializationCompleteStmt::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+void ImplicitThisInitializationCompleteStmt::Traverse(ASTVisitor&) {}
 
 void DeclStmt::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
 void DeclStmt::Traverse(ASTVisitor& visitor) {
@@ -531,6 +596,23 @@ void CallExpr::Traverse(ASTVisitor& visitor) {
 }
 
 void OperatorCallExpr::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+
+bool OperatorCallExpr::IsSimpleAssignment() const {
+  if (Args.size() != 2 || !Args[0] || !Args[1] || !Callee || Callee->GetKind() != NodeKind::DeclRefExpr) {
+    return false;
+  }
+  const ValueDecl* declaration = static_cast<const DeclRefExpr&>(*Callee).declaration;
+  if (!declaration) {
+    return false;
+  }
+  switch (declaration->GetKind()) {
+    case NodeKind::FunctionDecl:
+    case NodeKind::VirtualFunctionDecl:
+      return static_cast<const FunctionDecl*>(declaration)->name == "=";
+    default:
+      return false;
+  }
+}
 
 void ConstructionExpr::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
 void ConstructionExpr::Traverse(ASTVisitor& visitor) {

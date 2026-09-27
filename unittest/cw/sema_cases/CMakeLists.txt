@@ -1,8 +1,7 @@
-find_program(SEMA_CASE_CLANG_EXECUTABLE NAMES clang)
 find_package(Python3 QUIET COMPONENTS Interpreter)
 
-if(NOT SEMA_CASE_CLANG_EXECUTABLE OR NOT Python3_Interpreter_FOUND)
-  message(STATUS "Clang AST reference targets disabled: Clang and Python 3 are required")
+if(NOT CLANG_EXECUTABLE OR NOT Python3_Interpreter_FOUND)
+  message(STATUS "Clang AST reference targets disabled: the project LLVM's Clang and Python 3 are required")
   return()
 endif()
 
@@ -17,7 +16,7 @@ function(add_sema_case_clang_ast name)
   add_custom_target(${target_name}
     COMMAND
       "${CMAKE_COMMAND}"
-      "-DCLANG_EXECUTABLE=${SEMA_CASE_CLANG_EXECUTABLE}"
+      "-DCLANG_EXECUTABLE=${CLANG_EXECUTABLE}"
       "-DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}"
       "-DNORMALIZER=${CMAKE_CURRENT_SOURCE_DIR}/normalize_ast.py"
       "-DCASE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}"
@@ -58,6 +57,7 @@ add_sema_case_clang_ast(construction)
 add_sema_case_clang_ast(copy_move_construction)
 add_sema_case_clang_ast(explicit_destruction)
 add_sema_case_clang_ast(constructor_this)
+add_sema_case_clang_ast(base_result_initialization)
 add_sema_case_clang_ast(operator_expression)
 add_sema_case_clang_ast(operator_function_address)
 add_sema_case_clang_ast(operator_function_call)

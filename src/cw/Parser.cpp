@@ -37,9 +37,8 @@ bool IsCompoundStmtStart(tok::TokenType type) { return type == tok::l_brace; }
 
 /// \brief Returns true when \p type starts source-level type syntax.
 bool IsTypeStart(tok::TokenType type) {
-  return type == tok::l_square || type == tok::virtual_ || type == tok::const_ || type == tok::mut ||
-         type == tok::copy || type == tok::move_ || type == tok::star || type == tok::func ||
-         type == tok::builtin_type || type == tok::identifier;
+  return type == tok::l_square || type == tok::virtual_ || type == tok::const_ || type == tok::amp ||
+         type == tok::star || type == tok::func || type == tok::builtin_type || type == tok::identifier;
 }
 
 /// \brief Returns a user-facing spelling for an expected token kind.
@@ -1269,22 +1268,31 @@ ParseResult<TypeSyntax> Parser::Type_() {
     return const_type;
   }
 
-  if (token.type == tok::mut || token.type == tok::copy || token.type == tok::move_) {
-    auto reference_type = MakeNode<ReferenceTypeSyntax>();
-    reference_type->range = token.range;
+  if (token.type == tok::amp) {
+    const SourceLocation begin = token.range.begin;
+    AdvanceLexer();
+
+    ReferenceMode mode;
     switch (token.type) {
       case tok::mut:
-        reference_type->mode = ReferenceMode::Mut;
+        mode = ReferenceMode::Mut;
         break;
       case tok::copy:
-        reference_type->mode = ReferenceMode::Copy;
+        mode = ReferenceMode::Copy;
         break;
       case tok::move_:
-        reference_type->mode = ReferenceMode::Move;
+        mode = ReferenceMode::Move;
         break;
-      default:
-        BOOST_ASSERT(false && "unsupported reference prefix");
+      default: {
+        HandleExpect({tok::mut, tok::copy, tok::move_});
+        ParseResult<TypeSyntax> type;
+        return type.Invalidate();
+      }
     }
+
+    auto reference_type = MakeNode<ReferenceTypeSyntax>();
+    reference_type->range = {begin, token.range.end};
+    reference_type->mode = mode;
     AdvanceLexer();
 
     auto referent_type = Type_();
@@ -1387,8 +1395,8 @@ ParseResult<TypeSyntax> Parser::Type_() {
     return named_type;
   }
 
-  HandleExpect({tok::l_square, tok::virtual_, tok::const_, tok::mut, tok::copy, tok::move_, tok::star, tok::func,
-                tok::builtin_type, tok::identifier});
+  HandleExpect(
+      {tok::l_square, tok::virtual_, tok::const_, tok::amp, tok::star, tok::func, tok::builtin_type, tok::identifier});
   ParseResult<TypeSyntax> type;
   return type.Invalidate();
 }
@@ -1430,39 +1438,12 @@ void Parser::HandleExpect(std::vector<tok::TokenType> expected) {
 }
 
 void Parser::ReportCurrentTokenError(std::string message) {
-  auto sources = lexer_->Sources();
   auto& token = lexer_->Token();
-
-  std::filesystem::path path;
-  int line = 0;
-  int column = 0;
-  std::string line_source;
-  int size = 0;
-
   if (token.type != tok::invalid && token.type != tok::eos) {
-    auto& loc = token.range.begin;
-    if (0 <= loc.file && loc.file < static_cast<int>(sources->size())) {
-      path = (*sources)[loc.file].path;
-      line_source = LineSource((*sources)[loc.file], loc.pos);
-      line = loc.line;
-      column = loc.column;
-      size = token.source_view.size();
-    } else {
-      // should not happen
-    }
+    diagnostic_engine_->Add(kErrorDiagnostic, token.range.begin, std::move(message), token.source_view.size());
   } else {
-    if (0 <= parsed_location_.file && parsed_location_.file < static_cast<int>(sources->size())) {
-      path = (*sources)[parsed_location_.file].path;
-      line_source = LineSource((*sources)[parsed_location_.file], parsed_location_.pos);
-      line = parsed_location_.line;
-      column = parsed_location_.column;
-      size = 0;
-    } else {
-      // should not happen
-    }
+    diagnostic_engine_->Add(kErrorDiagnostic, parsed_location_, std::move(message));
   }
-
-  diagnostic_engine_->Add(kErrorDiagnostic, path, line, column, std::move(message), line_source, size);
 }
 
 bool Parser::SkipUntil(tok::TokenType t, SkipUntilFlags flags) {

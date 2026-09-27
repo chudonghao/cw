@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "Diagnostic.h"
@@ -133,9 +134,6 @@ class Sema {
   /// \brief Destination for accumulated semantic diagnostics.
   DiagnosticEngine* diagnostic_engine_{};
 
-  /// \brief Source files referenced by AST locations.
-  const std::vector<Source>* sources_{};
-
   /// \brief Non-owning AST and persistent semantic state owner.
   ASTContext* ast_context_{};
 
@@ -151,12 +149,15 @@ class Sema {
   /// \brief Function whose body is currently undergoing semantic analysis.
   FunctionDecl* current_function_{};
 
+  bool type_layouts_ready_{};
+  std::unordered_map<const StructDecl*, bool> layout_prerequisites_;
+  std::vector<std::pair<TypeSyntax*, const Type*>> pending_layout_uses_;
+  std::unordered_map<const StructDecl*, bool> checked_struct_layouts_;
+  std::unordered_set<const Type*> invalid_layout_types_;
+
  public:
   /// \brief Sets the destination for semantic diagnostics.
   void SetDiagnosticEngine(DiagnosticEngine* diagnostic_engine);
-
-  /// \brief Sets the source files referenced by AST source locations.
-  void SetSources(const std::vector<Source>* sources);
 
   /// \brief Sets the owner of the AST and its persistent semantic state.
   void SetASTContext(ASTContext* ast_context);
@@ -180,6 +181,12 @@ class Sema {
   void ValidateObjectContainment(TranslationUnitDecl& translation_unit);
   bool ResolveTypeUse(TypeSyntax* type_syntax, TypeUseKind use, QualType& resolved_type);
   QualType ResolveType(TypeSyntax& type_syntax);
+  QualType ResolveTypeImpl(TypeSyntax& type_syntax);
+  void ValidateInitialLayouts(TranslationUnitDecl& translation_unit);
+  bool HasLayoutPrerequisites(const Type& type);
+  bool ValidateStructLayout(StructDecl& declaration);
+  bool ValidateObjectLayout(Node& owner, const Type& type);
+  bool ValidateLayoutUse(Node& owner, const Type& type);
   bool ValidateTypeUse(Node& owner, QualType type, TypeUseKind use);
   bool ValidateAbstractObjectType(Node& owner, QualType type, TypeUseKind use);
   bool ValidateAbstractTypeUse(TypeSyntax& type_syntax, QualType type, TypeUseKind use);

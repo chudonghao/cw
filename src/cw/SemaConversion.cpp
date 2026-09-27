@@ -821,9 +821,9 @@ std::unique_ptr<Expr> CommitConversion(std::unique_ptr<Expr> expression, QualTyp
     } else if (const auto* numeric = std::get_if<NumericConversion>(&step.semantics)) {
       expression = Cast(std::move(expression), step.result, numeric->kind);
     } else if (const auto* base = std::get_if<BaseObjectProjection>(&step.semantics)) {
-      expression = Cast(std::move(expression), step.result, ImplicitConversionKind::DerivedToBase, base->path);
+      expression = Cast(std::move(expression), step.result, ImplicitConversionKind::BaseSubobject, base->path);
     } else if (const auto* base = std::get_if<BasePointerConversion>(&step.semantics)) {
-      expression = Cast(std::move(expression), step.result, ImplicitConversionKind::DerivedToBase, base->path);
+      expression = Cast(std::move(expression), step.result, ImplicitConversionKind::BaseSubobject, base->path);
     } else if (std::holds_alternative<TemporaryMaterialization>(step.semantics)) {
       auto temporary = std::make_unique<MaterializeTemporaryExpr>();
       temporary->range = expression->range;

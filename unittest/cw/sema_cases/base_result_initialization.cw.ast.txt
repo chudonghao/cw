@@ -1,0 +1,62 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:base}} <base_result_initialization.cw:1:1, col:15> Base
+|-ConstructorDecl {{address:default}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+| `-CompoundStmt {{address}} <col:13, col:15>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-ConstructorDecl {{address:move}} <line:3:1, col:32> Base target Struct {{address:base}} 'Base' 'func (&move Base) void'
+| |-ParmVarDecl {{address:source}} <col:11, col:28> source '&move Base'
+| | `-ReferenceType {{address}} <col:18, col:28> '&move'
+| |   `-NamedType {{address}} <col:24, col:28> 'Base'
+| `-CompoundStmt {{address}} <col:30, col:32>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-DestructorDecl {{address}} <line:4:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+| `-CompoundStmt {{address}} <col:13, col:15>
+|-FunctionDecl {{address:make}} <line:5:1, col:28> Make 'func () Base'
+| |-ReturnVarDecl {{address:result}} <col:13, col:17> 'Base'
+| | `-NamedType {{address}} <col:13, col:17> 'Base'
+| `-CompoundStmt {{address}} <col:18, col:28>
+|   `-ImplicitResultInitializationExpr {{address}} <col:20, col:26> 'void' ReturnVar {{address:result}} 'Base'
+|     `-ConstructionExpr {{address}} <col:20, col:26> 'Base' pure-rvalue complete-object target <col:20, col:24> 'Base' Constructor {{address:default}} 'Base' 'func () void'
+|-StructDecl {{address:derived}} <line:6:1, col:25> Derived : 'Base'
+| `-BaseType 'Base' Struct {{address:base}} 'Base'
+|-ConstructorDecl {{address}} <line:7:1, col:42> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+| `-CompoundStmt {{address}} <col:16, col:42>
+|   |-ExprStmt {{address}} <col:18, col:40>
+|   | `-InitializationExpr {{address}} <col:18, col:39> 'void'
+|   |   |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|   |   | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
+|   |   `-ParenExpr {{address}} <col:31, col:39> 'Base' pure-rvalue
+|   |     `-ConstructionExpr {{address}} <col:32, col:38> 'Base' pure-rvalue base-subobject target <col:32, col:36> 'Base' Constructor {{address:default}} 'Base' 'func () void'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-ConstructorDecl {{address}} <line:8:1, col:49> Derived target Struct {{address:derived}} 'Derived' 'func (i32) void'
+| |-ParmVarDecl {{address:value}} <col:14, col:23> value 'i32'
+| | `-BuiltinType {{address}} <col:20, col:23> 'i32'
+| `-CompoundStmt {{address}} <col:25, col:49>
+|   |-ExprStmt {{address}} <col:27, col:47>
+|   | `-InitializationExpr {{address}} <col:27, col:46> 'void'
+|   |   |-BaseSubobjectExpr {{address}} <col:27, col:36> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|   |   | `-ThisExpr {{address}} <col:27, col:31> 'Derived' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:40, col:46> 'Base' pure-rvalue base-subobject Constructor {{address:move}} 'Base' 'func (&move Base) void'
+|   |     `-MaterializeTemporaryExpr {{address}} <col:40, col:46> 'Base' move-lvalue
+|   |       `-CallExpr {{address}} <col:40, col:46> 'Base' pure-rvalue
+|   |         `-DeclRefExpr {{address}} <col:40, col:44> 'func () Base' Function {{address:make}} 'Make' 'func () Base'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-ConstructorDecl {{address}} <line:9:1, col:75> Derived target Struct {{address:derived}} 'Derived' 'func (bool) void'
+| |-ParmVarDecl {{address:condition}} <col:14, col:28> condition 'bool'
+| | `-BuiltinType {{address}} <col:24, col:28> 'bool'
+| `-CompoundStmt {{address}} <col:30, col:75>
+|   |-ExprStmt {{address}} <col:32, col:73>
+|   | `-InitializationExpr {{address}} <col:32, col:72> 'void'
+|   |   |-BaseSubobjectExpr {{address}} <col:32, col:41> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|   |   | `-ThisExpr {{address}} <col:32, col:36> 'Derived' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:45, col:72> 'Base' pure-rvalue base-subobject Constructor {{address:move}} 'Base' 'func (&move Base) void'
+|   |     `-MaterializeTemporaryExpr {{address}} <col:45, col:72> 'Base' move-lvalue
+|   |       `-ConditionalOperator {{address}} <col:45, col:72> 'Base' pure-rvalue
+|   |         |-ImplicitCastExpr {{address}} <col:45, col:54> 'bool' pure-rvalue <LValueToRValue>
+|   |         | `-DeclRefExpr {{address}} <col:45, col:54> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+|   |         |-ConstructionExpr {{address}} <col:57, col:63> 'Base' pure-rvalue complete-object target <col:57, col:61> 'Base' Constructor {{address:default}} 'Base' 'func () void'
+|   |         `-CallExpr {{address}} <col:66, col:72> 'Base' pure-rvalue
+|   |           `-DeclRefExpr {{address}} <col:66, col:70> 'func () Base' Function {{address:make}} 'Make' 'func () Base'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+`-DestructorDecl {{address}} <line:10:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+  `-CompoundStmt {{address}} <col:16, col:18>

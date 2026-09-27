@@ -10,7 +10,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ABI.h"
 #include "CFG.h"
 
 namespace cw {
@@ -29,7 +28,6 @@ class CFGBuilder {
   };
 
   const FunctionDecl* function_;  ///< Null while building global initialization.
-  const ABIKind abi_;
   std::unique_ptr<CFG> cfg_;
   std::vector<const CompoundStmt*> scope_stack_;
   std::vector<LoopContext> loop_stack_;
@@ -39,12 +37,12 @@ class CFGBuilder {
 
  public:
   /// \brief Builds the CFG for one function definition.
-  static std::unique_ptr<CFG> Build(const FunctionDecl& function, ABIKind abi);
+  static std::unique_ptr<CFG> Build(const FunctionDecl& function);
   /// \brief Builds one CFG for the translation unit's ordered global initialization.
-  static std::unique_ptr<CFG> Build(const TranslationUnitDecl& translation_unit, ABIKind abi);
+  static std::unique_ptr<CFG> Build(const TranslationUnitDecl& translation_unit);
 
  private:
-  CFGBuilder(const FunctionDecl* function, ABIKind abi);
+  explicit CFGBuilder(const FunctionDecl* function);
 
   std::unique_ptr<CFG> BuildFunction();
   std::unique_ptr<CFG> BuildGlobals(const TranslationUnitDecl& translation_unit);

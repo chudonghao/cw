@@ -42,7 +42,9 @@ add_library(
   Symbol.h Symbol.cpp
   SymbolTable.h SymbolTable.cpp
   ASTContext.h ASTContext.cpp
-  ABI.h
+  TargetInfo.h TargetInfo.cpp
+  TypeLayout.h TypeLayout.cpp
+  VTableLayout.h VTableLayout.cpp
   Diagnostic.h Diagnostic.cpp
   ParseResult.h
   CFG.h CFG.cpp
@@ -51,6 +53,10 @@ add_library(
   ast.h ast.cpp
   ASTVisitor.h ASTVisitor.cpp
   ASTDumper.h ASTDumper.cpp
+  CodeGen.h CodeGen.cpp
+  CodeGenFunction.h CodeGenFunction.cpp
 )
-target_link_libraries(cw PUBLIC cw.lang PRIVATE fmt::fmt Boost::charconv)
+target_link_libraries(cw PUBLIC cw.lang LLVM PRIVATE fmt::fmt Boost::charconv)
 target_include_directories(cw PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../ ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(cw SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
+target_compile_options(cw PRIVATE "SHELL:${LLVM_DEFINITIONS}")

@@ -7,12 +7,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
-#include <boost/multiprecision/cpp_int.hpp>
+#include <llvm/ADT/APFloat.h>
+#include <llvm/ADT/APSInt.h>
 
 #include "BuiltinTypes.h"
 #include "ExprGrammar.h"
@@ -48,6 +50,7 @@ enum class NodeKind {
   // Stmt
   CompoundStmt,
   ExprStmt,
+  ImplicitThisInitializationCompleteStmt,
   DeclStmt,
   IfStmt,
   WhileStmt,
@@ -159,7 +162,7 @@ enum class ImplicitConversionKind {
   IntegerToFloat,
   FloatToInteger,
   Qualification,
-  DerivedToBase,
+  BaseSubobject,
 };
 
 /// \brief Constructor entry kind used by a construction expression.
@@ -343,6 +346,10 @@ struct FieldDecl : ValueDecl {
 
 /// \brief Struct declaration.
 struct StructDecl : NamedDecl {
+ private:
+  mutable std::optional<bool> cxx11_standard_layout_;
+
+ public:
   std::string base{};                                  ///< Optional base class name.
   SourceRange base_range{};                            ///< Source range of the base name.
   const StructType* base_type{};                       ///< Non-owning resolved base type.
@@ -351,6 +358,17 @@ struct StructDecl : NamedDecl {
   bool is_abstract{};                                  ///< Whether a final virtual slot remains abstract.
   std::unique_ptr<VirtualDecl> VirtualDecl{};          ///< Virtual function block.
   std::vector<std::unique_ptr<FieldDecl>> Fields{};    ///< Field declarations.
+
+  /// \brief Queries declared or inherited virtual functions in a complete, valid type structure.
+  bool IsPolymorphic() const;
+
+  /// \brief Queries structural emptiness, independent of the target's object size.
+  /// The type structure must be complete and valid; zero-length array fields are still fields.
+  bool IsEmpty() const;
+
+  /// \brief Queries the original C++11 standard-layout classification.
+  /// Type semantics must be complete and valid; the structure must remain unchanged after caching.
+  bool IsCXX11StandardLayout() const;
 
   NodeKind GetKind() const override { return NodeKind::StructDecl; }
   void Accept(ASTVisitor& visitor) override;
@@ -445,7 +463,7 @@ struct Expr : Node {
 
 /// \brief Integer literal expression (123, 0x1F).
 struct IntegerLiteral : Expr {
-  boost::multiprecision::cpp_int value{};  ///< Exact integer value.
+  llvm::APSInt value{1, true};  ///< Exact integer value.
 
   NodeKind GetKind() const override { return NodeKind::IntegerLiteral; }
   void Accept(ASTVisitor& visitor) override;
@@ -463,7 +481,7 @@ struct CharacterLiteral : Expr {
 
 /// \brief Float literal expression (1.23, 3.14f).
 struct FloatLiteral : Expr {
-  std::variant<float, double> value{};  ///< Float value.
+  llvm::APFloat value{llvm::APFloat::IEEEdouble()};  ///< Value in the literal's floating-point format.
 
   NodeKind GetKind() const override { return NodeKind::FloatLiteral; }
   void Accept(ASTVisitor& visitor) override;
@@ -580,6 +598,8 @@ struct ConditionalOperator : Expr {
 };
 
 /// \brief Member access expression (a.b, a->b).
+/// After Sema, Base denotes the declaring struct or a pointer to it; inherited
+/// access records the intervening base path in an implicit BaseSubobject cast.
 struct MemberExpr : Expr {
   std::unique_ptr<Expr> Base{};    ///< Base expression.
   std::string member{};            ///< Member name.
@@ -645,6 +665,7 @@ struct CallExpr : Expr {
 struct OperatorCallExpr : CallExpr {
   NodeKind GetKind() const override { return NodeKind::OperatorCallExpr; }
   void Accept(ASTVisitor& visitor) override;
+  bool IsSimpleAssignment() const;
 };
 
 /// \brief Construction of a complete object, base subobject, or delegated current object.
@@ -717,11 +738,13 @@ struct ImplicitOverloadSetSelectionExpr : Expr {
 
 /// \brief Implicit built-in value change or same-object projection inserted by semantic analysis.
 /// NoOp retains object identity and value category as const access. LValueToRValue reads
-/// scalar or trivial aggregate objects. DerivedToBase records a static base path.
+/// scalar or trivial aggregate objects. BaseSubobject records a static base path.
+/// For objects, BaseSubobject preserves identity and glvalue category without a read;
+/// for pointers, it produces a pointer value and preserves null pointers.
 struct ImplicitCastExpr : Expr {
   ImplicitConversionKind conversion_kind{ImplicitConversionKind::Invalid};  ///< Performed conversion.
   std::unique_ptr<Expr> SubExpr{};                                          ///< Converted source expression.
-  std::vector<const StructDecl*> base_path{};  ///< Non-owning direct-base path for DerivedToBase.
+  std::vector<const StructDecl*> base_path{};  ///< Non-owning direct-base path for BaseSubobject.
 
   NodeKind GetKind() const override { return NodeKind::ImplicitCastExpr; }
   void Accept(ASTVisitor& visitor) override;
@@ -764,6 +787,13 @@ struct ExprStmt : Stmt {
   std::unique_ptr<Expr> Expr{};  ///< The expression.
 
   NodeKind GetKind() const override { return NodeKind::ExprStmt; }
+  void Accept(ASTVisitor& visitor) override;
+  void Traverse(ASTVisitor& visitor) override;
+};
+
+/// \brief Ends the current constructor layer's initialization after full-expression cleanup.
+struct ImplicitThisInitializationCompleteStmt : Stmt {
+  NodeKind GetKind() const override { return NodeKind::ImplicitThisInitializationCompleteStmt; }
   void Accept(ASTVisitor& visitor) override;
   void Traverse(ASTVisitor& visitor) override;
 };

@@ -47,6 +47,7 @@ void ASTVisitor::Visit(FieldDecl& n) { Visit(static_cast<ValueDecl&>(n)); }
 
 void ASTVisitor::Visit(CompoundStmt& n) { Visit(static_cast<Stmt&>(n)); }
 void ASTVisitor::Visit(ExprStmt& n) { Visit(static_cast<Stmt&>(n)); }
+void ASTVisitor::Visit(ImplicitThisInitializationCompleteStmt& n) { Visit(static_cast<Stmt&>(n)); }
 void ASTVisitor::Visit(DeclStmt& n) { Visit(static_cast<Stmt&>(n)); }
 void ASTVisitor::Visit(IfStmt& n) { Visit(static_cast<Stmt&>(n)); }
 void ASTVisitor::Visit(WhileStmt& n) { Visit(static_cast<Stmt&>(n)); }

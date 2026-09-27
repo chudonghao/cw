@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <iomanip>
 
+#include <llvm/ADT/SmallString.h>
+
 namespace cw {
 
 ASTDumper::ASTDumper(std::ostream& os, const std::vector<Source>& sources) : os_(os), sources_(sources) {}
@@ -184,13 +186,13 @@ void ASTDumper::PrintUnqualifiedTypeName(const Type& type) {
       const auto& reference_type = static_cast<const ReferenceType&>(type);
       switch (reference_type.GetMode()) {
         case ReferenceMode::Mut:
-          os_ << "mut ";
+          os_ << "&mut ";
           break;
         case ReferenceMode::Copy:
-          os_ << "copy ";
+          os_ << "&copy ";
           break;
         case ReferenceMode::Move:
-          os_ << "move ";
+          os_ << "&move ";
           break;
       }
       PrintTypeName(QualType(reference_type.GetReferentType()));
@@ -378,13 +380,13 @@ void ASTDumper::Visit(ReferenceTypeSyntax& n) {
   PrintNode("ReferenceType", n);
   switch (n.mode) {
     case ReferenceMode::Mut:
-      os_ << " 'mut'";
+      os_ << " '&mut'";
       break;
     case ReferenceMode::Copy:
-      os_ << " 'copy'";
+      os_ << " '&copy'";
       break;
     case ReferenceMode::Move:
-      os_ << " 'move'";
+      os_ << " '&move'";
       break;
   }
   PrintErrorMark(n);
@@ -656,6 +658,11 @@ void ASTDumper::Visit(ExprStmt& n) {
   VisitChild(n.Expr.get(), true);
 }
 
+void ASTDumper::Visit(ImplicitThisInitializationCompleteStmt& n) {
+  PrintNode("ImplicitThisInitializationCompleteStmt", n);
+  os_ << "\n";
+}
+
 void ASTDumper::Visit(DeclStmt& n) {
   PrintNode("DeclStmt", n);
   PrintErrorMark(n);
@@ -724,7 +731,9 @@ void ASTDumper::Visit(ReturnStmt& n) {
 void ASTDumper::Visit(IntegerLiteral& n) {
   PrintNode("IntegerLiteral", n);
   PrintExprType(n);
-  os_ << " " << n.value;
+  llvm::SmallString<32> value;
+  n.value.toString(value);
+  os_ << " " << value.c_str();
   PrintErrorMark(n);
   os_ << "\n";
 }
@@ -740,8 +749,9 @@ void ASTDumper::Visit(CharacterLiteral& n) {
 void ASTDumper::Visit(FloatLiteral& n) {
   PrintNode("FloatLiteral", n);
   PrintExprType(n);
-  os_ << " ";
-  std::visit([this](auto&& v) { os_ << v; }, n.value);
+  llvm::SmallString<32> value;
+  n.value.toString(value);
+  os_ << " " << value.c_str();
   PrintErrorMark(n);
   os_ << "\n";
 }
@@ -1056,7 +1066,7 @@ void ASTDumper::Visit(ImplicitCastExpr& n) {
   PrintNode("ImplicitCastExpr", n);
   PrintExprType(n);
   os_ << " <" << to_string(n.conversion_kind) << ">";
-  if (n.conversion_kind == ImplicitConversionKind::DerivedToBase) {
+  if (n.conversion_kind == ImplicitConversionKind::BaseSubobject) {
     os_ << " path";
     for (const StructDecl* declaration : n.base_path) {
       if (declaration) {

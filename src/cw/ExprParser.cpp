@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <iostream>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -552,21 +551,9 @@ int ExprParser::Reduce_PrimaryExpr__float_literal() {
   if (!std::holds_alternative<FloatProperty>(token.property)) {
     return kHandleSymbolResultError;
   }
-  auto& property = std::get<FloatProperty>(token.property);
-  if (std::holds_alternative<std::monostate>(property.value)) {
-    return kHandleSymbolResultError;
-  }
-
   auto literal = std::make_unique<FloatLiteral>();
   literal->range = token.range;
-  std::visit(
-      [&](auto value) {
-        using Value = decltype(value);
-        if constexpr (!std::is_same_v<Value, std::monostate>) {
-          literal->value = value;
-        }
-      },
-      property.value);
+  literal->value = std::move(std::get<FloatProperty>(token.property).value);
   symbol.value = std::unique_ptr<Expr>(std::move(literal));
   return kHandleSymbolResultReduce;
 }
