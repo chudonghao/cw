@@ -1,4 +1,4 @@
-define noundef zeroext i1 @Flip(i1 noundef zeroext %value) {
+define noundef zeroext i1 @"cw:Flip:func(bool)bool"(i1 noundef zeroext %value) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca i8, align 1
@@ -18,7 +18,7 @@ entry:
   ret i1 %loadedv4
 }
 
-define noundef nonnull align 1 dereferenceable(1) ptr @Refer(ptr noundef nonnull align 1 dereferenceable(1) %value) {
+define noundef nonnull align 1 dereferenceable(1) ptr @"cw:Refer:func(&mut bool)&mut bool"(ptr noundef nonnull align 1 dereferenceable(1) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -29,7 +29,7 @@ entry:
   ret ptr %1
 }
 
-define noundef zeroext i1 @BooleanObjects() {
+define noundef zeroext i1 @"cw:BooleanObjects:func()bool"() {
 entry:
   %.result = alloca i8, align 1
   %original = alloca i8, align 1
@@ -38,10 +38,10 @@ entry:
   store i8 1, ptr %original, align 1
   %0 = load i8, ptr %original, align 1
   %loadedv = icmp ne i8 %0, 0
-  %call = call noundef zeroext i1 @Flip(i1 noundef zeroext %loadedv)
+  %call = call noundef zeroext i1 @"cw:Flip:func(bool)bool"(i1 noundef zeroext %loadedv)
   %storedv = zext i1 %call to i8
   store i8 %storedv, ptr %copied, align 1
-  %call1 = call noundef nonnull align 1 dereferenceable(1) ptr @Refer(ptr noundef nonnull align 1 dereferenceable(1) %original)
+  %call1 = call noundef nonnull align 1 dereferenceable(1) ptr @"cw:Refer:func(&mut bool)&mut bool"(ptr noundef nonnull align 1 dereferenceable(1) %original)
   store ptr %call1, ptr %bound, align 8
   %1 = load ptr, ptr %bound, align 8
   store i8 0, ptr %1, align 1

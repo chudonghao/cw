@@ -50,14 +50,14 @@ bool IsBetterCandidate(const std::vector<ConversionSource>& arguments, const Via
 
 MatchArgumentsResult MatchArguments(const std::vector<ConversionSource>& arguments,
                                     const std::vector<const Type*>& parameter_types, ASTContext& ast_context,
-                                    const SymbolTable& symbol_table) {
+                                    const LookupContext& lookup_context) {
   if (parameter_types.size() != arguments.size()) {
     return CandidateFailure{CandidateArityFailure{parameter_types.size(), arguments.size()}};
   }
   std::vector<ConversionSequence> conversions;
   conversions.reserve(arguments.size());
   for (std::size_t index = 0; index < arguments.size(); ++index) {
-    auto result = BuildConversion(arguments[index], QualType(parameter_types[index]), ast_context, symbol_table);
+    auto result = BuildConversion(arguments[index], QualType(parameter_types[index]), ast_context, lookup_context);
     if (const auto* failure = std::get_if<ConversionFailure>(&result)) {
       return CandidateFailure{CandidateArgumentFailure{index, *failure}};
     }
@@ -68,14 +68,14 @@ MatchArgumentsResult MatchArguments(const std::vector<ConversionSource>& argumen
 
 OverloadResult ResolveOverload(const std::vector<ConversionSource>& arguments,
                                const std::vector<const FunctionDecl*>& functions, ASTContext& ast_context,
-                               const SymbolTable& symbol_table) {
+                               const LookupContext& lookup_context) {
   // Retain failed matches for diagnostics while collecting candidates eligible for ranking.
   std::vector<ViableCandidate> viable;
   viable.reserve(functions.size());
   NoViableOverload no_viable;
   for (const FunctionDecl* declaration : functions) {
     BOOST_ASSERT(declaration);
-    auto match = MatchArguments(arguments, FunctionParameterTypes(*declaration), ast_context, symbol_table);
+    auto match = MatchArguments(arguments, FunctionParameterTypes(*declaration), ast_context, lookup_context);
     if (const auto* failure = std::get_if<CandidateFailure>(&match)) {
       no_viable.candidates.push_back({declaration, *failure});
     } else {

@@ -11,6 +11,8 @@
 #include <boost/assert.hpp>
 #include <boost/container_hash/hash.hpp>
 
+#include "NamespaceContext.h"
+
 namespace cw {
 
 unsigned ASTContext::GetIntegerBitWidth(const BuiltinType& type) const {
@@ -46,9 +48,23 @@ FloatingPointProperties ASTContext::GetFloatingPointProperties(const BuiltinType
 }
 
 ASTContext::ASTContext(TargetInfo target_info)
-    : target_info_(std::move(target_info)), translation_unit_(std::make_unique<TranslationUnitDecl>()) {}
+    : target_info_(std::move(target_info)),
+      root_namespace_(new NamespaceContext({}, nullptr)),
+      translation_unit_(std::make_unique<TranslationUnitDecl>()) {}
 
 ASTContext::~ASTContext() = default;
+
+NamespaceContext* ASTContext::GetOrCreateNamespace(NamespaceContext& parent, const NamespaceDecl& declaration) {
+  BOOST_ASSERT(!declaration.name.empty());
+  auto& child = parent.children_[declaration.name];
+  if (!child) {
+    child.reset(new NamespaceContext(declaration.name, &parent));
+    const bool bound = parent.Bind(declaration.name, static_cast<const NamespaceContext*>(child.get()));
+    BOOST_ASSERT(bound);
+  }
+  child->declarations_.push_back(&declaration);
+  return child.get();
+}
 
 TypeLayoutResult ASTContext::GetTypeLayout(const Type& type) const {
   const auto it = type_layouts_.find(&type);

@@ -1,4 +1,4 @@
-define noundef zeroext i1 @Touch(ptr noundef nonnull align 1 dereferenceable(1) %flag) {
+define noundef zeroext i1 @"cw:Touch:func(&mut bool)bool"(ptr noundef nonnull align 1 dereferenceable(1) %flag) {
 entry:
   %.result = alloca i8, align 1
   %flag.addr = alloca ptr, align 8
@@ -20,7 +20,7 @@ entry:
   ret i1 %loadedv3
 }
 
-define noundef zeroext i1 @BooleanLogic(i1 noundef zeroext %a, i1 noundef zeroext %b, i1 noundef zeroext %c, ptr noundef nonnull align 1 dereferenceable(1) %flag) {
+define noundef zeroext i1 @"cw:BooleanLogic:func(bool,bool,bool,&mut bool)bool"(i1 noundef zeroext %a, i1 noundef zeroext %b, i1 noundef zeroext %c, ptr noundef nonnull align 1 dereferenceable(1) %flag) {
 entry:
   %.result = alloca i8, align 1
   %a.addr = alloca i8, align 1
@@ -50,7 +50,7 @@ land.rhs:                                         ; preds = %land.rhs3
 
 lor.rhs:                                          ; preds = %land.rhs
   %3 = load ptr, ptr %flag.addr, align 8
-  %call = call noundef zeroext i1 @Touch(ptr noundef nonnull align 1 dereferenceable(1) %3)
+  %call = call noundef zeroext i1 @"cw:Touch:func(&mut bool)bool"(ptr noundef nonnull align 1 dereferenceable(1) %3)
   br label %lor.end
 
 lor.end:                                          ; preds = %lor.rhs, %land.rhs

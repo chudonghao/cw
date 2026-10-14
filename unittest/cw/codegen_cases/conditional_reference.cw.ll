@@ -1,4 +1,4 @@
-define noundef nonnull align 1 dereferenceable(1) ptr @SelectMutable(i1 noundef zeroext %flag, ptr noundef nonnull align 1 dereferenceable(1) %left, ptr noundef nonnull align 1 dereferenceable(1) %right) {
+define noundef nonnull align 1 dereferenceable(1) ptr @"cw:SelectMutable:func(bool,&mut bool,&mut bool)&mut bool"(i1 noundef zeroext %flag, ptr noundef nonnull align 1 dereferenceable(1) %left, ptr noundef nonnull align 1 dereferenceable(1) %right) {
 entry:
   %.result = alloca ptr, align 8
   %flag.addr = alloca i8, align 1
@@ -27,7 +27,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret ptr %3
 }
 
-define noundef zeroext i1 @ReadMutable(i1 noundef zeroext %flag, i1 noundef zeroext %left, i1 noundef zeroext %right) {
+define noundef zeroext i1 @"cw:ReadMutable:func(bool,bool,bool)bool"(i1 noundef zeroext %flag, i1 noundef zeroext %left, i1 noundef zeroext %right) {
 entry:
   %.result = alloca i8, align 1
   %flag.addr = alloca i8, align 1
@@ -41,7 +41,7 @@ entry:
   store i8 %storedv2, ptr %right.addr, align 1
   %0 = load i8, ptr %flag.addr, align 1
   %loadedv = icmp ne i8 %0, 0
-  %call = call noundef nonnull align 1 dereferenceable(1) ptr @SelectMutable(i1 noundef zeroext %loadedv, ptr noundef nonnull align 1 dereferenceable(1) %left.addr, ptr noundef nonnull align 1 dereferenceable(1) %right.addr)
+  %call = call noundef nonnull align 1 dereferenceable(1) ptr @"cw:SelectMutable:func(bool,&mut bool,&mut bool)&mut bool"(i1 noundef zeroext %loadedv, ptr noundef nonnull align 1 dereferenceable(1) %left.addr, ptr noundef nonnull align 1 dereferenceable(1) %right.addr)
   %1 = load i8, ptr %call, align 1
   %loadedv3 = icmp ne i8 %1, 0
   %storedv4 = zext i1 %loadedv3 to i8
@@ -51,7 +51,7 @@ entry:
   ret i1 %loadedv5
 }
 
-define noundef nonnull align 1 dereferenceable(1) ptr @SelectCopy(i1 noundef zeroext %flag, ptr noundef nonnull align 1 dereferenceable(1) %left, ptr noundef nonnull align 1 dereferenceable(1) %right) {
+define noundef nonnull align 1 dereferenceable(1) ptr @"cw:SelectCopy:func(bool,&copy bool,&copy bool)&copy bool"(i1 noundef zeroext %flag, ptr noundef nonnull align 1 dereferenceable(1) %left, ptr noundef nonnull align 1 dereferenceable(1) %right) {
 entry:
   %.result = alloca ptr, align 8
   %flag.addr = alloca i8, align 1
@@ -80,7 +80,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret ptr %3
 }
 
-define noundef zeroext i1 @ReadCopy(i1 noundef zeroext %flag, i1 noundef zeroext %left, i1 noundef zeroext %right) {
+define noundef zeroext i1 @"cw:ReadCopy:func(bool,bool,bool)bool"(i1 noundef zeroext %flag, i1 noundef zeroext %left, i1 noundef zeroext %right) {
 entry:
   %.result = alloca i8, align 1
   %flag.addr = alloca i8, align 1
@@ -94,7 +94,7 @@ entry:
   store i8 %storedv2, ptr %right.addr, align 1
   %0 = load i8, ptr %flag.addr, align 1
   %loadedv = icmp ne i8 %0, 0
-  %call = call noundef nonnull align 1 dereferenceable(1) ptr @SelectCopy(i1 noundef zeroext %loadedv, ptr noundef nonnull align 1 dereferenceable(1) %left.addr, ptr noundef nonnull align 1 dereferenceable(1) %right.addr)
+  %call = call noundef nonnull align 1 dereferenceable(1) ptr @"cw:SelectCopy:func(bool,&copy bool,&copy bool)&copy bool"(i1 noundef zeroext %loadedv, ptr noundef nonnull align 1 dereferenceable(1) %left.addr, ptr noundef nonnull align 1 dereferenceable(1) %right.addr)
   %1 = load i8, ptr %call, align 1
   %loadedv3 = icmp ne i8 %1, 0
   %storedv4 = zext i1 %loadedv3 to i8
@@ -104,7 +104,7 @@ entry:
   ret i1 %loadedv5
 }
 
-define noundef nonnull align 1 dereferenceable(1) ptr @SelectMove(i1 noundef zeroext %flag, ptr noundef nonnull align 1 dereferenceable(1) %left, ptr noundef nonnull align 1 dereferenceable(1) %right) {
+define noundef nonnull align 1 dereferenceable(1) ptr @"cw:SelectMove:func(bool,&move bool,&move bool)&move bool"(i1 noundef zeroext %flag, ptr noundef nonnull align 1 dereferenceable(1) %left, ptr noundef nonnull align 1 dereferenceable(1) %right) {
 entry:
   %.result = alloca ptr, align 8
   %flag.addr = alloca i8, align 1
@@ -133,7 +133,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret ptr %3
 }
 
-define noundef zeroext i1 @ReadMove(i1 noundef zeroext %flag, i1 noundef zeroext %left, i1 noundef zeroext %right) {
+define noundef zeroext i1 @"cw:ReadMove:func(bool,bool,bool)bool"(i1 noundef zeroext %flag, i1 noundef zeroext %left, i1 noundef zeroext %right) {
 entry:
   %.result = alloca i8, align 1
   %flag.addr = alloca i8, align 1
@@ -147,7 +147,7 @@ entry:
   store i8 %storedv2, ptr %right.addr, align 1
   %0 = load i8, ptr %flag.addr, align 1
   %loadedv = icmp ne i8 %0, 0
-  %call = call noundef nonnull align 1 dereferenceable(1) ptr @SelectMove(i1 noundef zeroext %loadedv, ptr noundef nonnull align 1 dereferenceable(1) %left.addr, ptr noundef nonnull align 1 dereferenceable(1) %right.addr)
+  %call = call noundef nonnull align 1 dereferenceable(1) ptr @"cw:SelectMove:func(bool,&move bool,&move bool)&move bool"(i1 noundef zeroext %loadedv, ptr noundef nonnull align 1 dereferenceable(1) %left.addr, ptr noundef nonnull align 1 dereferenceable(1) %right.addr)
   %1 = load i8, ptr %call, align 1
   %loadedv3 = icmp ne i8 %1, 0
   %storedv4 = zext i1 %loadedv3 to i8

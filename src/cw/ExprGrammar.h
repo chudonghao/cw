@@ -14,6 +14,8 @@ enum ExprGrammarSymbol : int {
   Expr,
   StringLiterals,
   ID,
+  NamePrefix,
+  UnqualifiedOperatorFunctionName,
   ArgumentList,
   ParenthesizedArgumentList,
   ArrayInitializer,
@@ -90,6 +92,7 @@ enum ExprGrammarSymbol : int {
   question,             // ?
   colon,                // :
   colonequal,           // :=
+  coloncolon,           // ::
   equal,                // =
   plusequal,            // +=
   minusequal,           // -=
@@ -133,6 +136,10 @@ inline const char* to_string(ExprGrammarSymbol symbol) {
       return "StringLiterals";
     case ID:
       return "ID";
+    case NamePrefix:
+      return "NamePrefix";
+    case UnqualifiedOperatorFunctionName:
+      return "UnqualifiedOperatorFunctionName";
     case ArgumentList:
       return "ArgumentList";
     case ParenthesizedArgumentList:
@@ -257,6 +264,8 @@ inline const char* to_string(ExprGrammarSymbol symbol) {
       return ":";
     case colonequal:
       return ":=";
+    case coloncolon:
+      return "::";
     case equal:
       return "=";
     case plusequal:
@@ -317,6 +326,8 @@ inline ExprGrammarSymbol from_string(ExprGrammarSymbol tag, const char* str) {
   if (strcmp(str, to_string(StringLiterals)) == 0) {
     return StringLiterals;
   }
+  if (strcmp(str, to_string(NamePrefix)) == 0) return NamePrefix;
+  if (strcmp(str, to_string(UnqualifiedOperatorFunctionName)) == 0) return UnqualifiedOperatorFunctionName;
   if (strcmp(str, to_string(ID)) == 0) {
     return ID;
   }
@@ -506,6 +517,9 @@ inline ExprGrammarSymbol from_string(ExprGrammarSymbol tag, const char* str) {
   if (strcmp(str, to_string(colonequal)) == 0) {
     return colonequal;
   }
+  if (strcmp(str, to_string(coloncolon)) == 0) {
+    return coloncolon;
+  }
   if (strcmp(str, to_string(equal)) == 0) {
     return equal;
   }
@@ -597,6 +611,9 @@ inline lang::ProductionVec<expr::ExprGrammarSymbol> ExprGrammarProductions() {
   P("StringLiterals", "StringLiterals", "string_literal");
 
   P("ID", "identifier");
+  P("ID", "NamePrefix", "identifier");
+  P("NamePrefix", "::");
+  P("NamePrefix", "ID", "::");
 
   P("ArgumentList", "T16");
   P("ArgumentList", "ArgumentList", ",", "T16");
@@ -611,22 +628,25 @@ inline lang::ProductionVec<expr::ExprGrammarSymbol> ExprGrammarProductions() {
   P("ArrayInitializer", "{", "}");
   P("ArrayInitializer", "{", "ArrayElementList", "}");
 
-  P("NonVirtualCallName", "nonvirtual", "identifier");
+  P("NonVirtualCallName", "nonvirtual", "ID");
 
-  P("OperatorFunctionName", "operator", "+");
-  P("OperatorFunctionName", "operator", "-");
-  P("OperatorFunctionName", "operator", "!");
-  P("OperatorFunctionName", "operator", "*");
-  P("OperatorFunctionName", "operator", "/");
-  P("OperatorFunctionName", "operator", "%");
-  P("OperatorFunctionName", "operator", "<");
-  P("OperatorFunctionName", "operator", "<=");
-  P("OperatorFunctionName", "operator", ">");
-  P("OperatorFunctionName", "operator", ">=");
-  P("OperatorFunctionName", "operator", "==");
-  P("OperatorFunctionName", "operator", "!=");
-  P("OperatorFunctionName", "operator", "=");
-  P("OperatorFunctionName", "operator", "(", ")");
+  P("UnqualifiedOperatorFunctionName", "operator", "+");
+  P("UnqualifiedOperatorFunctionName", "operator", "-");
+  P("UnqualifiedOperatorFunctionName", "operator", "!");
+  P("UnqualifiedOperatorFunctionName", "operator", "*");
+  P("UnqualifiedOperatorFunctionName", "operator", "/");
+  P("UnqualifiedOperatorFunctionName", "operator", "%");
+  P("UnqualifiedOperatorFunctionName", "operator", "<");
+  P("UnqualifiedOperatorFunctionName", "operator", "<=");
+  P("UnqualifiedOperatorFunctionName", "operator", ">");
+  P("UnqualifiedOperatorFunctionName", "operator", ">=");
+  P("UnqualifiedOperatorFunctionName", "operator", "==");
+  P("UnqualifiedOperatorFunctionName", "operator", "!=");
+  P("UnqualifiedOperatorFunctionName", "operator", "=");
+  P("UnqualifiedOperatorFunctionName", "operator", "(", ")");
+
+  P("OperatorFunctionName", "UnqualifiedOperatorFunctionName");
+  P("OperatorFunctionName", "NamePrefix", "UnqualifiedOperatorFunctionName");
 
   P("PrimaryExpr", "ID");
   P("PrimaryExpr", "null");
@@ -649,8 +669,8 @@ inline lang::ProductionVec<expr::ExprGrammarSymbol> ExprGrammarProductions() {
   P("PostfixExpr", "PostfixExpr", "[", "Expr", "]");
   P("PostfixExpr", "PostfixExpr", "++");
   P("PostfixExpr", "PostfixExpr", "--");
-  P("PostfixExpr", "ctor", "(", "Expr", ")", "identifier", "ParenthesizedArgumentList");
-  P("PostfixExpr", "dtor", "(", "Expr", ")", "identifier", "(", ")");
+  P("PostfixExpr", "ctor", "(", "Expr", ")", "ID", "ParenthesizedArgumentList");
+  P("PostfixExpr", "dtor", "(", "Expr", ")", "ID", "(", ")");
   P("PostfixExpr", "NonVirtualCallName", "ParenthesizedArgumentList");
 
   P("T3", "PostfixExpr");

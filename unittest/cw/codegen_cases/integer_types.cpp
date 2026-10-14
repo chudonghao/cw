@@ -1,8 +1,3 @@
-/// \file integer_types.cpp
-/// \copyright 2026 Donghao Chu
-/// \license SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-/// \url https://github.com/chudonghao/cw
-
 signed char Signed8(signed char value) { return value; }
 
 unsigned char Unsigned8(unsigned char value) { return value; }

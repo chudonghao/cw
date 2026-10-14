@@ -156,7 +156,19 @@ class CodeGenTest : public ::testing::Test {
 
 TEST_F(CodeGenTest, ProducesNativeModuleIndependentOfFrontend) {
   Generate("func Entry() i32 { 7 }");
-  ExpectIR(R"(define noundef i32 @Entry() {
+  ExpectIR(R"(define noundef i32 @"cw:Entry:func()i32"() {
+entry:
+  %.result = alloca i32, align 4
+  store i32 7, ptr %.result, align 4
+  %0 = load i32, ptr %.result, align 4
+  ret i32 %0
+}
+)");
+}
+
+TEST_F(CodeGenTest, GeneratesExportedFunctionsLikeOtherFunctions) {
+  Generate("export func Entry() i32 { 7 }");
+  ExpectIR(R"(define noundef i32 @"cw:Entry:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 7, ptr %.result, align 4
@@ -293,5 +305,8 @@ INSTANTIATE_TEST_SUITE_P(
         LanguageFeatureCase{"virtual_pointers", "VirtualPointers"},
         LanguageFeatureCase{"virtual_covariance", "VirtualCovariance"},
         LanguageFeatureCase{"virtual_lifetimes", "VirtualLifetimes"},
-        LanguageFeatureCase{"abstract_dispatch", "AbstractDispatch"}),
+        LanguageFeatureCase{"abstract_dispatch", "AbstractDispatch"},
+        LanguageFeatureCase{"import_calls", "ImportCalls"}, LanguageFeatureCase{"import_virtual", "ImportVirtual"},
+        LanguageFeatureCase{"import_covariance", "ImportCovariance"},
+        LanguageFeatureCase{"import_indirect", "ImportIndirect"}, LanguageFeatureCase{"symbol_types", "SymbolTypes"}),
     LanguageFeatureCaseName);

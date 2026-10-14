@@ -13,8 +13,7 @@
 #include <boost/assert.hpp>
 
 #include "ASTContext.h"
-#include "Symbol.h"
-#include "SymbolTable.h"
+#include "NameLookup.h"
 
 namespace cw::sema_detail {
 namespace {
@@ -44,14 +43,6 @@ bool NumericRangeContains(const ASTContext& ast_context, const BuiltinType& targ
   return target_properties.significand_bits >= source_properties.significand_bits &&
          target_properties.maximum_exponent >= source_properties.maximum_exponent &&
          target_properties.minimum_subnormal_exponent <= source_properties.minimum_subnormal_exponent;
-}
-
-const TypeSymbol* AsTypeSymbol(const Symbol* symbol) {
-  return symbol && symbol->GetKind() == SymbolKind::Type ? static_cast<const TypeSymbol*>(symbol) : nullptr;
-}
-
-const FunctionSymbol* AsFunctionSymbol(const Symbol* symbol) {
-  return symbol && symbol->GetKind() == SymbolKind::Function ? static_cast<const FunctionSymbol*>(symbol) : nullptr;
 }
 
 const DeclRefExpr* AddressedFunctionName(const Expr& expression) {
@@ -119,7 +110,7 @@ bool IsQualificationConversion(QualType source, QualType target, bool& discards_
   return true;
 }
 
-const TypeSymbol* TypeSymbolForObjectType(QualType type, const SymbolTable& symbol_table) {
+const StructDecl* StructForObjectType(QualType type) {
   if (!type || !type.GetTypePtr()->AsStructType()) {
     return nullptr;
   }
@@ -127,8 +118,7 @@ const TypeSymbol* TypeSymbolForObjectType(QualType type, const SymbolTable& symb
   if (!declaration) {
     return nullptr;
   }
-  const TypeSymbol* symbol = AsTypeSymbol(symbol_table.LookupRoot(declaration->name));
-  return symbol && symbol->GetDeclaration() == declaration ? symbol : nullptr;
+  return declaration;
 }
 
 /// \brief Ordinary or array leaf types for fixed copy/move constructor selection.
@@ -204,8 +194,8 @@ bool CanBindMode(ValueState source, ReferenceMode mode) {
   return mode == ReferenceMode::Move;
 }
 
-std::variant<CompletedObjectFormation, ObjectFormationFailure> CompleteObjectFormation(
-    ValueState source, QualType target, const SymbolTable& symbol_table) {
+std::variant<CompletedObjectFormation, ObjectFormationFailure> CompleteObjectFormation(ValueState source,
+                                                                                       QualType target) {
   const auto failure = [&](ObjectFormationFailureKind kind) {
     return ObjectFormationFailure{kind, source.type, target, source.category};
   };
@@ -213,11 +203,11 @@ std::variant<CompletedObjectFormation, ObjectFormationFailure> CompleteObjectFor
   BOOST_ASSERT(source.category == ValueCategory::LValue || source.category == ValueCategory::MoveLValue);
   const auto types = DecomposeObjectFormationTypes(source.type, target);
   BOOST_ASSERT(types);
-  const TypeSymbol* symbol = TypeSymbolForObjectType(types->target_leaf_type, symbol_table);
+  const StructDecl* structure = StructForObjectType(types->target_leaf_type);
   const bool prefers_move = !types->source_leaf_type.IsConstQualified() && source.category == ValueCategory::MoveLValue;
   const auto unavailable =
       prefers_move ? ObjectFormationFailureKind::MoveAndCopyUnavailable : ObjectFormationFailureKind::CopyUnavailable;
-  if (!symbol) {
+  if (!structure) {
     return failure(unavailable);
   }
   const auto usable = [&](const ConstructorDecl* constructor) {
@@ -233,11 +223,11 @@ std::variant<CompletedObjectFormation, ObjectFormationFailure> CompleteObjectFor
            CanBindMode({types->source_leaf_type, source.category}, reference->GetMode());
   };
   // A mutable move-lvalue prefers the move slot, with copy as the permitted fallback.
-  const ConstructorDecl* constructor = symbol->GetCopyConstructor();
+  const ConstructorDecl* constructor = structure->copy_constructor;
   if (prefers_move) {
-    constructor = symbol->GetMoveConstructor();
+    constructor = structure->move_constructor;
     if (!usable(constructor)) {
-      constructor = symbol->GetCopyConstructor();
+      constructor = structure->copy_constructor;
     }
   }
   if (!usable(constructor)) {
@@ -432,12 +422,12 @@ bool IsFunctionAddressTarget(QualType type) {
 }
 
 FunctionAddressSelectionResult SelectFunctionAddress(const ConversionSource& source, QualType target_type,
-                                                     ASTContext& ast_context, const SymbolTable& symbol_table) {
+                                                     ASTContext& ast_context, const LookupContext& lookup_context) {
   const DeclRefExpr* name = AddressedFunctionName(*source.expression);
   BOOST_ASSERT(name);
 
   OverloadSetSelectionFailure failure;
-  failure.name = name->name;
+  failure.name = name->name.Spelling();
   if (!target_type) {
     return failure;
   }
@@ -448,10 +438,11 @@ FunctionAddressSelectionResult SelectFunctionAddress(const ConversionSource& sou
     return failure;
   }
 
-  if (const FunctionSymbol* symbol = AsFunctionSymbol(symbol_table.Lookup(name->name))) {
+  const auto lookup = LookupName(name->name, lookup_context);
+  if (const auto* functions = lookup.GetFunctions()) {
     const auto add_candidate = [&](const FunctionDecl* declaration) {
       if (!declaration || declaration->is_invalid || !declaration->type ||
-          !declaration->type.GetTypePtr()->AsFunctionType() || declaration->name != name->name) {
+          !declaration->type.GetTypePtr()->AsFunctionType() || declaration->name != name->name.Unqualified()) {
         return;
       }
       const auto* function_type = declaration->type.GetTypePtr()->AsFunctionType();
@@ -470,7 +461,7 @@ FunctionAddressSelectionResult SelectFunctionAddress(const ConversionSource& sou
       }
       failure.candidates.push_back(AddressCandidate{declaration, result_type});
     };
-    for (const FunctionDecl* declaration : symbol->Declarations()) {
+    for (const FunctionDecl* declaration : *functions) {
       add_candidate(declaration);
       if (declaration && declaration->GetKind() == NodeKind::FunctionDecl) {
         add_candidate(declaration->virtual_declaration);
@@ -497,7 +488,7 @@ FunctionAddressSelectionResult SelectFunctionAddress(const ConversionSource& sou
 }
 
 BuildConversionResult BuildConversion(const ConversionSource& source, QualType target, ASTContext& ast_context,
-                                      const SymbolTable& symbol_table) {
+                                      const LookupContext& lookup_context) {
   BOOST_ASSERT(source.expression);
   BOOST_ASSERT(source.expression->type == source.state.type);
   BOOST_ASSERT(source.expression->value_category == source.state.category);
@@ -522,7 +513,7 @@ BuildConversionResult BuildConversion(const ConversionSource& source, QualType t
   // Resolve an overloaded address using the target before ordinary binding or value conversion.
   if (current.type.GetTypePtr()->AsAddressOfFunctionOverloadSetType()) {
     const QualType address_target = ObjectTarget(target);
-    auto selection = SelectFunctionAddress(source, address_target, ast_context, symbol_table);
+    auto selection = SelectFunctionAddress(source, address_target, ast_context, lookup_context);
     if (const auto* failure = std::get_if<OverloadSetSelectionFailure>(&selection)) {
       return ConversionFailure{*failure};
     }
@@ -743,13 +734,13 @@ ConversionComparison CompareConversion(const ValueState& source, QualType left_t
 }
 
 ConversionCompletionResult CompleteConversion(const ConversionSource& source, QualType target,
-                                              ConversionSequence& sequence, const SymbolTable& symbol_table) {
+                                              ConversionSequence& sequence) {
   BOOST_ASSERT(target);
   ValueState current = source.state;
   for (std::size_t index = 0; index < sequence.transitions.size(); ++index) {
     auto& step = sequence.transitions[index];
     if (std::holds_alternative<PendingObjectFormation>(step.semantics)) {
-      auto result = CompleteObjectFormation(current, step.result.type, symbol_table);
+      auto result = CompleteObjectFormation(current, step.result.type);
       if (const auto* failure = std::get_if<ObjectFormationFailure>(&result)) {
         return ConversionCompletionFailure{index, *failure};
       }

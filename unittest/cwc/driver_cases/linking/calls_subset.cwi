@@ -1,0 +1,14 @@
+// A deliberately smaller overload set, in a different declaration order.
+namespace api {
+  import func Read(value isize) i32;
+  import func Read(value i64) i32;
+  import func Pick(value &move i32) i32;
+  import func Pick(value &mut i32) i32;
+  import func Pick(value &copy i32) i32;
+  import func Apply(callback *func(i64) i32, value i64) i32;
+  import func Array(value &copy [4] i32) i32;
+  import func 读取(value i32) i32;
+  import trivial struct Item { value i32; }
+  import func operator+(left &copy Item, right i32) i32;
+  import func main(value i32) i32;
+}

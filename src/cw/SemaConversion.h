@@ -16,7 +16,7 @@
 
 namespace cw {
 class ASTContext;
-class SymbolTable;
+struct LookupContext;
 
 /// \brief A warning condition for a conversion that will actually be adopted.
 enum class ImplicitConversionRisk {
@@ -185,10 +185,10 @@ std::optional<std::vector<const StructDecl*>> FindDerivedToBasePath(const Type* 
 bool IsFunctionAddressTarget(QualType type);
 /// \brief Selects exactly one address of the specified concrete type without modifying the source.
 FunctionAddressSelectionResult SelectFunctionAddress(const ConversionSource& source, QualType target,
-                                                     ASTContext& ast_context, const SymbolTable& symbol_table);
+                                                     ASTContext& ast_context, const LookupContext& lookup_context);
 /// \brief Builds a viable conversion without modifying AST or issuing diagnostics.
 BuildConversionResult BuildConversion(const ConversionSource& source, QualType target, ASTContext& ast_context,
-                                      const SymbolTable& symbol_table);
+                                      const LookupContext& lookup_context);
 /// \brief Builds the built-in value changes from a prepared state, without entity initialization.
 ValueConversionResult BuildValueConversion(ValueState source, QualType target, ASTContext& ast_context);
 /// \brief Compares two successfully built conversions of the same source state.
@@ -196,7 +196,7 @@ ConversionComparison CompareConversion(const ValueState& source, QualType left_t
                                        QualType right_target, const ConversionSequence& right);
 /// \brief Completes deferred formation in place without changing the matched result states.
 ConversionCompletionResult CompleteConversion(const ConversionSource& source, QualType target,
-                                              ConversionSequence& sequence, const SymbolTable& symbol_table);
+                                              ConversionSequence& sequence);
 /// \brief Reads warning facts only after every required conversion has completed.
 ConversionRiskFacts CollectConversionRisks(const ConversionSource& source, QualType target,
                                            const ConversionSequence& sequence, const ASTContext& ast_context);

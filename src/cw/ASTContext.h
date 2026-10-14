@@ -86,6 +86,7 @@ class ASTContext {
   std::unordered_map<const PointerType*, const VirtualSlotType*> virtual_slot_types_;
   std::unordered_map<FunctionTypeKey, const FunctionType*, FunctionTypeKeyHash> function_types_;
   std::unordered_map<ReferenceTypeKey, const ReferenceType*, ReferenceTypeKeyHash> reference_types_;
+  std::unique_ptr<NamespaceContext> root_namespace_;
   std::unique_ptr<TranslationUnitDecl> translation_unit_;  ///< Owned AST root.
 
  public:
@@ -113,6 +114,11 @@ class ASTContext {
 
   /// \brief Returns the owned translation unit.
   const TranslationUnitDecl* GetTranslationUnitDecl() const;
+
+  NamespaceContext* GetRootNamespace() { return root_namespace_.get(); }
+  const NamespaceContext* GetRootNamespace() const { return root_namespace_.get(); }
+  /// Creates/reopens one child namespace and records its source declaration.
+  NamespaceContext* GetOrCreateNamespace(NamespaceContext& parent, const NamespaceDecl& declaration);
 
   /// \brief Returns the canonical semantic type for \p kind.
   const BuiltinType* GetBuiltinType(BuiltinTypeKind kind);

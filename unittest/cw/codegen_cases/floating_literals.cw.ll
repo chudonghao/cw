@@ -1,4 +1,4 @@
-define noundef float @SingleTenth() {
+define noundef float @"cw:SingleTenth:func()f32"() {
 entry:
   %.result = alloca float, align 4
   store float 1.000000e-01, ptr %.result, align 4
@@ -6,7 +6,7 @@ entry:
   ret float %0
 }
 
-define noundef double @DoubleTenth() {
+define noundef double @"cw:DoubleTenth:func()f64"() {
 entry:
   %.result = alloca double, align 8
   store double 1.000000e-01, ptr %.result, align 8
@@ -14,7 +14,7 @@ entry:
   ret double %0
 }
 
-define noundef float @SingleSubnormal() {
+define noundef float @"cw:SingleSubnormal:func()f32"() {
 entry:
   %.result = alloca float, align 4
   store float 1.401300e-45, ptr %.result, align 4
@@ -22,7 +22,7 @@ entry:
   ret float %0
 }
 
-define noundef double @DoubleSubnormal() {
+define noundef double @"cw:DoubleSubnormal:func()f64"() {
 entry:
   %.result = alloca double, align 8
   store double 4.940660e-324, ptr %.result, align 8
@@ -30,7 +30,7 @@ entry:
   ret double %0
 }
 
-define noundef double @Underflow() {
+define noundef double @"cw:Underflow:func()f64"() {
 entry:
   %.result = alloca double, align 8
   store double 0.000000e+00, ptr %.result, align 8
@@ -38,7 +38,7 @@ entry:
   ret double %0
 }
 
-define noundef float @NegativeZero() {
+define noundef float @"cw:NegativeZero:func()f32"() {
 entry:
   %.result = alloca float, align 4
   store float -0.000000e+00, ptr %.result, align 4
@@ -46,7 +46,7 @@ entry:
   ret float %0
 }
 
-define noundef double @NegatedZero() {
+define noundef double @"cw:NegatedZero:func()f64"() {
 entry:
   %.result = alloca double, align 8
   store double 0.000000e+00, ptr %.result, align 8
@@ -54,7 +54,7 @@ entry:
   ret double %0
 }
 
-define noundef double @WidenedSingle() {
+define noundef double @"cw:WidenedSingle:func()f64"() {
 entry:
   %.result = alloca double, align 8
   store double f0x3FB99999A0000000, ptr %.result, align 8

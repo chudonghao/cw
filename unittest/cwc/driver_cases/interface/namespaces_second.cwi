@@ -1,0 +1,4 @@
+namespace alpha {
+  import func Other(value *::outer::inner::Item) *::outer::inner::Item;
+}
+import func Root(value *::Item) *::Item;

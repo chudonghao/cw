@@ -1,8 +1,3 @@
-/// \file integer_conversion_flow.cpp
-/// \copyright 2026 Donghao Chu
-/// \license SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-/// \url https://github.com/chudonghao/cw
-
 // Native Clang's signed narrowing expresses CW's modulo conversion after the addition.
 unsigned int Bump(signed char& value) {
   value = static_cast<signed char>(value + 1);

@@ -1,4 +1,4 @@
-define void @Write(ptr noundef nonnull align 4 dereferenceable(4) %target, i32 noundef %value) {
+define void @"cw:Write:func(&mut i32,i32)void"(ptr noundef nonnull align 4 dereferenceable(4) %target, i32 noundef %value) {
 entry:
   %target.addr = alloca ptr, align 8
   %value.addr = alloca i32, align 4
@@ -10,7 +10,7 @@ entry:
   ret void
 }
 
-define noundef i32 @ConditionalVoid(i1 noundef zeroext %flag, i1 noundef zeroext %other) {
+define noundef i32 @"cw:ConditionalVoid:func(bool,bool)i32"(i1 noundef zeroext %flag, i1 noundef zeroext %other) {
 entry:
   %.result = alloca i32, align 4
   %flag.addr = alloca i8, align 1
@@ -26,7 +26,7 @@ entry:
   br i1 %loadedv, label %cond.true, label %cond.false
 
 cond.true:                                        ; preds = %entry
-  call void @Write(ptr noundef nonnull align 4 dereferenceable(4) %value, i32 noundef 1)
+  call void @"cw:Write:func(&mut i32,i32)void"(ptr noundef nonnull align 4 dereferenceable(4) %value, i32 noundef 1)
   br label %cond.end
 
 cond.false:                                       ; preds = %entry
@@ -35,11 +35,11 @@ cond.false:                                       ; preds = %entry
   br i1 %loadedv5, label %cond.true2, label %cond.false3
 
 cond.true2:                                       ; preds = %cond.false
-  call void @Write(ptr noundef nonnull align 4 dereferenceable(4) %value, i32 noundef 2)
+  call void @"cw:Write:func(&mut i32,i32)void"(ptr noundef nonnull align 4 dereferenceable(4) %value, i32 noundef 2)
   br label %cond.end4
 
 cond.false3:                                      ; preds = %cond.false
-  call void @Write(ptr noundef nonnull align 4 dereferenceable(4) %value, i32 noundef 3)
+  call void @"cw:Write:func(&mut i32,i32)void"(ptr noundef nonnull align 4 dereferenceable(4) %value, i32 noundef 3)
   br label %cond.end4
 
 cond.end4:                                        ; preds = %cond.false3, %cond.true2

@@ -1,7 +1,7 @@
 TranslationUnitDecl {{address}}
 |-StructDecl {{address}} <virtual_functions.cw:1:1, line:6:2> VirtualFunctions abstract
 | `-VirtualDecl {{address}} <line:2:3, line:5:4>
-|   |-VirtualFunctionDecl {{address:draw_interface}} <line:3:5, col:44> Draw 'func (&copy VirtualFunctions) void' definition Function {{address:draw_definition}} 'Draw' 'func (&copy VirtualFunctions) void'
+|   |-VirtualFunctionDecl {{address:draw_interface}} <line:3:5, col:44> Draw 'func (&copy VirtualFunctions) void' implementation Function {{address:draw_definition}} 'Draw' 'func (&copy VirtualFunctions) void'
 |   | `-ParmVarDecl {{address}} <col:15, col:42> this '&copy VirtualFunctions'
 |   |   `-ReferenceType {{address}} <col:20, col:42> '&copy'
 |   |     `-NamedType {{address}} <col:26, col:42> 'VirtualFunctions'

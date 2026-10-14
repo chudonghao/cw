@@ -32,6 +32,7 @@ void ASTVisitor::Visit(ArrayTypeSyntax& n) { Visit(static_cast<TypeSyntax&>(n));
 // Concrete Decl Visit methods.
 
 void ASTVisitor::Visit(TranslationUnitDecl& n) { Visit(static_cast<Decl&>(n)); }
+void ASTVisitor::Visit(NamespaceDecl& n) { Visit(static_cast<NamedDecl&>(n)); }
 void ASTVisitor::Visit(VirtualDecl& n) { Visit(static_cast<Decl&>(n)); }
 void ASTVisitor::Visit(VarGroupDecl& n) { Visit(static_cast<Decl&>(n)); }
 void ASTVisitor::Visit(VarDecl& n) { Visit(static_cast<ValueDecl&>(n)); }

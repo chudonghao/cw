@@ -1,4 +1,4 @@
-define noundef i64 @SignExtend(i8 noundef signext %value) {
+define noundef i64 @"cw:SignExtend:func(i8)i64"(i8 noundef signext %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca i8, align 1
@@ -10,7 +10,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i64 @ZeroExtend(i8 noundef zeroext %value) {
+define noundef i64 @"cw:ZeroExtend:func(u8)i64"(i8 noundef zeroext %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca i8, align 1
@@ -22,7 +22,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i64 @SignExtendToUnsigned(i16 noundef signext %value) {
+define noundef i64 @"cw:SignExtendToUnsigned:func(i16)u64"(i16 noundef signext %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca i16, align 2
@@ -34,7 +34,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i64 @UnsignedToSignedWide(i32 noundef %value) {
+define noundef i64 @"cw:UnsignedToSignedWide:func(u32)i64"(i32 noundef %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca i32, align 4
@@ -46,7 +46,7 @@ entry:
   ret i64 %1
 }
 
-define noundef zeroext i8 @NarrowUnsigned(i64 noundef %value) {
+define noundef zeroext i8 @"cw:NarrowUnsigned:func(i64)u8"(i64 noundef %value) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca i64, align 8
@@ -58,7 +58,7 @@ entry:
   ret i8 %1
 }
 
-define noundef signext i16 @NarrowSigned(i64 noundef %value) {
+define noundef signext i16 @"cw:NarrowSigned:func(u64)i16"(i64 noundef %value) {
 entry:
   %.result = alloca i16, align 2
   %value.addr = alloca i64, align 8
@@ -70,7 +70,7 @@ entry:
   ret i16 %1
 }
 
-define noundef i32 @SameWidth(i32 noundef %value) {
+define noundef i32 @"cw:SameWidth:func(i32)u32"(i32 noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca i32, align 4
@@ -81,7 +81,7 @@ entry:
   ret i32 %1
 }
 
-define noundef i64 @SizeToUnsigned(i64 noundef %value) {
+define noundef i64 @"cw:SizeToUnsigned:func(isize)usize"(i64 noundef %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca i64, align 8
@@ -92,7 +92,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i64 @SizeToSigned(i64 noundef %value) {
+define noundef i64 @"cw:SizeToSigned:func(usize)isize"(i64 noundef %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca i64, align 8
@@ -103,7 +103,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i32 @UnsignedAsSignedByte(i8 noundef zeroext %value) {
+define noundef i32 @"cw:UnsignedAsSignedByte:func(u8)i32"(i8 noundef zeroext %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca i8, align 1
@@ -118,7 +118,7 @@ entry:
   ret i32 %2
 }
 
-define noundef i32 @SignedAsUnsignedByte(i8 noundef signext %value) {
+define noundef i32 @"cw:SignedAsUnsignedByte:func(i8)i32"(i8 noundef signext %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca i8, align 1

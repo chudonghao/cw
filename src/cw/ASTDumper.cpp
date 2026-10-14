@@ -10,6 +10,8 @@
 
 #include <llvm/ADT/SmallString.h>
 
+#include "NamespaceContext.h"
+
 namespace cw {
 
 ASTDumper::ASTDumper(std::ostream& os, const std::vector<Source>& sources) : os_(os), sources_(sources) {}
@@ -152,7 +154,7 @@ void ASTDumper::PrintUnqualifiedTypeName(const Type& type) {
       os_ << to_string(static_cast<const BuiltinType&>(type).GetBuiltinTypeKind());
       break;
     case TypeKind::Struct:
-      os_ << static_cast<const StructType&>(type).GetDeclaration()->name;
+      os_ << static_cast<const StructType&>(type).GetDeclaration()->QualifiedName();
       break;
     case TypeKind::Array: {
       const auto& array_type = static_cast<const ArrayType&>(type);
@@ -263,9 +265,12 @@ void ASTDumper::PrintDeclReference(const ValueDecl& declaration) {
   if (!declaration.name.empty()) {
     if ((declaration.GetKind() == NodeKind::FunctionDecl || declaration.GetKind() == NodeKind::VirtualFunctionDecl) &&
         IsOperatorFunctionName(declaration.name)) {
-      os_ << " 'operator" << declaration.name << "'";
+      os_ << " '";
+      if (declaration.owning_namespace && !declaration.owning_namespace->IsRoot())
+        os_ << declaration.owning_namespace->QualifiedName() << "::";
+      os_ << "operator" << declaration.name << "'";
     } else {
-      os_ << " '" << declaration.name << "'";
+      os_ << " '" << declaration.QualifiedName() << "'";
     }
   }
   PrintType(declaration.type);
@@ -275,7 +280,7 @@ void ASTDumper::PrintStructReference(const StructDecl& declaration) {
   os_ << " Struct ";
   PrintAddress(&declaration);
   if (!declaration.name.empty()) {
-    os_ << " '" << declaration.name << "'";
+    os_ << " '" << declaration.QualifiedName() << "'";
   }
 }
 
@@ -298,7 +303,7 @@ void ASTDumper::PrintBaseType(const StructType& type, bool is_last) {
   os_ << " Struct ";
   PrintAddress(declaration);
   if (declaration && !declaration->name.empty()) {
-    os_ << " '" << declaration->name << "'";
+    os_ << " '" << declaration->QualifiedName() << "'";
   }
   os_ << "\n";
   PopIndent();
@@ -306,6 +311,14 @@ void ASTDumper::PrintBaseType(const StructType& type, bool is_last) {
 
 bool ASTDumper::IsPrintable(const SourceLocation& location) const {
   return location.IsValid() && location.file < static_cast<int>(sources_.size());
+}
+
+void ASTDumper::PrintDeclModifier(const Decl& n) {
+  if (n.modifier == DeclModifier::Export) {
+    os_ << " exported";
+  } else if (n.modifier == DeclModifier::Import) {
+    os_ << " imported";
+  }
 }
 
 void ASTDumper::PrintErrorMark(const Node& n) {
@@ -415,6 +428,19 @@ void ASTDumper::Visit(TranslationUnitDecl& n) {
   }
 }
 
+void ASTDumper::Visit(NamespaceDecl& n) {
+  PrintNode("NamespaceDecl", n);
+  if (!n.name.empty()) {
+    os_ << " " << n.name;
+  }
+  if (n.is_nested) os_ << " nested";
+  PrintErrorMark(n);
+  os_ << "\n";
+  for (size_t i = 0; i < n.Decls.size(); ++i) {
+    VisitChild(n.Decls[i].get(), i == n.Decls.size() - 1);
+  }
+}
+
 void ASTDumper::Visit(VirtualDecl& n) {
   PrintNode("VirtualDecl", n);
   PrintErrorMark(n);
@@ -426,6 +452,7 @@ void ASTDumper::Visit(VirtualDecl& n) {
 
 void ASTDumper::Visit(VarGroupDecl& n) {
   PrintNode("VarGroupDecl", n);
+  PrintDeclModifier(n);
   PrintErrorMark(n);
   os_ << "\n";
 
@@ -472,6 +499,7 @@ void ASTDumper::Visit(StructDecl& n) {
   if (!n.base.empty()) {
     os_ << " : '" << n.base << "'";
   }
+  PrintDeclModifier(n);
   PrintErrorMark(n);
   os_ << "\n";
 
@@ -498,6 +526,7 @@ void ASTDumper::Visit(FunctionDecl& n) {
     os_ << " virtual-declaration";
     PrintDeclReference(*n.virtual_declaration);
   }
+  PrintDeclModifier(n);
   PrintErrorMark(n);
   os_ << "\n";
 
@@ -521,6 +550,7 @@ void ASTDumper::Visit(ConstructorDecl& n) {
   }
   PrintSpecialFunctionTarget(n.target_type);
   PrintType(n.type);
+  PrintDeclModifier(n);
   PrintErrorMark(n);
   os_ << "\n";
 
@@ -544,6 +574,7 @@ void ASTDumper::Visit(DestructorDecl& n) {
   }
   PrintSpecialFunctionTarget(n.target_type);
   PrintType(n.type);
+  PrintDeclModifier(n);
   PrintErrorMark(n);
   os_ << "\n";
 
@@ -576,9 +607,9 @@ void ASTDumper::Visit(VirtualFunctionDecl& n) {
     os_ << " overrides";
     PrintDeclReference(*n.overridden_virtual_function);
   }
-  if (n.definition) {
-    os_ << " definition";
-    PrintDeclReference(*n.definition);
+  if (n.implementation) {
+    os_ << " implementation";
+    PrintDeclReference(*n.implementation);
   }
   PrintErrorMark(n);
   os_ << "\n";
@@ -788,8 +819,10 @@ void ASTDumper::Visit(DeclRefExpr& n) {
     PrintDeclReference(*n.declaration);
   } else {
     os_ << " '";
-    if (IsOperatorFunctionName(n.name)) {
-      os_ << "operator " << n.name;
+    if (n.name.IsOperator()) {
+      const auto& short_name = n.name.Unqualified();
+      const auto spelling = n.name.Spelling();
+      os_ << spelling.substr(0, spelling.size() - short_name.size()) << "operator " << short_name;
     } else {
       os_ << n.name;
     }
@@ -967,7 +1000,7 @@ void ASTDumper::Visit(ConstructionExpr& n) {
   os_ << " " << to_string(n.construction_kind);
   if (!n.target_name.empty()) {
     os_ << " target ";
-    PrintSourceRange(n.target_name_range);
+    PrintSourceRange(n.target_name.Range());
     os_ << " '" << n.target_name << "'";
   }
   if (n.constructor) {

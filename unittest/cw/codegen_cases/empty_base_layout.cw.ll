@@ -5,44 +5,81 @@
 %struct.Member = type { %struct.Empty }
 %struct.Empty = type { i8 }
 
-define noundef ptr @Anchor.ctor(ptr noundef returned %this) {
+define noundef ptr @"cw:Anchor:ctor():complete"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define noundef ptr @Anchor.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Anchor:ctor():base"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define noundef ptr @Aligned.ctor(ptr noundef returned %this) {
+define noundef ptr @"cw:Anchor:dtor():complete"(ptr noundef returned %this) {
 entry:
-  %call = call noundef ptr @Anchor.ctor(ptr noundef returned %this)
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Anchor:dtor():base"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Aligned:ctor():complete"(ptr noundef returned %this) {
+entry:
+  %call = call noundef ptr @"cw:Anchor:ctor():base"(ptr noundef returned %this)
   %zero = getelementptr inbounds nuw %struct.Aligned, ptr %this, i32 0, i32 0
   ret ptr %this
 }
 
-define noundef ptr @Aligned.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Aligned:ctor():base"(ptr noundef returned %this) {
 entry:
-  %call = call noundef ptr @Anchor.dtor(ptr noundef returned %this)
+  %call = call noundef ptr @"cw:Anchor:ctor():base"(ptr noundef returned %this)
+  %zero = getelementptr inbounds nuw %struct.Aligned, ptr %this, i32 0, i32 0
   ret ptr %this
 }
 
-define noundef ptr @Child.ctor(ptr noundef returned %this) {
+define noundef ptr @"cw:Aligned:dtor():complete"(ptr noundef returned %this) {
 entry:
-  %call = call noundef ptr @Aligned.ctor(ptr noundef returned %this)
+  %call = call noundef ptr @"cw:Anchor:dtor():base"(ptr noundef returned %this)
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Aligned:dtor():base"(ptr noundef returned %this) {
+entry:
+  %call = call noundef ptr @"cw:Anchor:dtor():base"(ptr noundef returned %this)
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Child:ctor():complete"(ptr noundef returned %this) {
+entry:
+  %call = call noundef ptr @"cw:Aligned:ctor():base"(ptr noundef returned %this)
   %value = getelementptr inbounds nuw %struct.Child, ptr %this, i32 0, i32 1
   store i8 7, ptr %value, align 1
   ret ptr %this
 }
 
-define noundef ptr @Child.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Child:ctor():base"(ptr noundef returned %this) {
 entry:
-  %call = call noundef ptr @Aligned.dtor(ptr noundef returned %this)
+  %call = call noundef ptr @"cw:Aligned:ctor():base"(ptr noundef returned %this)
+  %value = getelementptr inbounds nuw %struct.Child, ptr %this, i32 0, i32 1
+  store i8 7, ptr %value, align 1
   ret ptr %this
 }
 
-define noundef ptr @Base(ptr noundef nonnull align 1 dereferenceable(3) %value) {
+define noundef ptr @"cw:Child:dtor():complete"(ptr noundef returned %this) {
+entry:
+  %call = call noundef ptr @"cw:Aligned:dtor():base"(ptr noundef returned %this)
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Child:dtor():base"(ptr noundef returned %this) {
+entry:
+  %call = call noundef ptr @"cw:Aligned:dtor():base"(ptr noundef returned %this)
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Base:func(&mut Distinct)*Empty"(ptr noundef nonnull align 1 dereferenceable(3) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -53,7 +90,7 @@ entry:
   ret ptr %1
 }
 
-define noundef ptr @Nested(ptr noundef nonnull align 1 dereferenceable(3) %value) {
+define noundef ptr @"cw:Nested:func(&mut Distinct)*Empty"(ptr noundef nonnull align 1 dereferenceable(3) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -66,7 +103,7 @@ entry:
   ret ptr %1
 }
 
-define noundef ptr @Last(ptr noundef nonnull align 1 dereferenceable(3) %value) {
+define noundef ptr @"cw:Last:func(&mut Distinct)*u8"(ptr noundef nonnull align 1 dereferenceable(3) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -78,8 +115,8 @@ entry:
   ret ptr %1
 }
 
-define void @Make(ptr sret(%struct.Child) align 4 %.result) {
+define void @"cw:Make:func()Child"(ptr sret(%struct.Child) align 4 %.result) {
 entry:
-  %call = call noundef ptr @Child.ctor(ptr noundef returned %.result)
+  %call = call noundef ptr @"cw:Child:ctor():complete"(ptr noundef returned %.result)
   ret void
 }

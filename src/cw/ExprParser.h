@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "NameSyntax.h"
 #include "Token.h"
 #include "lang/LRStateMachine.h"
 
@@ -28,7 +29,7 @@ class ExprParser : public lang::LRStateMachine {
   };
 
   struct ParsedNonVirtualCallName {
-    std::string name;
+    NameSyntax name;
     SourceRange name_range{};
     SourceRange keyword_range{};
   };
@@ -102,6 +103,10 @@ class ExprParser : public lang::LRStateMachine {
   int Reduce_OperatorFunctionName__operator_operator();
   int Reduce_OperatorFunctionName__operator_l_paren_r_paren();
   int Reduce_ID__identifier();
+  int Reduce_ID__NamePrefix_identifier();
+  int Reduce_NamePrefix__coloncolon();
+  int Reduce_NamePrefix__ID_coloncolon();
+  int Reduce_OperatorFunctionName__qualified();
   int Reduce_PrimaryExpr__null_literal();
   int Reduce_PrimaryExpr__integer_literal();
   int Reduce_PrimaryExpr__character_literal();

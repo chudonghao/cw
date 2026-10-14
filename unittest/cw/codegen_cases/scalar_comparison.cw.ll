@@ -1,4 +1,4 @@
-define noundef zeroext i1 @Equal(i32 noundef %left, i32 noundef %right) {
+define noundef zeroext i1 @"cw:Equal:func(i32,i32)bool"(i32 noundef %left, i32 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i32, align 4
@@ -15,7 +15,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NotEqual(i32 noundef %left, i32 noundef %right) {
+define noundef zeroext i1 @"cw:NotEqual:func(i32,i32)bool"(i32 noundef %left, i32 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i32, align 4
@@ -32,7 +32,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @Less(i32 noundef %left, i32 noundef %right) {
+define noundef zeroext i1 @"cw:Less:func(i32,i32)bool"(i32 noundef %left, i32 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i32, align 4
@@ -49,7 +49,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @LessEqual(i32 noundef %left, i32 noundef %right) {
+define noundef zeroext i1 @"cw:LessEqual:func(i32,i32)bool"(i32 noundef %left, i32 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i32, align 4
@@ -66,7 +66,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @Greater(i32 noundef %left, i32 noundef %right) {
+define noundef zeroext i1 @"cw:Greater:func(i32,i32)bool"(i32 noundef %left, i32 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i32, align 4
@@ -83,7 +83,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @GreaterEqual(i32 noundef %left, i32 noundef %right) {
+define noundef zeroext i1 @"cw:GreaterEqual:func(i32,i32)bool"(i32 noundef %left, i32 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i32, align 4
@@ -100,7 +100,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @BooleanEqual(i1 noundef zeroext %left, i1 noundef zeroext %right) {
+define noundef zeroext i1 @"cw:BooleanEqual:func(bool,bool)bool"(i1 noundef zeroext %left, i1 noundef zeroext %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i8, align 1
@@ -121,7 +121,7 @@ entry:
   ret i1 %loadedv4
 }
 
-define noundef zeroext i1 @BooleanNotEqual(i1 noundef zeroext %left, i1 noundef zeroext %right) {
+define noundef zeroext i1 @"cw:BooleanNotEqual:func(bool,bool)bool"(i1 noundef zeroext %left, i1 noundef zeroext %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i8, align 1

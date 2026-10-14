@@ -1,4 +1,4 @@
-define noundef nonnull align 4 dereferenceable(8) ptr @Change(ptr noundef nonnull align 4 dereferenceable(8) %source, ptr noundef nonnull align 4 dereferenceable(8) %target, i64 noundef %index) {
+define noundef nonnull align 4 dereferenceable(8) ptr @"cw:Change:func(&mut [2]i32,&mut [2]i32,usize)&mut [2]i32"(ptr noundef nonnull align 4 dereferenceable(8) %source, ptr noundef nonnull align 4 dereferenceable(8) %target, i64 noundef %index) {
 entry:
   %.result = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -17,7 +17,7 @@ entry:
   ret ptr %3
 }
 
-define void @Existing(ptr noundef nonnull align 4 dereferenceable(8) %source, ptr noundef nonnull align 4 dereferenceable(8) %target, i64 noundef %index) {
+define void @"cw:Existing:func(&mut [2]i32,&mut [2]i32,usize)void"(ptr noundef nonnull align 4 dereferenceable(8) %source, ptr noundef nonnull align 4 dereferenceable(8) %target, i64 noundef %index) {
 entry:
   %source.addr = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -29,12 +29,12 @@ entry:
   %1 = load ptr, ptr %source.addr, align 8
   %2 = load ptr, ptr %target.addr, align 8
   %3 = load i64, ptr %index.addr, align 8
-  %call = call noundef nonnull align 4 dereferenceable(8) ptr @Change(ptr noundef nonnull align 4 dereferenceable(8) %1, ptr noundef nonnull align 4 dereferenceable(8) %2, i64 noundef %3)
+  %call = call noundef nonnull align 4 dereferenceable(8) ptr @"cw:Change:func(&mut [2]i32,&mut [2]i32,usize)&mut [2]i32"(ptr noundef nonnull align 4 dereferenceable(8) %1, ptr noundef nonnull align 4 dereferenceable(8) %2, i64 noundef %3)
   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %call, ptr align 4 %0, i64 8, i1 false)
   ret void
 }
 
-define void @Formed(ptr noundef nonnull align 4 dereferenceable(8) %source, ptr noundef nonnull align 4 dereferenceable(8) %target, i64 noundef %index) {
+define void @"cw:Formed:func(&mut [2]i32,&mut [2]i32,usize)void"(ptr noundef nonnull align 4 dereferenceable(8) %source, ptr noundef nonnull align 4 dereferenceable(8) %target, i64 noundef %index) {
 entry:
   %source.addr = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -58,12 +58,12 @@ entry:
   %6 = load ptr, ptr %source.addr, align 8
   %7 = load ptr, ptr %target.addr, align 8
   %8 = load i64, ptr %index.addr, align 8
-  %call = call noundef nonnull align 4 dereferenceable(8) ptr @Change(ptr noundef nonnull align 4 dereferenceable(8) %6, ptr noundef nonnull align 4 dereferenceable(8) %7, i64 noundef %8)
+  %call = call noundef nonnull align 4 dereferenceable(8) ptr @"cw:Change:func(&mut [2]i32,&mut [2]i32,usize)&mut [2]i32"(ptr noundef nonnull align 4 dereferenceable(8) %6, ptr noundef nonnull align 4 dereferenceable(8) %7, i64 noundef %8)
   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %call, ptr align 4 %temporary, i64 8, i1 false)
   ret void
 }
 
-define noundef nonnull align 4 dereferenceable(8) ptr @Locate(ptr noundef nonnull align 4 dereferenceable(8) %value, ptr noundef nonnull align 8 dereferenceable(8) %index, i64 noundef %replacement) {
+define noundef nonnull align 4 dereferenceable(8) ptr @"cw:Locate:func(&mut [2]i32,&mut usize,usize)&mut [2]i32"(ptr noundef nonnull align 4 dereferenceable(8) %value, ptr noundef nonnull align 8 dereferenceable(8) %index, i64 noundef %replacement) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -81,7 +81,7 @@ entry:
   ret ptr %3
 }
 
-define noundef i32 @Read(ptr noundef nonnull align 4 dereferenceable(8) %value, ptr noundef nonnull align 8 dereferenceable(8) %index, i64 noundef %replacement) {
+define noundef i32 @"cw:Read:func(&mut [2]i32,&mut usize,usize)i32"(ptr noundef nonnull align 4 dereferenceable(8) %value, ptr noundef nonnull align 8 dereferenceable(8) %index, i64 noundef %replacement) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -93,7 +93,7 @@ entry:
   %0 = load ptr, ptr %value.addr, align 8
   %1 = load ptr, ptr %index.addr, align 8
   %2 = load i64, ptr %replacement.addr, align 8
-  %call = call noundef nonnull align 4 dereferenceable(8) ptr @Locate(ptr noundef nonnull align 4 dereferenceable(8) %0, ptr noundef nonnull align 8 dereferenceable(8) %1, i64 noundef %2)
+  %call = call noundef nonnull align 4 dereferenceable(8) ptr @"cw:Locate:func(&mut [2]i32,&mut usize,usize)&mut [2]i32"(ptr noundef nonnull align 4 dereferenceable(8) %0, ptr noundef nonnull align 8 dereferenceable(8) %1, i64 noundef %2)
   %3 = load ptr, ptr %index.addr, align 8
   %4 = load i64, ptr %3, align 8
   %element = getelementptr [2 x i32], ptr %call, i64 0, i64 %4
@@ -103,7 +103,7 @@ entry:
   ret i32 %6
 }
 
-define noundef i32 @Next(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef i32 @"cw:Next:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -120,7 +120,7 @@ entry:
   ret i32 %5
 }
 
-define noundef i32 @Elements(ptr noundef nonnull align 4 dereferenceable(4) %value, i64 noundef %index) {
+define noundef i32 @"cw:Elements:func(&mut i32,usize)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value, i64 noundef %index) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -130,11 +130,11 @@ entry:
   store i64 %index, ptr %index.addr, align 8
   %element = getelementptr inbounds nuw [2 x i32], ptr %values, i64 0, i64 0
   %0 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @Next(ptr noundef nonnull align 4 dereferenceable(4) %0)
+  %call = call noundef i32 @"cw:Next:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %0)
   store i32 %call, ptr %element, align 4
   %element1 = getelementptr inbounds nuw [2 x i32], ptr %values, i64 0, i64 1
   %1 = load ptr, ptr %value.addr, align 8
-  %call2 = call noundef i32 @Next(ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call2 = call noundef i32 @"cw:Next:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %1)
   store i32 %call2, ptr %element1, align 4
   %2 = load i64, ptr %index.addr, align 8
   %element3 = getelementptr [2 x i32], ptr %values, i64 0, i64 %2
@@ -144,7 +144,7 @@ entry:
   ret i32 %4
 }
 
-define void @Discarded(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define void @"cw:Discarded:func(bool,&mut i32)void"(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %flag.addr = alloca i8, align 1
   %value.addr = alloca ptr, align 8
@@ -157,14 +157,14 @@ entry:
 
 cond.true:                                        ; preds = %entry
   %1 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @Next(ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call = call noundef i32 @"cw:Next:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %1)
   %2 = load ptr, ptr %value.addr, align 8
-  %call1 = call noundef i32 @Next(ptr noundef nonnull align 4 dereferenceable(4) %2)
+  %call1 = call noundef i32 @"cw:Next:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %2)
   br label %cond.end
 
 cond.false:                                       ; preds = %entry
   %3 = load ptr, ptr %value.addr, align 8
-  %call2 = call noundef i32 @Next(ptr noundef nonnull align 4 dereferenceable(4) %3)
+  %call2 = call noundef i32 @"cw:Next:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %3)
   br label %cond.end
 
 cond.end:                                         ; preds = %cond.false, %cond.true

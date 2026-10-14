@@ -14,11 +14,14 @@
 #include <vector>
 
 #include "Diagnostic.h"
+#include "NameLookup.h"
 #include "Source.h"
-#include "SymbolTable.h"
 #include "ast.h"
 
 namespace cw {
+
+class GlobalInitLookup;
+class SymbolTable;
 
 class ASTContext;
 struct BinaryOperator;
@@ -137,8 +140,12 @@ class Sema {
   /// \brief Non-owning AST and persistent semantic state owner.
   ASTContext* ast_context_{};
 
-  /// \brief Lexical symbols for the translation unit under analysis.
-  SymbolTable symbol_table_;
+  /// Borrowed only while a global initializer or function body is being analyzed.
+  SymbolTable* local_symbols_{};
+  const LookupContext* lookup_context_{};
+  /// Namespace of the declaration interface being analyzed; bodies use lookup_context_.
+  const NamespaceContext* namespace_context_{};
+  std::vector<Decl*> declarations_;  ///< Non-namespace declarations in source order.
 
   /// \brief Top-level variables excluded from function-local initialization operations.
   std::unordered_set<const VarDecl*> global_variables_;
@@ -168,9 +175,12 @@ class Sema {
  private:
   // Translation unit stages and their explicit intermediate facts.
   void ResetRunState();
+  void EstablishDeclarationEnvironment(TranslationUnitDecl& translation_unit);
+  LookupResult ResolveName(Node& owner, const NameSyntax& name, std::string missing_message);
   void ResolveTypeStructures(TranslationUnitDecl& translation_unit);
   InheritedVirtualSlots CompleteTypeSemantics(TranslationUnitDecl& translation_unit);
   void CompleteCallableInterfaces(TranslationUnitDecl& translation_unit, const InheritedVirtualSlots& inherited_slots);
+  void ValidateDeclarationModifiers(TranslationUnitDecl& translation_unit);
   void AnalyzeDeclarationBodies(TranslationUnitDecl& translation_unit);
   void FinalizeTranslationUnitSemantics(TranslationUnitDecl& translation_unit);
 
@@ -193,6 +203,10 @@ class Sema {
   bool ValidateAbstractUsesInContainedFunctionTypes(TypeSyntax& type_syntax, QualType type);
   bool ValidateAbstractFunctionTypeUses(FunctionDecl& declaration);
 
+  // Exported declaration interfaces.
+  void ValidateExportedTypeUse(TypeSyntax* type_syntax, QualType type);
+  void ValidateExportedSignature(FunctionDecl& declaration);
+
   // Declaration interfaces, binding, virtual hierarchy, and lifecycle facts.
   void ValidateVirtualDeclarationInterfaces(TranslationUnitDecl& translation_unit);
   InheritedVirtualSlots ValidateVirtualHierarchy(TranslationUnitDecl& translation_unit);
@@ -206,17 +220,19 @@ class Sema {
   void ResolveCallableInterfaces(TranslationUnitDecl& translation_unit);
   void BindCallableDeclarations(TranslationUnitDecl& translation_unit);
   void BindFunctionDeclaration(FunctionDecl& declaration);
-  void AssociateVirtualDefinitions(TranslationUnitDecl& translation_unit);
+  void AssociateVirtualImplementations(TranslationUnitDecl& translation_unit);
   void ValidateRequiredOverrideDeclarations(TranslationUnitDecl& translation_unit,
                                             const InheritedVirtualSlots& inherited_slots);
   bool ValidateOperatorFunctionInterface(FunctionDecl& declaration);
   bool RegisterSpecialAssignment(FunctionDecl& declaration);
+  bool ValidateTypeOperationIdentity(FunctionDecl& declaration, const StructDecl& structure);
   bool AddFunctionDeclaration(const std::string& name, FunctionDecl& declaration);
   void ResolveConstructorTarget(ConstructorDecl& declaration);
   void ResolveDestructorTarget(DestructorDecl& declaration);
   void RegisterConstructor(ConstructorDecl& declaration);
   void RegisterDestructor(DestructorDecl& declaration);
-  void BindGlobalVariables(VarGroupDecl& declaration);
+  void PrepareGlobalBindings();
+  void DiagnoseGlobalBindingConflicts(VarGroupDecl& declaration);
   void ResolveVariableGroupTypes(VarGroupDecl& declaration, TypeUseKind use);
   void ResolveFunctionDeclarationTypes(FunctionDecl& declaration);
   void CheckFunctionOperatorAndReturnDeclaration(FunctionDecl& declaration);
@@ -244,9 +260,13 @@ class Sema {
   void FormImplicitResultInitialization(std::unique_ptr<Expr>& expression, VarDecl& target,
                                         FunctionDecl* function = nullptr);
   bool AdaptReturnExpression(std::unique_ptr<Expr>& expression, QualType target_type, Node& diagnostic_owner);
-  void AnalyzeVariableGroup(VarGroupDecl& declaration, TypeUseKind use = TypeUseKind::LocalVariable);
+  void AnalyzeVariableGroup(VarGroupDecl& declaration, TypeUseKind use = TypeUseKind::LocalVariable,
+                            GlobalInitLookup* global_lookup = nullptr);
 
   // Expression preparation and operator-specific semantics.
+  /// Forms the current integer constant subset without requiring callable interfaces.
+  [[nodiscard]] std::unique_ptr<Expr> AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> expression,
+                                                                 ComptimeIntMode mode = ComptimeIntMode::Preserve);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeExpr(std::unique_ptr<Expr> expression,
                                                   ComptimeIntMode mode = ComptimeIntMode::Materialize,
                                                   ExpressionUse use = ExpressionUse::General,

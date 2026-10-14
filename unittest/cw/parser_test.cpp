@@ -283,7 +283,7 @@ var duplicate const const i32;)");
 TEST_F(ParserTest, PreservesIncompleteQualifiedTypePrefixes) {
   Parse("var broken const &mut; var next i32;");
 
-  ExpectError(0, 21, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(0, 21, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-VarGroupDecl {{address}} <test.cw:1:1, col:22> contains-errors
 | `-VarDecl {{address}} <col:5, col:22> broken contains-errors
@@ -347,9 +347,9 @@ func Move(value move i32) {}
 var old mut i32;
 func Good(value &mut i32) {})");
 
-  ExpectError(0, 15, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
-  ExpectError(1, 16, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
-  ExpectError(2, 16, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(0, 15, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
+  ExpectError(1, 16, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
+  ExpectError(2, 16, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
   ExpectError(3, 8, "expected ':=' or ';'");
 }
 
@@ -428,7 +428,7 @@ TEST_F(ParserTest, ReportsMissingVariableInitializer) {
       0, 9,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
 }
 
 TEST_F(ParserTest, ReportsNonExpressionTokenInExpression) {
@@ -439,7 +439,7 @@ var x := return;
       1, 9,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
 }
 
 TEST_F(ParserTest, ReportsMissingCondition) {
@@ -448,7 +448,7 @@ TEST_F(ParserTest, ReportsMissingCondition) {
       0, 14,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
 }
 
 TEST_F(ParserTest, ReportsMissingRightOperand) {
@@ -457,7 +457,7 @@ TEST_F(ParserTest, ReportsMissingRightOperand) {
       0, 22,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
 }
 
 TEST_F(ParserTest, ReportsMissingMemberName) {
@@ -471,7 +471,7 @@ TEST_F(ParserTest, ReportsMissingTailExpression) {
       0, 14,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
 }
 
 TEST_F(ParserTest, ReportsMultipleExpressionErrorsAndContinuesParsing) {
@@ -485,23 +485,37 @@ var ;)");
       1, 9,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
   ExpectError(
       2, 11,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
   ExpectError(
       3, 0,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
   ExpectError(5, 4, "expected identifier");
 }
 
 TEST_F(ParserTest, ReportsUnexpectedTopLevelToken) {
   Parse("123");
-  ExpectError(0, 0, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectError(0, 0, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+}
+
+TEST_F(ParserTest, RecoversDeclarationsAfterStrayRootClosingBraces) {
+  Parse(R"(} 123
+func First() {}
+} 456
+func Last() {})");
+  ExpectError(0, 0, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectError(2, 0, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-FunctionDecl {{address}} <test.cw:2:1, col:16> First
+| `-CompoundStmt {{address}} <col:14, col:16>
+`-FunctionDecl {{address}} <line:4:1, col:15> Last
+  `-CompoundStmt {{address}} <col:13, col:15>)");
 }
 
 TEST_F(ParserTest, ReportsFunctionTypeSyntaxErrorsAndContinuesParsing) {
@@ -512,9 +526,9 @@ var missing_return func ();
 var valid func () void;)");
 
   ExpectError(0, 22, "expected '('");
-  ExpectError(1, 23, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(1, 23, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
   ExpectError(2, 28, "expected ',' or ')'");
-  ExpectError(3, 26, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(3, 26, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-VarGroupDecl {{address}} <test.cw:1:1, col:22> contains-errors
@@ -539,7 +553,7 @@ var valid func () void;)");
 
 TEST_F(ParserTest, ReportsUnexpectedTopLevelVirtual) {
   Parse("virtual f() {}");
-  ExpectError(0, 0, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectError(0, 0, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
 }
 
 TEST_F(ParserTest, ReportsMissingStructName) {
@@ -549,7 +563,7 @@ TEST_F(ParserTest, ReportsMissingStructName) {
 
 TEST_F(ParserTest, ReportsMultipleTopLevelErrorsInOrder) {
   Parse("123\nstruct\nvar ;");
-  ExpectError(0, 0, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectError(0, 0, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
   ExpectError(2, 0, "expected identifier");
   ExpectError(2, 4, "expected identifier");
 }
@@ -565,8 +579,8 @@ bad ;
 good i32;
 worse **;
 })");
-  ExpectError(1, 4, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
-  ExpectError(3, 8, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(1, 4, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
+  ExpectError(3, 8, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
 }
 
 TEST_F(ParserTest, ReportsMissingFieldSemicolon) {
@@ -586,12 +600,12 @@ TEST_F(ParserTest, RecoversAtParameterSeparator) {
 
 TEST_F(ParserTest, ReportsMissingParameterType) {
   Parse("func f(x, y i32) {}");
-  ExpectError(0, 8, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(0, 8, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
 }
 
 TEST_F(ParserTest, ReportsMissingReturnPointee) {
   Parse("func f() * {}");
-  ExpectError(0, 11, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier");
+  ExpectError(0, 11, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
 }
 
 TEST_F(ParserTest, RequiresNamesForVarReturnDeclarationsAndRecoversAtDeclarationBoundaries) {
@@ -952,7 +966,7 @@ TEST_F(ParserTest, DumpsRecoveryAnchorAtExpressionStart) {
       0, 13,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-VarGroupDecl {{address}} <test.cw:1:1, col:10> contains-errors
@@ -966,7 +980,7 @@ TEST_F(ParserTest, DumpsZeroWidthRecoveryRangeBeforeDelimiter) {
       0, 9,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-VarGroupDecl {{address}} <test.cw:1:1, col:10> contains-errors
@@ -980,7 +994,7 @@ TEST_F(ParserTest, DumpsZeroWidthRecoveryRangeAtEndOfSource) {
       0, 8,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['");
+      "'-', '--', '~', '!', '::', '(', '['");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-VarGroupDecl {{address}} <test.cw:1:1, col:9> contains-errors
@@ -1005,6 +1019,77 @@ TEST_F(ParserTest, PrintsPathAgainWhenSourceFileChanges) {
 | `-VarDecl {{address}} <col:5, col:6> a
 `-VarGroupDecl {{address}} <second.cw:1:1, col:7>
   `-VarDecl {{address}} <col:5, col:6> b)");
+}
+
+TEST_F(ParserTest, ParsesExportedTopLevelDeclarations) {
+  Parse(R"(export struct S {}
+export trivial struct T {}
+export func F() {}
+export func operator+(lhs i32, rhs i32) i32 {}
+export ctor S() {}
+export dtor S() {}
+export var v i32;)");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+|-StructDecl {{address}} <test.cw:1:1, col:19> S exported
+|-StructDecl {{address}} <line:2:1, col:27> T trivial exported
+|-FunctionDecl {{address}} <line:3:1, col:19> F exported
+| `-CompoundStmt {{address}} <col:17, col:19>
+|-FunctionDecl {{address}} <line:4:1, col:47> operator+ exported
+| |-ParmVarDecl {{address}} <col:23, col:30> lhs
+| | `-BuiltinType {{address}} <col:27, col:30> 'i32'
+| |-ParmVarDecl {{address}} <col:32, col:39> rhs
+| | `-BuiltinType {{address}} <col:36, col:39> 'i32'
+| |-ReturnVarDecl {{address}} <col:41, col:44>
+| | `-BuiltinType {{address}} <col:41, col:44> 'i32'
+| `-CompoundStmt {{address}} <col:45, col:47>
+|-ConstructorDecl {{address}} <line:5:1, col:19> S exported
+| `-CompoundStmt {{address}} <col:17, col:19>
+|-DestructorDecl {{address}} <line:6:1, col:19> S exported
+| `-CompoundStmt {{address}} <col:17, col:19>
+`-VarGroupDecl {{address}} <line:7:1, col:18> exported
+  `-VarDecl {{address}} <col:12, col:17> v
+    `-BuiltinType {{address}} <col:14, col:17> 'i32')");
+}
+
+TEST_F(ParserTest, RecoversFromMisplacedExportModifiers) {
+  Parse(R"(trivial export struct S {}
+export export func F() {}
+export ;
+export package other;
+var v i32;
+export)");
+
+  ExpectError(0, 8, "expected 'struct'");
+  ExpectError(1, 7, "declaration modifiers 'import' and 'export' cannot be repeated or combined");
+  ExpectError(2, 7, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectError(3, 7, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectError(5, 6, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-StructDecl {{address}} <test.cw:1:1, col:8> trivial contains-errors
+|-StructDecl {{address}} <col:9, col:27> S exported
+|-FunctionDecl {{address}} <line:2:1, col:26> F exported contains-errors
+| `-CompoundStmt {{address}} <col:24, col:26>
+`-VarGroupDecl {{address}} <line:5:1, col:11>
+  `-VarDecl {{address}} <col:5, col:10> v
+    `-BuiltinType {{address}} <col:7, col:10> 'i32')");
+}
+
+TEST_F(ParserTest, ParsesExportedDeclarationWithoutPackageClause) {
+  Parse("export func F() {}");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, col:19> F exported
+  `-CompoundStmt {{address}} <col:17, col:19>)");
+}
+
+TEST_F(ParserTest, DoesNotExportDeclarationAcrossSourcesWithoutTokens) {
+  Parse(std::vector<cw::Source>{
+      {"first.cw", "export"}, {"empty.cw", ""}, {"comment.cw", "// comment only"}, {"last.cw", "func F() {}"}});
+
+  ExpectError(0, 6, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+`-FunctionDecl {{address}} <last.cw:1:1, col:12> F
+  `-CompoundStmt {{address}} <col:10, col:12>)");
 }
 
 TEST_F(ParserTest, PreservesExplicitTrivialModifierAndLeavesDefaultCallForSema) {
@@ -1038,4 +1123,355 @@ TEST_F(ParserTest, ReservesTrivialFromDeclarationNames) {
   Parse("var trivial i32;");
   ExpectError(0, 4, "expected identifier");
   ExpectError(0, 12, "expected 'struct'");
+}
+
+TEST_F(ParserTest, DumpsNamespaceBlocksAndTheirDeclarations) {
+  Parse("namespace A { var x i32; }\nnamespace A::B {}");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+|-NamespaceDecl {{address}} <test.cw:1:1, col:27> A
+| `-VarGroupDecl {{address}} <col:15, col:25>
+|   `-VarDecl {{address}} <col:19, col:24> x
+|     `-BuiltinType {{address}} <col:21, col:24> 'i32'
+`-NamespaceDecl {{address}} <line:2:1, col:18> A
+  `-NamespaceDecl {{address}} <col:12, col:18> B nested)");
+}
+
+TEST_F(ParserTest, RejectsRemovedPackageClause) {
+  Parse("package old;");
+  ExpectError(0, 0, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+}
+
+TEST_F(ParserTest, RejectsAnonymousNamespace) {
+  Parse("namespace {}");
+  ExpectError(0, 10, "expected identifier");
+}
+
+TEST_F(ParserTest, RejectsAbsoluteNamespaceDefinition) {
+  Parse("namespace ::A {}");
+  ExpectError(0, 10, "expected identifier");
+}
+
+TEST_F(ParserTest, RejectsSemicolonAfterNamespaceDefinition) {
+  Parse("namespace A {};");
+  ExpectError(0, 14, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+}
+
+TEST_F(ParserTest, RejectsExportedNamespace) {
+  Parse("export namespace A {}");
+  ExpectError(0, 7, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+}
+
+TEST_F(ParserTest, RejectsNamespaceInsideFunction) {
+  Parse("func F() { namespace A {} }");
+  ExpectError(0, 11,
+              "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating "
+              "literal, string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+              "'-', '--', '~', '!', '::', '(', '['");
+}
+
+TEST_F(ParserTest, RejectsNamespaceInsideStruct) {
+  Parse("trivial struct S { namespace A {} }");
+  ExpectError(0, 19, "expected '}'");
+  ExpectError(0, 34, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+}
+
+TEST_F(ParserTest, ReservesNamespaceKeyword) {
+  Parse("func namespace() {}");
+  ExpectError(0, 5, "expected '('");
+  ExpectError(0, 14, "expected identifier");
+}
+
+TEST_F(ParserTest, RecoversNextFileAfterIncompleteNamespace) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "namespace A {"},
+      {"empty", ""},
+      {"comment", "// comment"},
+      {"good", "export func Good() {} func Plain() {}"},
+  });
+  ExpectError(0, 13, "expected '}'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-NamespaceDecl {{address}} <broken:1:1, col:14> A contains-errors
+|-FunctionDecl {{address}} <good:1:1, col:22> Good exported
+| `-CompoundStmt {{address}} <col:20, col:22>
+`-FunctionDecl {{address}} <col:23, col:38> Plain
+  `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, RecoversNextFileAfterIncompleteNamespaceExport) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "namespace A { export"},
+      {"empty", ""},
+      {"comment", "// comment"},
+      {"good", "export func Good() {} func Plain() {}"},
+  });
+  ExpectError(0, 20, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectError(0, 20, "expected '}'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-NamespaceDecl {{address}} <broken:1:1, col:14> A contains-errors
+|-FunctionDecl {{address}} <good:1:1, col:22> Good exported
+| `-CompoundStmt {{address}} <col:20, col:22>
+`-FunctionDecl {{address}} <col:23, col:38> Plain
+  `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, RecoversNextFileAfterIncompleteFunctionInNamespace) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "namespace A { func F() {"},
+      {"empty", ""},
+      {"comment", "// comment"},
+      {"good", "export func Good() {} func Plain() {}"},
+  });
+  ExpectError(0, 24, "expected '}'");
+  ExpectError(0, 24, "expected '}'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-NamespaceDecl {{address}} <broken:1:1, col:25> A contains-errors
+| `-FunctionDecl {{address}} <col:15, col:25> F contains-errors
+|   `-CompoundStmt {{address}} <col:24, col:25> contains-errors
+|-FunctionDecl {{address}} <good:1:1, col:22> Good exported
+| `-CompoundStmt {{address}} <col:20, col:22>
+`-FunctionDecl {{address}} <col:23, col:38> Plain
+  `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, RecoversNextFileAfterIncompleteParameterList) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "func F(a i32"},
+      {"empty", ""},
+      {"comment", "// comment"},
+      {"good", "export func Good() {} func Plain() {}"},
+  });
+  ExpectError(0, 12, "expected ')'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-FunctionDecl {{address}} <broken:1:1, col:13> F contains-errors
+| `-ParmVarDecl {{address}} <col:8, col:13> a
+|   `-BuiltinType {{address}} <col:10, col:13> 'i32'
+|-FunctionDecl {{address}} <good:1:1, col:22> Good exported
+| `-CompoundStmt {{address}} <col:20, col:22>
+`-FunctionDecl {{address}} <col:23, col:38> Plain
+  `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, RecoversNextFileAfterIncompleteStruct) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "trivial struct T { x i32"},
+      {"empty", ""},
+      {"comment", "// comment"},
+      {"good", "export func Good() {} func Plain() {}"},
+  });
+  ExpectError(0, 24, "expected ';'");
+  ExpectError(0, 24, "expected '}'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-StructDecl {{address}} <broken:1:1, col:25> T trivial contains-errors
+| `-FieldDecl {{address}} <col:20, col:25> x contains-errors
+|   `-BuiltinType {{address}} <col:22, col:25> 'i32'
+|-FunctionDecl {{address}} <good:1:1, col:22> Good exported
+| `-CompoundStmt {{address}} <col:20, col:22>
+`-FunctionDecl {{address}} <col:23, col:38> Plain
+  `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, RecoversNextFileAfterIncompleteVarFlags) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "var(flag"},
+      {"empty", ""},
+      {"comment", "// comment"},
+      {"good", "export func Good() {} func Plain() {}"},
+  });
+  ExpectError(0, 8, "expected identifier");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-VarGroupDecl {{address}} <broken:1:1, col:4> contains-errors
+|-FunctionDecl {{address}} <good:1:1, col:22> Good exported
+| `-CompoundStmt {{address}} <col:20, col:22>
+`-FunctionDecl {{address}} <col:23, col:38> Plain
+  `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, RecoversNextFileAfterIncompleteStringLiteral) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "var text := \"unterminated"},
+      {"empty", ""},
+      {"comment", "// comment"},
+      {"good", "export func Good() {} func Plain() {}"},
+  });
+  ExpectError(0, 12,
+              "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating "
+              "literal, string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+              "'-', '--', '~', '!', '::', '(', '['");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-VarGroupDecl {{address}} <broken:1:1, col:13> contains-errors
+| |-VarDecl {{address}} <col:5, col:9> text
+| `-RecoveryExpr {{address}} <col:13, col:13> contains-errors
+|-FunctionDecl {{address}} <good:1:1, col:22> Good exported
+| `-CompoundStmt {{address}} <col:20, col:22>
+`-FunctionDecl {{address}} <col:23, col:38> Plain
+  `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, RecoversNextFileAfterIncompleteCharacterLiteral) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "var ch := 'x"},
+      {"empty", ""},
+      {"comment", "// comment"},
+      {"good", "export func Good() {} func Plain() {}"},
+  });
+  ExpectError(0, 10,
+              "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating "
+              "literal, string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+              "'-', '--', '~', '!', '::', '(', '['");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-VarGroupDecl {{address}} <broken:1:1, col:11> contains-errors
+| |-VarDecl {{address}} <col:5, col:7> ch
+| `-RecoveryExpr {{address}} <col:11, col:11> contains-errors
+|-FunctionDecl {{address}} <good:1:1, col:22> Good exported
+| `-CompoundStmt {{address}} <col:20, col:22>
+`-FunctionDecl {{address}} <col:23, col:38> Plain
+  `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, RecoversNextFileAfterIncompleteParenthesizedExpression) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "namespace A { var x := ("},
+      {"empty", ""},
+      {"comment", "// comment"},
+      {"good", "export func Good() {} func Plain() {}"},
+  });
+  ExpectError(0, 24,
+              "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating "
+              "literal, string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+              "'-', '--', '~', '!', '::', '(', '['");
+  ExpectError(0, 24, "expected '}'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-NamespaceDecl {{address}} <broken:1:1, col:24> A contains-errors
+| `-VarGroupDecl {{address}} <col:15, col:24> contains-errors
+|   |-VarDecl {{address}} <col:19, col:20> x
+|   `-RecoveryExpr {{address}} <col:24, col:24> contains-errors
+|-FunctionDecl {{address}} <good:1:1, col:22> Good exported
+| `-CompoundStmt {{address}} <col:20, col:22>
+`-FunctionDecl {{address}} <col:23, col:38> Plain
+  `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, RecoversNextFileAfterIncompleteArrayLiteral) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "namespace A { var x := [2] i32 { 1,"},
+      {"empty", ""},
+      {"comment", "// comment"},
+      {"good", "export func Good() {} func Plain() {}"},
+  });
+  ExpectError(0, 35,
+              "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating "
+              "literal, string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+              "'-', '--', '~', '!', '::', '(', '{', '['");
+  ExpectError(0, 35, "expected '}'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-NamespaceDecl {{address}} <broken:1:1, col:24> A contains-errors
+| `-VarGroupDecl {{address}} <col:15, col:24> contains-errors
+|   |-VarDecl {{address}} <col:19, col:20> x
+|   `-RecoveryExpr {{address}} <col:24, col:24> contains-errors
+|-FunctionDecl {{address}} <good:1:1, col:22> Good exported
+| `-CompoundStmt {{address}} <col:20, col:22>
+`-FunctionDecl {{address}} <col:23, col:38> Plain
+  `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, DoesNotExportDeclarationAfterNamespaceClosingBraceAcrossFiles) {
+  Parse(std::vector<cw::Source>{
+      {"bad", "namespace A { export }"},
+      {"empty", ""},
+      {"good", "func F() {}"},
+  });
+  ExpectError(0, 21, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-NamespaceDecl {{address}} <bad:1:1, col:23> A contains-errors
+`-FunctionDecl {{address}} <good:1:1, col:12> F
+  `-CompoundStmt {{address}} <col:10, col:12>)");
+}
+
+TEST_F(ParserTest, DoesNotExportDeclarationAfterNamespaceClosingBrace) {
+  Parse("namespace A { export } func F() {}");
+  ExpectError(0, 21, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-NamespaceDecl {{address}} <test.cw:1:1, col:23> A contains-errors
+`-FunctionDecl {{address}} <col:24, col:35> F
+  `-CompoundStmt {{address}} <col:33, col:35>)");
+}
+
+TEST_F(ParserTest, ParsesImportedDeclarationsAndMixedNamespaceContents) {
+  Parse(R"(namespace api {
+import trivial struct Point { value i32; }
+import struct Box { virtual { func Read(this &copy Box) i32; } }
+import ctor Box(value i32);
+import dtor Box();
+import func Flush();
+import func operator+(left Point, right Point) Point;
+export func Local() {}
+})");
+}
+
+TEST_F(ParserTest, DumpsImportedFunctionWithoutBody) {
+  Parse("import func Flush();");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, col:21> Flush imported)");
+}
+
+TEST_F(ParserTest, RejectsCombinedImportModifiersAndRecoversFollowingDeclaration) {
+  Parse("import export func F(); import import func G(); func H() {}");
+  ExpectError(0, 7, "declaration modifiers 'import' and 'export' cannot be repeated or combined");
+  ExpectError(0, 31, "declaration modifiers 'import' and 'export' cannot be repeated or combined");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-FunctionDecl {{address}} <test.cw:1:1, col:24> F imported contains-errors
+|-FunctionDecl {{address}} <col:25, col:48> G imported contains-errors
+`-FunctionDecl {{address}} <col:49, col:60> H
+  `-CompoundStmt {{address}} <col:58, col:60>)");
+}
+
+TEST_F(ParserTest, ReportsFollowingErrorsAfterCompleteDeclarationsWithInvalidModifiers) {
+  Parse(R"(import import func First();
+42
+namespace N {
+import export func Second();
+42
+func Good() {}
+})");
+  ExpectError(0, 7, "declaration modifiers 'import' and 'export' cannot be repeated or combined");
+  ExpectError(1, 0, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectError(3, 7, "declaration modifiers 'import' and 'export' cannot be repeated or combined");
+  ExpectError(4, 0, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-FunctionDecl {{address}} <test.cw:1:1, col:28> First imported contains-errors
+`-NamespaceDecl {{address}} <line:3:1, line:7:2> N contains-errors
+  |-FunctionDecl {{address}} <line:4:1, col:29> Second imported contains-errors
+  `-FunctionDecl {{address}} <line:6:1, col:15> Good
+    `-CompoundStmt {{address}} <col:13, col:15>)");
+}
+
+TEST_F(ParserTest, RejectsBodiesOnImportedCallablesAndRecovers) {
+  Parse(R"(import func F() {}
+import ctor T() {}
+import dtor T() {}
+import func Good();)");
+  ExpectError(0, 16, "expected ';'");
+  ExpectError(1, 16, "expected ';'");
+  ExpectError(2, 16, "expected ';'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-FunctionDecl {{address}} <test.cw:1:1, col:16> F imported contains-errors
+|-ConstructorDecl {{address}} <line:2:1, col:16> T imported contains-errors
+|-DestructorDecl {{address}} <line:3:1, col:16> T imported contains-errors
+`-FunctionDecl {{address}} <line:4:1, col:20> Good imported)");
+}
+
+TEST_F(ParserTest, RejectsIncompleteImportedTypeAndRecoversFollowingDeclaration) {
+  Parse("import struct T; import func Good();");
+  ExpectError(0, 15, "expected '{'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-StructDecl {{address}} <test.cw:1:1, col:16> T imported contains-errors
+`-FunctionDecl {{address}} <col:18, col:37> Good imported)");
+}
+
+TEST_F(ParserTest, DoesNotCarryImportModifierAcrossFiles) {
+  Parse(std::vector<cw::Source>{{"first.cwi", "import"}, {"empty.cwi", ""}, {"last.cw", "func F() {}"}});
+  ExpectError(0, 6, "expected one of 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+`-FunctionDecl {{address}} <last.cw:1:1, col:12> F
+  `-CompoundStmt {{address}} <col:10, col:12>)");
 }

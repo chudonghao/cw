@@ -1,6 +1,6 @@
 %struct.Value = type { i32 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @Change(ptr noundef nonnull align 4 dereferenceable(4) %source, ptr noundef nonnull align 4 dereferenceable(4) %target) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:Change:func(&mut Value,&mut Value)&mut Value"(ptr noundef nonnull align 4 dereferenceable(4) %source, ptr noundef nonnull align 4 dereferenceable(4) %target) {
 entry:
   %.result = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -16,7 +16,7 @@ entry:
   ret ptr %2
 }
 
-define void @Existing(ptr noundef nonnull align 4 dereferenceable(4) %source, ptr noundef nonnull align 4 dereferenceable(4) %target) {
+define void @"cw:Existing:func(&mut Value,&mut Value)void"(ptr noundef nonnull align 4 dereferenceable(4) %source, ptr noundef nonnull align 4 dereferenceable(4) %target) {
 entry:
   %source.addr = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -25,12 +25,12 @@ entry:
   %0 = load ptr, ptr %source.addr, align 8
   %1 = load ptr, ptr %source.addr, align 8
   %2 = load ptr, ptr %target.addr, align 8
-  %call = call noundef nonnull align 4 dereferenceable(4) ptr @Change(ptr noundef nonnull align 4 dereferenceable(4) %1, ptr noundef nonnull align 4 dereferenceable(4) %2)
+  %call = call noundef nonnull align 4 dereferenceable(4) ptr @"cw:Change:func(&mut Value,&mut Value)&mut Value"(ptr noundef nonnull align 4 dereferenceable(4) %1, ptr noundef nonnull align 4 dereferenceable(4) %2)
   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %call, ptr align 4 %0, i64 4, i1 false)
   ret void
 }
 
-define void @Formed(ptr noundef nonnull align 4 dereferenceable(4) %source, ptr noundef nonnull align 4 dereferenceable(4) %target) {
+define void @"cw:Formed:func(&mut Value,&mut Value)void"(ptr noundef nonnull align 4 dereferenceable(4) %source, ptr noundef nonnull align 4 dereferenceable(4) %target) {
 entry:
   %source.addr = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -40,7 +40,7 @@ entry:
   call void @llvm.memset.p0.i64(ptr align 4 %temporary, i8 0, i64 4, i1 false)
   %0 = load ptr, ptr %source.addr, align 8
   %1 = load ptr, ptr %target.addr, align 8
-  %call = call noundef nonnull align 4 dereferenceable(4) ptr @Change(ptr noundef nonnull align 4 dereferenceable(4) %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call = call noundef nonnull align 4 dereferenceable(4) ptr @"cw:Change:func(&mut Value,&mut Value)&mut Value"(ptr noundef nonnull align 4 dereferenceable(4) %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %call, ptr align 4 %temporary, i64 4, i1 false)
   ret void
 }

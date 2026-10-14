@@ -2,7 +2,7 @@
 %struct.CopyOnly = type { i32 }
 %struct.Empty = type { i8 }
 
-define noundef ptr @Item.ctor(ptr noundef returned %this, i32 noundef %value) {
+define noundef ptr @"cw:Item:ctor(i32):complete"(ptr noundef returned %this, i32 noundef %value) {
 entry:
   %value.addr = alloca i32, align 4
   store i32 %value, ptr %value.addr, align 4
@@ -12,12 +12,27 @@ entry:
   ret ptr %this
 }
 
-define noundef ptr @Item.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Item:ctor(i32):base"(ptr noundef returned %this, i32 noundef %value) {
+entry:
+  %value.addr = alloca i32, align 4
+  store i32 %value, ptr %value.addr, align 4
+  %value1 = getelementptr inbounds nuw %struct.Item, ptr %this, i32 0, i32 0
+  %0 = load i32, ptr %value.addr, align 4
+  store i32 %0, ptr %value1, align 4
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Item:dtor():complete"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define void @"="(ptr noundef nonnull align 4 dereferenceable(4) %target, ptr noundef nonnull align 4 dereferenceable(4) %source) {
+define noundef ptr @"cw:Item:dtor():base"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define void @"cw:operator=:func(&mut Item,&copy Item)void"(ptr noundef nonnull align 4 dereferenceable(4) %target, ptr noundef nonnull align 4 dereferenceable(4) %source) {
 entry:
   %target.addr = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -32,7 +47,7 @@ entry:
   ret void
 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @"=.1"(ptr noundef nonnull align 4 dereferenceable(4) %target, ptr noundef nonnull align 4 dereferenceable(4) %source) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:operator=:func(&mut Item,&move Item)&mut Item"(ptr noundef nonnull align 4 dereferenceable(4) %target, ptr noundef nonnull align 4 dereferenceable(4) %source) {
 entry:
   %.result = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -51,7 +66,7 @@ entry:
   ret ptr %4
 }
 
-define noundef nonnull align 4 dereferenceable(8) ptr @Copy(ptr noundef nonnull align 4 dereferenceable(8) %target, ptr noundef nonnull align 4 dereferenceable(8) %source) {
+define noundef nonnull align 4 dereferenceable(8) ptr @"cw:Copy:func(&mut [2]Item,&copy [2]Item)&mut [2]Item"(ptr noundef nonnull align 4 dereferenceable(8) %target, ptr noundef nonnull align 4 dereferenceable(8) %source) {
 entry:
   %.result = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -66,7 +81,7 @@ array.assign:                                     ; preds = %array.assign, %entr
   %array.index = phi i64 [ 0, %entry ], [ %array.next, %array.assign ]
   %element = getelementptr inbounds nuw [2 x %struct.Item], ptr %1, i64 0, i64 %array.index
   %element1 = getelementptr inbounds nuw [2 x %struct.Item], ptr %0, i64 0, i64 %array.index
-  call void @"="(ptr noundef nonnull align 4 dereferenceable(4) %element, ptr noundef nonnull align 4 dereferenceable(4) %element1)
+  call void @"cw:operator=:func(&mut Item,&copy Item)void"(ptr noundef nonnull align 4 dereferenceable(4) %element, ptr noundef nonnull align 4 dereferenceable(4) %element1)
   %array.next = add i64 %array.index, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end, label %array.assign
@@ -77,7 +92,7 @@ array.end:                                        ; preds = %array.assign
   ret ptr %2
 }
 
-define noundef nonnull align 4 dereferenceable(8) ptr @Move(ptr noundef nonnull align 4 dereferenceable(8) %target, ptr noundef nonnull align 4 dereferenceable(8) %source) {
+define noundef nonnull align 4 dereferenceable(8) ptr @"cw:Move:func(&mut [2]Item,&move [2]Item)&mut [2]Item"(ptr noundef nonnull align 4 dereferenceable(8) %target, ptr noundef nonnull align 4 dereferenceable(8) %source) {
 entry:
   %.result = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -92,7 +107,7 @@ array.assign:                                     ; preds = %array.assign, %entr
   %array.index = phi i64 [ 0, %entry ], [ %array.next, %array.assign ]
   %element = getelementptr inbounds nuw [2 x %struct.Item], ptr %1, i64 0, i64 %array.index
   %element1 = getelementptr inbounds nuw [2 x %struct.Item], ptr %0, i64 0, i64 %array.index
-  %call = call noundef nonnull align 4 dereferenceable(4) ptr @"=.1"(ptr noundef nonnull align 4 dereferenceable(4) %element, ptr noundef nonnull align 4 dereferenceable(4) %element1)
+  %call = call noundef nonnull align 4 dereferenceable(4) ptr @"cw:operator=:func(&mut Item,&move Item)&mut Item"(ptr noundef nonnull align 4 dereferenceable(4) %element, ptr noundef nonnull align 4 dereferenceable(4) %element1)
   %array.next = add i64 %array.index, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end, label %array.assign
@@ -103,7 +118,7 @@ array.end:                                        ; preds = %array.assign
   ret ptr %2
 }
 
-define void @Nested(ptr noundef nonnull align 4 dereferenceable(16) %target, ptr noundef nonnull align 4 dereferenceable(16) %source) {
+define void @"cw:Nested:func(&mut [2][2]Item,&copy [2][2]Item)void"(ptr noundef nonnull align 4 dereferenceable(16) %target, ptr noundef nonnull align 4 dereferenceable(16) %source) {
 entry:
   %target.addr = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -123,7 +138,7 @@ array.assign2:                                    ; preds = %array.assign2, %arr
   %array.index4 = phi i64 [ 0, %array.assign ], [ %array.next, %array.assign2 ]
   %element5 = getelementptr inbounds nuw [2 x %struct.Item], ptr %element, i64 0, i64 %array.index4
   %element6 = getelementptr inbounds nuw [2 x %struct.Item], ptr %element1, i64 0, i64 %array.index4
-  call void @"="(ptr noundef nonnull align 4 dereferenceable(4) %element5, ptr noundef nonnull align 4 dereferenceable(4) %element6)
+  call void @"cw:operator=:func(&mut Item,&copy Item)void"(ptr noundef nonnull align 4 dereferenceable(4) %element5, ptr noundef nonnull align 4 dereferenceable(4) %element6)
   %array.next = add i64 %array.index4, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end3, label %array.assign2
@@ -137,7 +152,7 @@ array.end:                                        ; preds = %array.end3
   ret void
 }
 
-define noundef ptr @CopyOnly.ctor(ptr noundef returned %this, i32 noundef %value) {
+define noundef ptr @"cw:CopyOnly:ctor(i32):complete"(ptr noundef returned %this, i32 noundef %value) {
 entry:
   %value.addr = alloca i32, align 4
   store i32 %value, ptr %value.addr, align 4
@@ -147,12 +162,27 @@ entry:
   ret ptr %this
 }
 
-define noundef ptr @CopyOnly.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:CopyOnly:ctor(i32):base"(ptr noundef returned %this, i32 noundef %value) {
+entry:
+  %value.addr = alloca i32, align 4
+  store i32 %value, ptr %value.addr, align 4
+  %value1 = getelementptr inbounds nuw %struct.CopyOnly, ptr %this, i32 0, i32 0
+  %0 = load i32, ptr %value.addr, align 4
+  store i32 %0, ptr %value1, align 4
+  ret ptr %this
+}
+
+define noundef ptr @"cw:CopyOnly:dtor():complete"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define noundef i32 @"=.2"(ptr noundef nonnull align 4 dereferenceable(4) %target, ptr noundef nonnull align 4 dereferenceable(4) %source) {
+define noundef ptr @"cw:CopyOnly:dtor():base"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define noundef i32 @"cw:operator=:func(&mut CopyOnly,&copy CopyOnly)i32"(ptr noundef nonnull align 4 dereferenceable(4) %target, ptr noundef nonnull align 4 dereferenceable(4) %source) {
 entry:
   %.result = alloca i32, align 4
   %target.addr = alloca ptr, align 8
@@ -170,7 +200,7 @@ entry:
   ret i32 %3
 }
 
-define void @Fallback(ptr noundef nonnull align 4 dereferenceable(8) %target, ptr noundef nonnull align 4 dereferenceable(8) %source) {
+define void @"cw:Fallback:func(&mut [2]CopyOnly,&move [2]CopyOnly)void"(ptr noundef nonnull align 4 dereferenceable(8) %target, ptr noundef nonnull align 4 dereferenceable(8) %source) {
 entry:
   %target.addr = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -184,7 +214,7 @@ array.assign:                                     ; preds = %array.assign, %entr
   %array.index = phi i64 [ 0, %entry ], [ %array.next, %array.assign ]
   %element = getelementptr inbounds nuw [2 x %struct.CopyOnly], ptr %1, i64 0, i64 %array.index
   %element1 = getelementptr inbounds nuw [2 x %struct.CopyOnly], ptr %0, i64 0, i64 %array.index
-  %call = call noundef i32 @"=.2"(ptr noundef nonnull align 4 dereferenceable(4) %element, ptr noundef nonnull align 4 dereferenceable(4) %element1)
+  %call = call noundef i32 @"cw:operator=:func(&mut CopyOnly,&copy CopyOnly)i32"(ptr noundef nonnull align 4 dereferenceable(4) %element, ptr noundef nonnull align 4 dereferenceable(4) %element1)
   %array.next = add i64 %array.index, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end, label %array.assign
@@ -193,7 +223,7 @@ array.end:                                        ; preds = %array.assign
   ret void
 }
 
-define noundef nonnull align 4 ptr @ZeroSource(ptr noundef nonnull align 4 %source, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define noundef nonnull align 4 ptr @"cw:ZeroSource:func(&copy [3][0]Item,&mut i32)&copy [3][0]Item"(ptr noundef nonnull align 4 %source, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -212,7 +242,7 @@ entry:
   ret ptr %4
 }
 
-define noundef nonnull align 4 ptr @ZeroTarget(ptr noundef nonnull align 4 %target, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define noundef nonnull align 4 ptr @"cw:ZeroTarget:func(&mut [3][0]Item,&mut i32)&mut [3][0]Item"(ptr noundef nonnull align 4 %target, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -231,7 +261,7 @@ entry:
   ret ptr %4
 }
 
-define void @NestedZero(ptr noundef nonnull align 4 %target, ptr noundef nonnull align 4 %source, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:NestedZero:func(&mut [3][0]Item,&copy [3][0]Item,&mut i32)void"(ptr noundef nonnull align 4 %target, ptr noundef nonnull align 4 %source, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %target.addr = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -241,24 +271,34 @@ entry:
   store ptr %counter, ptr %counter.addr, align 8
   %0 = load ptr, ptr %source.addr, align 8
   %1 = load ptr, ptr %counter.addr, align 8
-  %call = call noundef nonnull align 4 ptr @ZeroSource(ptr noundef nonnull align 4 %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call = call noundef nonnull align 4 ptr @"cw:ZeroSource:func(&copy [3][0]Item,&mut i32)&copy [3][0]Item"(ptr noundef nonnull align 4 %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
   %2 = load ptr, ptr %target.addr, align 8
   %3 = load ptr, ptr %counter.addr, align 8
-  %call1 = call noundef nonnull align 4 ptr @ZeroTarget(ptr noundef nonnull align 4 %2, ptr noundef nonnull align 4 dereferenceable(4) %3)
+  %call1 = call noundef nonnull align 4 ptr @"cw:ZeroTarget:func(&mut [3][0]Item,&mut i32)&mut [3][0]Item"(ptr noundef nonnull align 4 %2, ptr noundef nonnull align 4 dereferenceable(4) %3)
   ret void
 }
 
-define noundef ptr @Empty.ctor(ptr noundef returned %this) {
+define noundef ptr @"cw:Empty:ctor():complete"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define noundef ptr @Empty.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Empty:ctor():base"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define void @"=.3"(ptr noundef nonnull align 1 dereferenceable(1) %target, ptr noundef nonnull align 1 dereferenceable(1) %source) {
+define noundef ptr @"cw:Empty:dtor():complete"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Empty:dtor():base"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define void @"cw:operator=:func(&mut Empty,&copy Empty)void"(ptr noundef nonnull align 1 dereferenceable(1) %target, ptr noundef nonnull align 1 dereferenceable(1) %source) {
 entry:
   %target.addr = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -267,7 +307,7 @@ entry:
   ret void
 }
 
-define void @EmptyElements(ptr noundef nonnull align 1 dereferenceable(2) %target, ptr noundef nonnull align 1 dereferenceable(2) %source) {
+define void @"cw:EmptyElements:func(&mut [2]Empty,&copy [2]Empty)void"(ptr noundef nonnull align 1 dereferenceable(2) %target, ptr noundef nonnull align 1 dereferenceable(2) %source) {
 entry:
   %target.addr = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -281,7 +321,7 @@ array.assign:                                     ; preds = %array.assign, %entr
   %array.index = phi i64 [ 0, %entry ], [ %array.next, %array.assign ]
   %element = getelementptr inbounds nuw [2 x %struct.Empty], ptr %1, i64 0, i64 %array.index
   %element1 = getelementptr inbounds nuw [2 x %struct.Empty], ptr %0, i64 0, i64 %array.index
-  call void @"=.3"(ptr noundef nonnull align 1 dereferenceable(1) %element, ptr noundef nonnull align 1 dereferenceable(1) %element1)
+  call void @"cw:operator=:func(&mut Empty,&copy Empty)void"(ptr noundef nonnull align 1 dereferenceable(1) %element, ptr noundef nonnull align 1 dereferenceable(1) %element1)
   %array.next = add i64 %array.index, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end, label %array.assign

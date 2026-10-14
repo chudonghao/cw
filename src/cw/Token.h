@@ -79,6 +79,7 @@ enum TokenType {
   question = expr::question,                        // ?
   colon = expr::colon,                              // :
   colonequal = expr::colonequal,                    // :=
+  coloncolon = expr::coloncolon,                    // ::
   equal = expr::equal,                              // =
   plusequal = expr::plusequal,                      // +=
   minusequal = expr::minusequal,                    // -=
@@ -118,6 +119,9 @@ enum TokenType {
   func,          // func
   var,           // var
   alias,         // alias
+  namespace_,    // namespace
+  export_,       // export
+  import_,       // import
   if_,           // if
   else_,         // else
   while_,        // while

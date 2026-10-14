@@ -2,7 +2,7 @@
 %struct.Item = type { ptr }
 %struct.Token = type { ptr, i32 }
 
-define noundef ptr @Receipt.ctor(ptr noundef returned %this, ptr noundef %trace) {
+define noundef ptr @"cw:Receipt:ctor(*i32):complete"(ptr noundef returned %this, ptr noundef %trace) {
 entry:
   %trace.addr = alloca ptr, align 8
   store ptr %trace, ptr %trace.addr, align 8
@@ -12,7 +12,17 @@ entry:
   ret ptr %this
 }
 
-define noundef ptr @Receipt.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Receipt:ctor(*i32):base"(ptr noundef returned %this, ptr noundef %trace) {
+entry:
+  %trace.addr = alloca ptr, align 8
+  store ptr %trace, ptr %trace.addr, align 8
+  %trace1 = getelementptr inbounds nuw %struct.Receipt, ptr %this, i32 0, i32 0
+  %0 = load ptr, ptr %trace.addr, align 8
+  store ptr %0, ptr %trace1, align 8
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Receipt:dtor():complete"(ptr noundef returned %this) {
 entry:
   %trace = getelementptr inbounds nuw %struct.Receipt, ptr %this, i32 0, i32 0
   %0 = load ptr, ptr %trace, align 8
@@ -25,7 +35,20 @@ entry:
   ret ptr %this
 }
 
-define noundef ptr @Item.ctor(ptr noundef returned %this, ptr noundef %trace) {
+define noundef ptr @"cw:Receipt:dtor():base"(ptr noundef returned %this) {
+entry:
+  %trace = getelementptr inbounds nuw %struct.Receipt, ptr %this, i32 0, i32 0
+  %0 = load ptr, ptr %trace, align 8
+  %1 = load i32, ptr %0, align 4
+  %mul = mul i32 %1, 10
+  %add = add i32 %mul, 2
+  %trace1 = getelementptr inbounds nuw %struct.Receipt, ptr %this, i32 0, i32 0
+  %2 = load ptr, ptr %trace1, align 8
+  store i32 %add, ptr %2, align 4
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Item:ctor(*i32):complete"(ptr noundef returned %this, ptr noundef %trace) {
 entry:
   %trace.addr = alloca ptr, align 8
   store ptr %trace, ptr %trace.addr, align 8
@@ -35,12 +58,27 @@ entry:
   ret ptr %this
 }
 
-define noundef ptr @Item.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Item:ctor(*i32):base"(ptr noundef returned %this, ptr noundef %trace) {
+entry:
+  %trace.addr = alloca ptr, align 8
+  store ptr %trace, ptr %trace.addr, align 8
+  %trace1 = getelementptr inbounds nuw %struct.Item, ptr %this, i32 0, i32 0
+  %0 = load ptr, ptr %trace.addr, align 8
+  store ptr %0, ptr %trace1, align 8
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Item:dtor():complete"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define void @"="(ptr sret(%struct.Receipt) align 8 %.result, ptr noundef nonnull align 8 dereferenceable(8) %target, ptr noundef nonnull align 8 dereferenceable(8) %source) {
+define noundef ptr @"cw:Item:dtor():base"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define void @"cw:operator=:func(&mut Item,&copy Item)Receipt"(ptr sret(%struct.Receipt) align 8 %.result, ptr noundef nonnull align 8 dereferenceable(8) %target, ptr noundef nonnull align 8 dereferenceable(8) %source) {
 entry:
   %target.addr = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -59,11 +97,11 @@ entry:
   %5 = load ptr, ptr %target.addr, align 8
   %trace2 = getelementptr inbounds nuw %struct.Item, ptr %5, i32 0, i32 0
   %6 = load ptr, ptr %trace2, align 8
-  %call = call noundef ptr @Receipt.ctor(ptr noundef returned %.result, ptr noundef %6)
+  %call = call noundef ptr @"cw:Receipt:ctor(*i32):complete"(ptr noundef returned %.result, ptr noundef %6)
   ret void
 }
 
-define noundef ptr @Token.ctor(ptr noundef returned %this, ptr noundef %trace, i32 noundef %tag) {
+define noundef ptr @"cw:Token:ctor(*i32,i32):complete"(ptr noundef returned %this, ptr noundef %trace, i32 noundef %tag) {
 entry:
   %trace.addr = alloca ptr, align 8
   %tag.addr = alloca i32, align 4
@@ -85,7 +123,29 @@ entry:
   ret ptr %this
 }
 
-define noundef ptr @Token.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Token:ctor(*i32,i32):base"(ptr noundef returned %this, ptr noundef %trace, i32 noundef %tag) {
+entry:
+  %trace.addr = alloca ptr, align 8
+  %tag.addr = alloca i32, align 4
+  store ptr %trace, ptr %trace.addr, align 8
+  store i32 %tag, ptr %tag.addr, align 4
+  %trace1 = getelementptr inbounds nuw %struct.Token, ptr %this, i32 0, i32 0
+  %0 = load ptr, ptr %trace.addr, align 8
+  store ptr %0, ptr %trace1, align 8
+  %tag2 = getelementptr inbounds nuw %struct.Token, ptr %this, i32 0, i32 1
+  %1 = load i32, ptr %tag.addr, align 4
+  store i32 %1, ptr %tag2, align 8
+  %2 = load ptr, ptr %trace.addr, align 8
+  %3 = load i32, ptr %2, align 4
+  %mul = mul i32 %3, 10
+  %4 = load i32, ptr %tag.addr, align 4
+  %add = add i32 %mul, %4
+  %5 = load ptr, ptr %trace.addr, align 8
+  store i32 %add, ptr %5, align 4
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %this) {
 entry:
   %trace = getelementptr inbounds nuw %struct.Token, ptr %this, i32 0, i32 0
   %0 = load ptr, ptr %trace, align 8
@@ -100,7 +160,22 @@ entry:
   ret ptr %this
 }
 
-define noundef nonnull align 8 dereferenceable(16) ptr @Source(ptr noundef nonnull align 8 dereferenceable(16) %source, ptr noundef nonnull align 8 dereferenceable(12) %token) {
+define noundef ptr @"cw:Token:dtor():base"(ptr noundef returned %this) {
+entry:
+  %trace = getelementptr inbounds nuw %struct.Token, ptr %this, i32 0, i32 0
+  %0 = load ptr, ptr %trace, align 8
+  %1 = load i32, ptr %0, align 4
+  %mul = mul i32 %1, 10
+  %tag = getelementptr inbounds nuw %struct.Token, ptr %this, i32 0, i32 1
+  %2 = load i32, ptr %tag, align 8
+  %add = add i32 %mul, %2
+  %trace1 = getelementptr inbounds nuw %struct.Token, ptr %this, i32 0, i32 0
+  %3 = load ptr, ptr %trace1, align 8
+  store i32 %add, ptr %3, align 4
+  ret ptr %this
+}
+
+define noundef nonnull align 8 dereferenceable(16) ptr @"cw:Source:func(&copy [2]Item,&copy Token)&copy [2]Item"(ptr noundef nonnull align 8 dereferenceable(16) %source, ptr noundef nonnull align 8 dereferenceable(12) %token) {
 entry:
   %.result = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -113,7 +188,7 @@ entry:
   ret ptr %1
 }
 
-define noundef nonnull align 8 dereferenceable(16) ptr @Target(ptr noundef nonnull align 8 dereferenceable(16) %target, ptr noundef nonnull align 8 dereferenceable(12) %token) {
+define noundef nonnull align 8 dereferenceable(16) ptr @"cw:Target:func(&mut [2]Item,&copy Token)&mut [2]Item"(ptr noundef nonnull align 8 dereferenceable(16) %target, ptr noundef nonnull align 8 dereferenceable(12) %token) {
 entry:
   %.result = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -126,7 +201,7 @@ entry:
   ret ptr %1
 }
 
-define void @Assign(ptr noundef nonnull align 8 dereferenceable(16) %target, ptr noundef nonnull align 8 dereferenceable(16) %source, ptr noundef nonnull align 4 dereferenceable(4) %trace) {
+define void @"cw:Assign:func(&mut [2]Item,&copy [2]Item,&mut i32)void"(ptr noundef nonnull align 8 dereferenceable(16) %target, ptr noundef nonnull align 8 dereferenceable(16) %source, ptr noundef nonnull align 4 dereferenceable(4) %trace) {
 entry:
   %target.addr = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -139,31 +214,31 @@ entry:
   store ptr %trace, ptr %trace.addr, align 8
   %0 = load ptr, ptr %source.addr, align 8
   %1 = load ptr, ptr %trace.addr, align 8
-  %call = call noundef ptr @Token.ctor(ptr noundef returned %temporary, ptr noundef %1, i32 noundef 4)
-  %call1 = call noundef nonnull align 8 dereferenceable(16) ptr @Source(ptr noundef nonnull align 8 dereferenceable(16) %0, ptr noundef nonnull align 8 dereferenceable(12) %temporary)
+  %call = call noundef ptr @"cw:Token:ctor(*i32,i32):complete"(ptr noundef returned %temporary, ptr noundef %1, i32 noundef 4)
+  %call1 = call noundef nonnull align 8 dereferenceable(16) ptr @"cw:Source:func(&copy [2]Item,&copy Token)&copy [2]Item"(ptr noundef nonnull align 8 dereferenceable(16) %0, ptr noundef nonnull align 8 dereferenceable(12) %temporary)
   %2 = load ptr, ptr %target.addr, align 8
   %3 = load ptr, ptr %trace.addr, align 8
-  %call3 = call noundef ptr @Token.ctor(ptr noundef returned %temporary2, ptr noundef %3, i32 noundef 5)
-  %call4 = call noundef nonnull align 8 dereferenceable(16) ptr @Target(ptr noundef nonnull align 8 dereferenceable(16) %2, ptr noundef nonnull align 8 dereferenceable(12) %temporary2)
+  %call3 = call noundef ptr @"cw:Token:ctor(*i32,i32):complete"(ptr noundef returned %temporary2, ptr noundef %3, i32 noundef 5)
+  %call4 = call noundef nonnull align 8 dereferenceable(16) ptr @"cw:Target:func(&mut [2]Item,&copy Token)&mut [2]Item"(ptr noundef nonnull align 8 dereferenceable(16) %2, ptr noundef nonnull align 8 dereferenceable(12) %temporary2)
   br label %array.assign
 
 array.assign:                                     ; preds = %array.assign, %entry
   %array.index = phi i64 [ 0, %entry ], [ %array.next, %array.assign ]
   %element = getelementptr inbounds nuw [2 x %struct.Item], ptr %call4, i64 0, i64 %array.index
   %element5 = getelementptr inbounds nuw [2 x %struct.Item], ptr %call1, i64 0, i64 %array.index
-  call void @"="(ptr sret(%struct.Receipt) align 8 %call.result, ptr noundef nonnull align 8 dereferenceable(8) %element, ptr noundef nonnull align 8 dereferenceable(8) %element5)
-  %call6 = call noundef ptr @Receipt.dtor(ptr noundef returned %call.result)
+  call void @"cw:operator=:func(&mut Item,&copy Item)Receipt"(ptr sret(%struct.Receipt) align 8 %call.result, ptr noundef nonnull align 8 dereferenceable(8) %element, ptr noundef nonnull align 8 dereferenceable(8) %element5)
+  %call6 = call noundef ptr @"cw:Receipt:dtor():complete"(ptr noundef returned %call.result)
   %array.next = add i64 %array.index, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end, label %array.assign
 
 array.end:                                        ; preds = %array.assign
-  %call7 = call noundef ptr @Token.dtor(ptr noundef returned %temporary2)
-  %call8 = call noundef ptr @Token.dtor(ptr noundef returned %temporary)
+  %call7 = call noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %temporary2)
+  %call8 = call noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %temporary)
   ret void
 }
 
-define void @Conditional(i1 noundef zeroext %flag, ptr noundef nonnull align 8 dereferenceable(16) %target, ptr noundef nonnull align 8 dereferenceable(16) %source) {
+define void @"cw:Conditional:func(bool,&mut [2]Item,&copy [2]Item)void"(i1 noundef zeroext %flag, ptr noundef nonnull align 8 dereferenceable(16) %target, ptr noundef nonnull align 8 dereferenceable(16) %source) {
 entry:
   %flag.addr = alloca i8, align 1
   %target.addr = alloca ptr, align 8
@@ -186,11 +261,11 @@ array.assign:                                     ; preds = %cleanup.end, %cond.
   %array.index = phi i64 [ 0, %cond.true ], [ %array.next, %cleanup.end ]
   %element = getelementptr inbounds nuw [2 x %struct.Item], ptr %2, i64 0, i64 %array.index
   %element1 = getelementptr inbounds nuw [2 x %struct.Item], ptr %1, i64 0, i64 %array.index
-  call void @"="(ptr sret(%struct.Receipt) align 8 %call.result, ptr noundef nonnull align 8 dereferenceable(8) %element, ptr noundef nonnull align 8 dereferenceable(8) %element1)
+  call void @"cw:operator=:func(&mut Item,&copy Item)Receipt"(ptr sret(%struct.Receipt) align 8 %call.result, ptr noundef nonnull align 8 dereferenceable(8) %element, ptr noundef nonnull align 8 dereferenceable(8) %element1)
   br i1 %loadedv, label %cleanup.destroy, label %cleanup.end
 
 cleanup.destroy:                                  ; preds = %array.assign
-  %call = call noundef ptr @Receipt.dtor(ptr noundef returned %call.result)
+  %call = call noundef ptr @"cw:Receipt:dtor():complete"(ptr noundef returned %call.result)
   br label %cleanup.end
 
 cleanup.end:                                      ; preds = %cleanup.destroy, %array.assign

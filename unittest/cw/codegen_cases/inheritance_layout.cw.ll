@@ -4,7 +4,7 @@
 %struct.Middle = type { %struct.Root, i8 }
 %struct.Box = type { i8, [3 x i8], %struct.Leaf }
 
-define noundef i32 @Fields(i32 noundef %number, i8 noundef zeroext %tag, i8 noundef zeroext %extra) {
+define noundef i32 @"cw:Fields:func(i32,u8,u8)i32"(i32 noundef %number, i8 noundef zeroext %tag, i8 noundef zeroext %extra) {
 entry:
   %.result = alloca i32, align 4
   %number.addr = alloca i32, align 4
@@ -30,7 +30,7 @@ entry:
   ret i32 %4
 }
 
-define noundef ptr @Extra(ptr noundef nonnull align 4 dereferenceable(6) %value) {
+define noundef ptr @"cw:Extra:func(&mut Leaf)*u8"(ptr noundef nonnull align 4 dereferenceable(6) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -42,7 +42,7 @@ entry:
   ret ptr %1
 }
 
-define noundef i32 @Element(ptr noundef nonnull align 4 dereferenceable(16) %values, i64 noundef %index) {
+define noundef i32 @"cw:Element:func(&copy [2]Leaf,usize)i32"(ptr noundef nonnull align 4 dereferenceable(16) %values, i64 noundef %index) {
 entry:
   %.result = alloca i32, align 4
   %values.addr = alloca ptr, align 8
@@ -59,7 +59,7 @@ entry:
   ret i32 %3
 }
 
-define noundef ptr @Nested(ptr noundef nonnull align 4 dereferenceable(12) %value) {
+define noundef ptr @"cw:Nested:func(&mut Box)*u8"(ptr noundef nonnull align 4 dereferenceable(12) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8

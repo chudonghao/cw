@@ -5,7 +5,7 @@
 %struct.ZeroArray = type { double, [0 x i64] }
 %struct.NestedZeroArray = type { float, [2 x [0 x i32]] }
 
-define %struct.Homogeneous @Nested([3 x float] %value.coerce) {
+define %struct.Homogeneous @"cw:Nested:func(Homogeneous)Homogeneous"([3 x float] %value.coerce) {
 entry:
   %.result = alloca %struct.Homogeneous, align 4
   %value = alloca %struct.Homogeneous, align 4
@@ -15,7 +15,7 @@ entry:
   ret %struct.Homogeneous %0
 }
 
-define noundef [4 x double] @Four([4 x double] noundef %value) {
+define noundef [4 x double] @"cw:Four:func([4]f64)[4]f64"([4 x double] noundef %value) {
 entry:
   %.result = alloca [4 x double], align 8
   %value.addr = alloca [4 x double], align 8
@@ -25,13 +25,13 @@ entry:
   ret [4 x double] %0
 }
 
-define void @Five(ptr sret([5 x float]) align 4 %.result, ptr noundef %value) {
+define void @"cw:Five:func([5]f32)[5]f32"(ptr sret([5 x float]) align 4 %.result, ptr noundef %value) {
 entry:
   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %.result, ptr align 4 %value, i64 20, i1 false)
   ret void
 }
 
-define i64 @Different(i64 %value.coerce) {
+define i64 @"cw:Different:func(Mixed)Mixed"(i64 %value.coerce) {
 entry:
   %.result = alloca %struct.Mixed, align 4
   %value = alloca %struct.Mixed, align 4
@@ -41,7 +41,7 @@ entry:
   ret i64 %0
 }
 
-define i64 @WithPadding(i64 %value.coerce) {
+define i64 @"cw:WithPadding:func(Padded)Padded"(i64 %value.coerce) {
 entry:
   %.result = alloca %struct.Padded, align 8
   %value = alloca %struct.Padded, align 8
@@ -51,7 +51,7 @@ entry:
   ret i64 %0
 }
 
-define i64 @WithZeroArray(i64 %value.coerce) {
+define i64 @"cw:WithZeroArray:func(ZeroArray)ZeroArray"(i64 %value.coerce) {
 entry:
   %.result = alloca %struct.ZeroArray, align 8
   %value = alloca %struct.ZeroArray, align 8
@@ -61,7 +61,7 @@ entry:
   ret i64 %0
 }
 
-define i32 @WithNestedZeroArray(i64 %value.coerce) {
+define i32 @"cw:WithNestedZeroArray:func(NestedZeroArray)NestedZeroArray"(i64 %value.coerce) {
 entry:
   %.result = alloca %struct.NestedZeroArray, align 4
   %value = alloca %struct.NestedZeroArray, align 4
@@ -72,7 +72,7 @@ entry:
   ret i32 %0
 }
 
-define %struct.Homogeneous @Forward(ptr noundef nonnull align 4 dereferenceable(12) %value) {
+define %struct.Homogeneous @"cw:Forward:func(&copy Homogeneous)Homogeneous"(ptr noundef nonnull align 4 dereferenceable(12) %value) {
 entry:
   %.result = alloca %struct.Homogeneous, align 4
   %value.addr = alloca ptr, align 8
@@ -81,13 +81,13 @@ entry:
   %0 = load ptr, ptr %value.addr, align 8
   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %argument, ptr align 4 %0, i64 12, i1 false)
   %1 = load [3 x float], ptr %argument, align 4
-  %call = call %struct.Homogeneous @Nested([3 x float] %1)
+  %call = call %struct.Homogeneous @"cw:Nested:func(Homogeneous)Homogeneous"([3 x float] %1)
   store %struct.Homogeneous %call, ptr %.result, align 4
   %2 = load %struct.Homogeneous, ptr %.result, align 4
   ret %struct.Homogeneous %2
 }
 
-define i64 @ForwardZeroArray(ptr noundef nonnull align 8 dereferenceable(8) %value) {
+define i64 @"cw:ForwardZeroArray:func(&copy ZeroArray)ZeroArray"(ptr noundef nonnull align 8 dereferenceable(8) %value) {
 entry:
   %.result = alloca %struct.ZeroArray, align 8
   %value.addr = alloca ptr, align 8
@@ -96,7 +96,7 @@ entry:
   %0 = load ptr, ptr %value.addr, align 8
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %argument, ptr align 8 %0, i64 8, i1 false)
   %1 = load i64, ptr %argument, align 8
-  %call = call i64 @WithZeroArray(i64 %1)
+  %call = call i64 @"cw:WithZeroArray:func(ZeroArray)ZeroArray"(i64 %1)
   store i64 %call, ptr %.result, align 8
   %2 = load i64, ptr %.result, align 8
   ret i64 %2

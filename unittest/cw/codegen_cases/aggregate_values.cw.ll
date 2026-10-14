@@ -4,7 +4,7 @@
 %struct.Pointers = type { ptr, ptr }
 %struct.Block = type { [3 x i64] }
 
-define i8 @Small(i64 %value.coerce) {
+define i8 @"cw:Small:func(Byte)Byte"(i64 %value.coerce) {
 entry:
   %.result = alloca %struct.Byte, align 1
   %value = alloca %struct.Byte, align 1
@@ -15,7 +15,7 @@ entry:
   ret i8 %0
 }
 
-define i24 @Three(i64 %value.coerce) {
+define i24 @"cw:Three:func(Odd)Odd"(i64 %value.coerce) {
 entry:
   %.result = alloca %struct.Odd, align 1
   %value = alloca %struct.Odd, align 1
@@ -26,7 +26,7 @@ entry:
   ret i24 %0
 }
 
-define [2 x i64] @TwoWords([2 x i64] %value.coerce) {
+define [2 x i64] @"cw:TwoWords:func(Pair)Pair"([2 x i64] %value.coerce) {
 entry:
   %.result = alloca %struct.Pair, align 8
   %value = alloca %struct.Pair, align 8
@@ -36,7 +36,7 @@ entry:
   ret [2 x i64] %0
 }
 
-define [2 x i64] @Addresses([2 x ptr] %value.coerce) {
+define [2 x i64] @"cw:Addresses:func(Pointers)Pointers"([2 x ptr] %value.coerce) {
 entry:
   %.result = alloca %struct.Pointers, align 8
   %value = alloca %struct.Pointers, align 8
@@ -46,13 +46,13 @@ entry:
   ret [2 x i64] %0
 }
 
-define void @Structure(ptr sret(%struct.Block) align 8 %.result, ptr noundef %value) {
+define void @"cw:Structure:func(Block)Block"(ptr sret(%struct.Block) align 8 %.result, ptr noundef %value) {
 entry:
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %.result, ptr align 8 %value, i64 24, i1 false)
   ret void
 }
 
-define i24 @CopyThree(ptr noundef nonnull align 1 dereferenceable(3) %value) {
+define i24 @"cw:CopyThree:func(&copy Odd)Odd"(ptr noundef nonnull align 1 dereferenceable(3) %value) {
 entry:
   %.result = alloca %struct.Odd, align 1
   %value.addr = alloca ptr, align 8
@@ -63,13 +63,13 @@ entry:
   call void @llvm.memcpy.p0.p0.i64(ptr align 1 %argument, ptr align 1 %0, i64 3, i1 false)
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %coerce, ptr align 1 %argument, i64 3, i1 false)
   %1 = load i64, ptr %coerce, align 8
-  %call = call i24 @Three(i64 %1)
+  %call = call i24 @"cw:Three:func(Odd)Odd"(i64 %1)
   store i24 %call, ptr %.result, align 1
   %2 = load i24, ptr %.result, align 1
   ret i24 %2
 }
 
-define [2 x i64] @Nine([2 x i64] %value.coerce) {
+define [2 x i64] @"cw:Nine:func([9]u8)[9]u8"([2 x i64] %value.coerce) {
 entry:
   %.result = alloca [9 x i8], align 1
   %value = alloca [9 x i8], align 1
@@ -83,13 +83,13 @@ entry:
   ret [2 x i64] %0
 }
 
-define void @Large(ptr sret([3 x i64]) align 8 %.result, ptr noundef %value) {
+define void @"cw:Large:func([3]i64)[3]i64"(ptr sret([3 x i64]) align 8 %.result, ptr noundef %value) {
 entry:
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %.result, ptr align 8 %value, i64 24, i1 false)
   ret void
 }
 
-define noundef i16 @Boolean(i64 %value.coerce) {
+define noundef i16 @"cw:Boolean:func([2]bool)[2]bool"(i64 %value.coerce) {
 entry:
   %.result = alloca [2 x i8], align 1
   %value = alloca [2 x i8], align 1
@@ -100,7 +100,7 @@ entry:
   ret i16 %0
 }
 
-define [2 x i64] @CopyNine(ptr noundef nonnull align 1 dereferenceable(9) %value) {
+define [2 x i64] @"cw:CopyNine:func(&copy [9]u8)[9]u8"(ptr noundef nonnull align 1 dereferenceable(9) %value) {
 entry:
   %.result = alloca [9 x i8], align 1
   %value.addr = alloca ptr, align 8
@@ -113,7 +113,7 @@ entry:
   call void @llvm.memcpy.p0.p0.i64(ptr align 1 %argument, ptr align 1 %0, i64 9, i1 false)
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %coerce, ptr align 1 %argument, i64 9, i1 false)
   %1 = load [2 x i64], ptr %coerce, align 8
-  %call = call [2 x i64] @Nine([2 x i64] %1)
+  %call = call [2 x i64] @"cw:Nine:func([9]u8)[9]u8"([2 x i64] %1)
   store [2 x i64] %call, ptr %coerce1, align 8
   call void @llvm.memcpy.p0.p0.i64(ptr align 1 %.result, ptr align 8 %coerce1, i64 9, i1 false)
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %coerce2, ptr align 1 %.result, i64 9, i1 false)

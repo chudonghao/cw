@@ -1,4 +1,4 @@
-define noundef i32 @IntegerArithmetic(i32 noundef %left, i32 noundef %right) {
+define noundef i32 @"cw:IntegerArithmetic:func(i32,i32)i32"(i32 noundef %left, i32 noundef %right) {
 entry:
   %.result = alloca i32, align 4
   %left.addr = alloca i32, align 4
@@ -18,7 +18,7 @@ entry:
   ret i32 %4
 }
 
-define noundef i32 @AddWrap() {
+define noundef i32 @"cw:AddWrap:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 -2147483648, ptr %.result, align 4
@@ -26,7 +26,7 @@ entry:
   ret i32 %0
 }
 
-define noundef i32 @SubtractWrap() {
+define noundef i32 @"cw:SubtractWrap:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 2147483647, ptr %.result, align 4
@@ -34,7 +34,7 @@ entry:
   ret i32 %0
 }
 
-define noundef i32 @MultiplyWrap() {
+define noundef i32 @"cw:MultiplyWrap:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 0, ptr %.result, align 4
@@ -42,7 +42,7 @@ entry:
   ret i32 %0
 }
 
-define noundef i32 @NegateMinimum() {
+define noundef i32 @"cw:NegateMinimum:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 -2147483648, ptr %.result, align 4

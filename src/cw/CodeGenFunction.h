@@ -19,6 +19,10 @@
 #include "CodeGen.h"
 #include "ast.h"
 
+namespace llvm {
+class ConstantInt;
+}
+
 namespace cw::codegen_detail {
 
 enum class Overlap { DoesNotOverlap, MayOverlap };
@@ -68,6 +72,7 @@ class CodeGenFunction {
     const VarDecl* declaration{};
     bool active{};
     Kind kind{Kind::Destroy};
+    CodeGen::StructorKind structor_kind{CodeGen::StructorKind::Complete};
   };
 
   class ConditionalEvaluation {
@@ -91,6 +96,7 @@ class CodeGenFunction {
   std::vector<LocalCleanup> local_cleanups_;
   std::vector<Cleanup> temporary_cleanups_;
   Address this_address_;
+  CodeGen::StructorKind structor_kind_{CodeGen::StructorKind::Complete};
   llvm::BasicBlock* conditional_entry_{};
   llvm::Value* conditional_condition_{};
   bool conditional_inverted_{};
@@ -98,13 +104,17 @@ class CodeGenFunction {
 
  public:
   CodeGenFunction(CodeGen& codegen, llvm::Function& function);
-  bool Generate(const FunctionDecl& declaration, const CodeGen::FunctionInfo& function_info);
+  bool Generate(const FunctionDecl& declaration, const CodeGen::FunctionInfo& function_info,
+                CodeGen::StructorKind kind = CodeGen::StructorKind::Complete);
   void GenerateThunk(const VTableEntry& entry, const CodeGen::FunctionInfo& info, llvm::Function& implementation);
   bool GenerateGlobalVarInit(const VarGroupDecl& declaration);
   void GenerateGlobalInit(llvm::ArrayRef<llvm::Function*> initializers);
   bool GenerateGlobalDestructor(const VarDecl& declaration);
 
  private:
+  llvm::IntegerType* GetTargetIndexType() const;
+  llvm::ConstantInt* GetTargetIndex(std::uint64_t value) const;
+  llvm::ConstantInt* GetTargetOffset(std::int64_t value) const;
   void StartFunction();
   void FinishFunction();
   Address MakeAddress(llvm::Value* pointer, llvm::Type* element_type, const Type* semantic_type = nullptr,
@@ -133,8 +143,8 @@ class CodeGenFunction {
   bool EmitTemporaryCleanups(std::size_t depth);
   bool EmitLocalCleanups(std::size_t depth);
   bool EmitCleanup(const Cleanup& cleanup);
-  bool EmitDestroy(Address address, const Type& type);
-  void EmitVTablePointer(Address object, const StructDecl& stage);
+  bool EmitDestroy(Address address, const Type& type, CodeGen::StructorKind kind = CodeGen::StructorKind::Complete);
+  bool EmitVTablePointer(Address object, const StructDecl& stage);
   llvm::Value* EmitVirtualCallee(const VirtualFunctionDecl& declaration, llvm::Value* receiver);
   llvm::Value* EmitVirtualCallee(llvm::Value* pointer, llvm::Value*& receiver);
   llvm::Value* EmitVirtualPointerIsNotNull(llvm::Value* pointer);
@@ -162,7 +172,8 @@ class CodeGenFunction {
   bool EmitArrayConstruction(Address destination, Address source, const ArrayType& type,
                              const ConstructorDecl& constructor);
   bool EmitArrayAssignment(Address destination, Address source, const ArrayType& type, const FunctionDecl& assignment);
-  bool EmitStructorCall(const FunctionDecl& declaration, Address target, llvm::ArrayRef<const Expr*> sources);
+  bool EmitStructorCall(const FunctionDecl& declaration, Address target, llvm::ArrayRef<const Expr*> sources,
+                        CodeGen::StructorKind kind = CodeGen::StructorKind::Complete);
   bool EmitCallArguments(const FunctionType& signature, const CodeGen::FunctionInfo& info,
                          llvm::ArrayRef<const Expr*> sources, EvaluationOrder order,
                          std::vector<llvm::Value*>& arguments);

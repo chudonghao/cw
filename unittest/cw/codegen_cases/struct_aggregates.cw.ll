@@ -1,7 +1,7 @@
 %struct.Outer = type { i8, %struct.Inner, [2 x %struct.Inner] }
 %struct.Inner = type { i16 }
 
-define noundef signext i16 @Nested(i16 noundef signext %value, i64 noundef %index) {
+define noundef signext i16 @"cw:Nested:func(i16,usize)i16"(i16 noundef signext %value, i64 noundef %index) {
 entry:
   %.result = alloca i16, align 2
   %value.addr = alloca i16, align 2
@@ -31,7 +31,7 @@ entry:
   ret i16 %3
 }
 
-define noundef signext i16 @Array(ptr noundef nonnull align 2 dereferenceable(16) %source, i64 noundef %index) {
+define noundef signext i16 @"cw:Array:func(&copy [2]Outer,usize)i16"(ptr noundef nonnull align 2 dereferenceable(16) %source, i64 noundef %index) {
 entry:
   %.result = alloca i16, align 2
   %source.addr = alloca ptr, align 8

@@ -1,7 +1,7 @@
 %struct.Pair = type { i64, i64 }
 %struct.Triple = type { i64, i64, i64 }
 
-define noundef i32 @ChangeSmall(ptr noundef nonnull align 8 dereferenceable(16) %value) {
+define noundef i32 @"cw:ChangeSmall:func(&mut Pair)i32"(ptr noundef nonnull align 8 dereferenceable(16) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -14,7 +14,7 @@ entry:
   ret i32 %1
 }
 
-define noundef i64 @TakeSmall([2 x i64] %value.coerce, i32 noundef %ignored) {
+define noundef i64 @"cw:TakeSmall:func(Pair,i32)i64"([2 x i64] %value.coerce, i32 noundef %ignored) {
 entry:
   %.result = alloca i64, align 8
   %value = alloca %struct.Pair, align 8
@@ -30,7 +30,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i64 @Small(ptr noundef nonnull align 8 dereferenceable(16) %value) {
+define noundef i64 @"cw:Small:func(&mut Pair)i64"(ptr noundef nonnull align 8 dereferenceable(16) %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca ptr, align 8
@@ -40,14 +40,14 @@ entry:
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %argument, ptr align 8 %0, i64 16, i1 false)
   %1 = load [2 x i64], ptr %argument, align 8
   %2 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @ChangeSmall(ptr noundef nonnull align 8 dereferenceable(16) %2)
-  %call1 = call noundef i64 @TakeSmall([2 x i64] %1, i32 noundef %call)
+  %call = call noundef i32 @"cw:ChangeSmall:func(&mut Pair)i32"(ptr noundef nonnull align 8 dereferenceable(16) %2)
+  %call1 = call noundef i64 @"cw:TakeSmall:func(Pair,i32)i64"([2 x i64] %1, i32 noundef %call)
   store i64 %call1, ptr %.result, align 8
   %3 = load i64, ptr %.result, align 8
   ret i64 %3
 }
 
-define noundef i32 @ChangeLarge(ptr noundef nonnull align 8 dereferenceable(24) %value) {
+define noundef i32 @"cw:ChangeLarge:func(&mut Triple)i32"(ptr noundef nonnull align 8 dereferenceable(24) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -60,7 +60,7 @@ entry:
   ret i32 %1
 }
 
-define noundef i64 @TakeLarge(ptr noundef %value, i32 noundef %ignored) {
+define noundef i64 @"cw:TakeLarge:func(Triple,i32)i64"(ptr noundef %value, i32 noundef %ignored) {
 entry:
   %.result = alloca i64, align 8
   %ignored.addr = alloca i32, align 4
@@ -74,7 +74,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i64 @Large(ptr noundef nonnull align 8 dereferenceable(24) %value) {
+define noundef i64 @"cw:Large:func(&mut Triple)i64"(ptr noundef nonnull align 8 dereferenceable(24) %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca ptr, align 8
@@ -83,8 +83,8 @@ entry:
   %0 = load ptr, ptr %value.addr, align 8
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %argument, ptr align 8 %0, i64 24, i1 false)
   %1 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @ChangeLarge(ptr noundef nonnull align 8 dereferenceable(24) %1)
-  %call1 = call noundef i64 @TakeLarge(ptr noundef %argument, i32 noundef %call)
+  %call = call noundef i32 @"cw:ChangeLarge:func(&mut Triple)i32"(ptr noundef nonnull align 8 dereferenceable(24) %1)
+  %call1 = call noundef i64 @"cw:TakeLarge:func(Triple,i32)i64"(ptr noundef %argument, i32 noundef %call)
   store i64 %call1, ptr %.result, align 8
   %2 = load i64, ptr %.result, align 8
   ret i64 %2

@@ -4,7 +4,7 @@
 %struct.Occupied = type { %struct.ZeroDerived.base, %struct.Empty, i32 }
 %struct.ZeroDerived.base = type <{ %struct.ZeroBase, %struct.Empty }>
 
-define i64 @Make(ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define i64 @"cw:Make:func(&mut i32)ZeroDerived"(ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca %struct.ZeroDerived, align 8
   %counter.addr = alloca ptr, align 8
@@ -19,7 +19,7 @@ entry:
   ret i64 %3
 }
 
-define i64 @Identity(i64 %value.coerce) {
+define i64 @"cw:Identity:func(ZeroDerived)ZeroDerived"(i64 %value.coerce) {
 entry:
   %.result = alloca %struct.ZeroDerived, align 8
   %value = alloca %struct.ZeroDerived, align 8
@@ -29,7 +29,7 @@ entry:
   ret i64 %0
 }
 
-define i64 @Form(ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define i64 @"cw:Form:func(&mut i32)Occupied"(ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca %struct.Occupied, align 8
   %counter.addr = alloca ptr, align 8
@@ -37,7 +37,7 @@ entry:
   %temporary = alloca %struct.ZeroDerived, align 8
   store ptr %counter, ptr %counter.addr, align 8
   %0 = load ptr, ptr %counter.addr, align 8
-  %call = call i64 @Make(ptr noundef nonnull align 4 dereferenceable(4) %0)
+  %call = call i64 @"cw:Make:func(&mut i32)ZeroDerived"(ptr noundef nonnull align 4 dereferenceable(4) %0)
   store i64 %call, ptr %temporary, align 8
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %value, ptr align 8 %temporary, i64 1, i1 false)
   %empty = getelementptr inbounds nuw %struct.Occupied, ptr %value, i32 0, i32 1
@@ -48,7 +48,7 @@ entry:
   ret i64 %1
 }
 
-define noundef zeroext i1 @Same(ptr noundef nonnull align 8 dereferenceable(8) %value) {
+define noundef zeroext i1 @"cw:Same:func(&mut Occupied)bool"(ptr noundef nonnull align 8 dereferenceable(8) %value) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca ptr, align 8
@@ -65,7 +65,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef ptr @Base(ptr noundef nonnull align 8 dereferenceable(8) %value) {
+define noundef ptr @"cw:Base:func(&mut Occupied)*ZeroBase"(ptr noundef nonnull align 8 dereferenceable(8) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8

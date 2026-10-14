@@ -1,4 +1,4 @@
-define noundef i32 @Divide(i32 noundef %dividend, i32 noundef %divisor) {
+define noundef i32 @"cw:Divide:func(i32,i32)i32"(i32 noundef %dividend, i32 noundef %divisor) {
 entry:
   %.result = alloca i32, align 4
   %dividend.addr = alloca i32, align 4
@@ -25,7 +25,7 @@ div.end:                                          ; preds = %div.normal, %div.ne
   ret i32 %3
 }
 
-define noundef i32 @Remainder(i32 noundef %dividend, i32 noundef %divisor) {
+define noundef i32 @"cw:Remainder:func(i32,i32)i32"(i32 noundef %dividend, i32 noundef %divisor) {
 entry:
   %.result = alloca i32, align 4
   %dividend.addr = alloca i32, align 4
@@ -51,7 +51,7 @@ rem.end:                                          ; preds = %rem.normal, %rem.ne
   ret i32 %3
 }
 
-define noundef i32 @DivideByNegativeOne(i32 noundef %value) {
+define noundef i32 @"cw:DivideByNegativeOne:func(i32)i32"(i32 noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca i32, align 4
@@ -63,7 +63,7 @@ entry:
   ret i32 %1
 }
 
-define noundef i32 @RemainderByNegativeOne(i32 noundef %value) {
+define noundef i32 @"cw:RemainderByNegativeOne:func(i32)i32"(i32 noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca i32, align 4
@@ -74,7 +74,7 @@ entry:
   ret i32 %1
 }
 
-define noundef i32 @MinimumQuotient() {
+define noundef i32 @"cw:MinimumQuotient:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 -2147483648, ptr %.result, align 4
@@ -82,7 +82,7 @@ entry:
   ret i32 %0
 }
 
-define noundef i32 @MinimumRemainder() {
+define noundef i32 @"cw:MinimumRemainder:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 0, ptr %.result, align 4
@@ -90,7 +90,7 @@ entry:
   ret i32 %0
 }
 
-define noundef i32 @SignedQuotients() {
+define noundef i32 @"cw:SignedQuotients:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 -218, ptr %.result, align 4
@@ -98,7 +98,7 @@ entry:
   ret i32 %0
 }
 
-define noundef i32 @SignedRemainders() {
+define noundef i32 @"cw:SignedRemainders:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 -91, ptr %.result, align 4

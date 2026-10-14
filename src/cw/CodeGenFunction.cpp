@@ -27,7 +27,11 @@ namespace cw::codegen_detail {
 
 namespace {
 
-bool IsAggregate(const Type& type) { return type.AsArrayType() || type.AsStructType(); }
+bool IsAggregate(const Type& type) {
+  // Virtual slots are source-level scalar values, but their target ABI representation
+  // is a two-word aggregate and therefore follows aggregate storage/call paths.
+  return type.AsArrayType() || type.AsStructType() || type.AsVirtualSlotType();
+}
 
 void NameCallResult(llvm::CallInst& call) {
   if (!call.getType()->isVoidTy()) {
@@ -49,6 +53,16 @@ bool HasArrayElements(const ArrayType& type) {
 
 CodeGenFunction::CodeGenFunction(CodeGen& codegen, llvm::Function& function)
     : codegen_(codegen), function_(function), builder_(*codegen.llvm_context_) {}
+
+llvm::IntegerType* CodeGenFunction::GetTargetIndexType() const { return codegen_.GetPointerIndexType(); }
+
+llvm::ConstantInt* CodeGenFunction::GetTargetIndex(std::uint64_t value) const {
+  return llvm::ConstantInt::get(GetTargetIndexType(), value);
+}
+
+llvm::ConstantInt* CodeGenFunction::GetTargetOffset(std::int64_t value) const {
+  return llvm::ConstantInt::get(GetTargetIndexType(), value, true);
+}
 
 CodeGenFunction::ConditionalEvaluation::ConditionalEvaluation(CodeGenFunction& owner, llvm::BasicBlock* entry,
                                                               llvm::BasicBlock* arm)
@@ -161,7 +175,7 @@ Address CodeGenFunction::EmitBase(Address object, const StructDecl& declaration)
       address = EmitStructElement(object, *representation.base_index, "base");
     } else {
       address.pointer =
-          builder_.CreateGEP(builder_.getInt8Ty(), object.pointer, builder_.getInt64(*shared.base_offset), "base",
+          builder_.CreateGEP(builder_.getInt8Ty(), object.pointer, GetTargetIndex(*shared.base_offset), "base",
                              llvm::GEPNoWrapFlags::inBounds() | llvm::GEPNoWrapFlags::noUnsignedWrap());
     }
   }
@@ -399,8 +413,8 @@ bool CodeGenFunction::EmitLocalCleanups(std::size_t depth) {
       continue;
     }
     if (cleanup.kind == LocalCleanup::Kind::ExitVirtualDispatch) {
-      EmitVTablePointer(cleanup.address, *cleanup.type->AsStructType()->GetDeclaration());
-    } else if (!EmitDestroy(cleanup.address, *cleanup.type)) {
+      if (!EmitVTablePointer(cleanup.address, *cleanup.type->AsStructType()->GetDeclaration())) return false;
+    } else if (!EmitDestroy(cleanup.address, *cleanup.type, cleanup.structor_kind)) {
       return false;
     }
   }
@@ -453,22 +467,22 @@ bool CodeGenFunction::EmitArrayLoop(std::uint64_t count, bool reverse, llvm::Str
   auto* body = CreateBasicBlock(name);
   auto* end = CreateBasicBlock("array.end");
   EmitBlock(body);
-  auto* cursor = builder_.CreatePHI(builder_.getInt64Ty(), 2, "array.index");
-  cursor->addIncoming(builder_.getInt64(reverse ? count : 0), predecessor);
-  auto* index = reverse ? builder_.CreateSub(cursor, builder_.getInt64(1), "array.previous") : cursor;
+  auto* cursor = builder_.CreatePHI(GetTargetIndexType(), 2, "array.index");
+  cursor->addIncoming(GetTargetIndex(reverse ? count : 0), predecessor);
+  auto* index = reverse ? builder_.CreateSub(cursor, GetTargetIndex(1), "array.previous") : cursor;
   if (!emit_element(index)) {
     return false;
   }
-  auto* next = reverse ? index : builder_.CreateAdd(index, builder_.getInt64(1), "array.next");
+  auto* next = reverse ? index : builder_.CreateAdd(index, GetTargetIndex(1), "array.next");
   cursor->addIncoming(next, builder_.GetInsertBlock());
-  auto* finished = builder_.CreateICmpEQ(next, builder_.getInt64(reverse ? 0 : count), "array.finished");
+  auto* finished = builder_.CreateICmpEQ(next, GetTargetIndex(reverse ? 0 : count), "array.finished");
   builder_.CreateCondBr(finished, end, body);
   builder_.ClearInsertionPoint();
   EmitBlock(end);
   return true;
 }
 
-bool CodeGenFunction::EmitDestroy(Address address, const Type& type) {
+bool CodeGenFunction::EmitDestroy(Address address, const Type& type, CodeGen::StructorKind kind) {
   if (type.GetTriviality() != TypeTriviality::NonTrivial) {
     return true;
   }
@@ -482,21 +496,24 @@ bool CodeGenFunction::EmitDestroy(Address address, const Type& type) {
   }
   const auto* structure = type.AsStructType();
   BOOST_ASSERT(structure);
-  return EmitStructorCall(*codegen_.destructors_.at(structure->GetDeclaration()), address, {});
+  return EmitStructorCall(*codegen_.destructors_.at(structure->GetDeclaration()), address, {}, kind);
 }
 
-void CodeGenFunction::EmitVTablePointer(Address object, const StructDecl& stage) {
+bool CodeGenFunction::EmitVTablePointer(Address object, const StructDecl& stage) {
   if (stage.IsPolymorphic()) {
-    builder_.CreateAlignedStore(codegen_.GetVTableAddressPoint(stage), object.pointer, object.alignment);
+    auto* table = codegen_.GetVTableAddressPoint(stage);
+    if (!table) return false;
+    builder_.CreateAlignedStore(table, object.pointer, object.alignment);
   }
+  return true;
 }
 
 llvm::Value* CodeGenFunction::EmitVirtualPointerIsNotNull(llvm::Value* pointer) {
   auto* offset = builder_.CreateExtractValue(pointer, 0, "slot.offset");
   auto* adjustment = builder_.CreateExtractValue(pointer, 1, "slot.adjustment");
-  auto* has_offset = builder_.CreateICmpNE(offset, builder_.getInt64(0));
-  auto* virtual_bit = builder_.CreateAnd(adjustment, builder_.getInt64(1));
-  auto* is_virtual = builder_.CreateICmpNE(virtual_bit, builder_.getInt64(0));
+  auto* has_offset = builder_.CreateICmpNE(offset, llvm::ConstantInt::get(offset->getType(), 0));
+  auto* virtual_bit = builder_.CreateAnd(adjustment, llvm::ConstantInt::get(adjustment->getType(), 1));
+  auto* is_virtual = builder_.CreateICmpNE(virtual_bit, llvm::ConstantInt::get(virtual_bit->getType(), 0));
   return builder_.CreateOr(has_offset, is_virtual, "slot.nonnull");
 }
 
@@ -504,23 +521,29 @@ llvm::Value* CodeGenFunction::EmitVirtualCallee(const VirtualFunctionDecl& decla
   const auto* receiver_type = declaration.ParmVars.front()->type.GetTypePtr()->AsReferenceType();
   const auto& structure = *receiver_type->GetReferentType()->AsStructType()->GetDeclaration();
   const auto index = codegen_.ast_context_->GetVTableLayout(structure).function_indices.at(&declaration);
-  auto* table = builder_.CreateAlignedLoad(builder_.getPtrTy(), receiver, llvm::Align(8), "vtable");
-  auto* slot = builder_.CreateConstInBoundsGEP1_64(builder_.getPtrTy(), table, index, "virtual.slot");
-  return builder_.CreateAlignedLoad(builder_.getPtrTy(), slot, llvm::Align(8), "virtual.callee");
+  const auto pointer_alignment = llvm::Align(codegen_.ast_context_->GetTargetInfo().GetPointerAlignment());
+  auto* table = builder_.CreateAlignedLoad(builder_.getPtrTy(), receiver, pointer_alignment, "vtable");
+  auto* slot = builder_.CreateGEP(builder_.getPtrTy(), table, GetTargetIndex(index), "virtual.slot",
+                                  llvm::GEPNoWrapFlags::inBounds());
+  return builder_.CreateAlignedLoad(builder_.getPtrTy(), slot, pointer_alignment, "virtual.callee");
 }
 
 llvm::Value* CodeGenFunction::EmitVirtualCallee(llvm::Value* pointer, llvm::Value*& receiver) {
   // CW values select virtual slots only; ordinary member-function addresses are not in this type's value domain.
-  auto* adjustment =
-      builder_.CreateAShr(builder_.CreateExtractValue(pointer, 1), builder_.getInt64(1), "this.adjustment");
+  auto* adjustment = builder_.CreateAShr(builder_.CreateExtractValue(pointer, 1), GetTargetIndex(1), "this.adjustment");
   receiver = builder_.CreateGEP(builder_.getInt8Ty(), receiver, adjustment, "virtual.this");
-  auto* table = builder_.CreateAlignedLoad(builder_.getPtrTy(), receiver, llvm::Align(8), "vtable");
-  // Apple arm64 consumes only the low 32 bits of the unsigned virtual slot offset.
-  auto* offset =
-      builder_.CreateZExt(builder_.CreateTrunc(builder_.CreateExtractValue(pointer, 0), builder_.getInt32Ty()),
-                          builder_.getInt64Ty(), "slot.offset");
+  const auto pointer_alignment = llvm::Align(codegen_.ast_context_->GetTargetInfo().GetPointerAlignment());
+  auto* table = builder_.CreateAlignedLoad(builder_.getPtrTy(), receiver, pointer_alignment, "vtable");
+  const bool use_32_bit_offset = codegen_.GetTargetABI().use_32_bit_vtable_offset;
+  auto* offset = builder_.CreateExtractValue(pointer, 0, use_32_bit_offset ? "slot.offset" : "");
+  if (!use_32_bit_offset) {
+    // The arm64 virtual-slot ABI uses a 32-bit unsigned byte offset in its
+    // low bits, while the surrounding value remains a target-sized word.
+    offset =
+        builder_.CreateZExt(builder_.CreateTrunc(offset, builder_.getInt32Ty()), builder_.getInt64Ty(), "slot.offset");
+  }
   auto* slot = builder_.CreateGEP(builder_.getInt8Ty(), table, offset, "virtual.slot");
-  return builder_.CreateAlignedLoad(builder_.getPtrTy(), slot, llvm::Align(8), "virtual.callee");
+  return builder_.CreateAlignedLoad(builder_.getPtrTy(), slot, pointer_alignment, "virtual.callee");
 }
 
 void CodeGenFunction::GenerateThunk(const VTableEntry& entry, const CodeGen::FunctionInfo& info,
@@ -539,7 +562,7 @@ void CodeGenFunction::GenerateThunk(const VTableEntry& entry, const CodeGen::Fun
   llvm::Value* result = call;
   if (entry.return_adjustment != 0) {
     auto* adjusted =
-        builder_.CreateGEP(builder_.getInt8Ty(), result, builder_.getInt64(entry.return_adjustment), "return.adjusted",
+        builder_.CreateGEP(builder_.getInt8Ty(), result, GetTargetOffset(entry.return_adjustment), "return.adjusted",
                            llvm::GEPNoWrapFlags::inBounds() | llvm::GEPNoWrapFlags::noUnsignedWrap());
     const auto* return_type = entry.interface->type.GetTypePtr()->AsFunctionType()->GetReturnType();
     result = return_type->AsPointerType() ? builder_.CreateSelect(builder_.CreateIsNull(result),
@@ -560,7 +583,8 @@ void CodeGenFunction::EnterDestructorCleanups(const DestructorDecl& declaration)
   const auto& structure = *declaration.target_type->GetDeclaration();
   // These entries enclose the user body, so every return destroys locals before subobjects.
   if (structure.base_type) {
-    local_cleanups_.push_back({EmitBase(this_address_, structure), structure.base_type, nullptr, true});
+    local_cleanups_.push_back({EmitBase(this_address_, structure), structure.base_type, nullptr, true,
+                               LocalCleanup::Kind::Destroy, CodeGen::StructorKind::Base});
   }
   for (const auto& field : structure.Fields) {
     if (field->type.GetTypePtr()->GetTriviality() == TypeTriviality::NonTrivial) {
@@ -587,7 +611,9 @@ void CodeGenFunction::FinishFunction() {
   }
 }
 
-bool CodeGenFunction::Generate(const FunctionDecl& declaration, const CodeGen::FunctionInfo& function_info) {
+bool CodeGenFunction::Generate(const FunctionDecl& declaration, const CodeGen::FunctionInfo& function_info,
+                               CodeGen::StructorKind kind) {
+  structor_kind_ = kind;
   StartFunction();
   if (function_info.this_index) {
     auto* target = function_.getArg(*function_info.this_index);
@@ -639,7 +665,9 @@ bool CodeGenFunction::Generate(const FunctionDecl& declaration, const CodeGen::F
     }
   }
   if (declaration.GetKind() == NodeKind::DestructorDecl) {
-    EmitVTablePointer(this_address_, *static_cast<const DestructorDecl&>(declaration).target_type->GetDeclaration());
+    if (!EmitVTablePointer(this_address_,
+                           *static_cast<const DestructorDecl&>(declaration).target_type->GetDeclaration()))
+      return false;
     EnterDestructorCleanups(static_cast<const DestructorDecl&>(declaration));
   }
   if (!EmitCompound(*declaration.Body) || !EmitLocalCleanups(0)) {
@@ -725,8 +753,7 @@ bool CodeGenFunction::EmitStmt(const Stmt& statement) {
       return !expression || EmitFullExpr(*expression);
     }
     case NodeKind::ImplicitThisInitializationCompleteStmt:
-      EmitVTablePointer(this_address_, *this_address_.semantic_type->AsStructType()->GetDeclaration());
-      return true;
+      return EmitVTablePointer(this_address_, *this_address_.semantic_type->AsStructType()->GetDeclaration());
     case NodeKind::DeclStmt: {
       const auto& declaration = static_cast<const DeclStmt&>(statement).Decl;
       if (declaration && declaration->GetKind() == NodeKind::VarGroupDecl) {
@@ -1169,7 +1196,24 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
       }
       if (IsAggregate(*assignment.type.GetTypePtr())) {
         // Capture the source object, then locate the target; copy only after both have been evaluated.
-        Address source = EmitLValue(*assignment.RHS);
+        Address source;
+        if (assignment.RHS->value_category == ValueCategory::LValue ||
+            assignment.RHS->value_category == ValueCategory::MoveLValue) {
+          source = EmitLValue(*assignment.RHS);
+        } else {
+          auto conversion = codegen_.ConvertTypeForMem(*assignment.RHS->type.GetTypePtr());
+          if (const auto* failure = std::get_if<CodeGen::TypeConversionFailure>(&conversion)) {
+            codegen_.DiagnoseTypeConversionFailure(*assignment.RHS, *failure, "this assignment source type");
+            return {};
+          }
+          source = CreateStorage(std::get<llvm::Type*>(conversion), "assignment", assignment.RHS->type.GetTypePtr());
+          if (!EmitAggExpr(*assignment.RHS, source)) {
+            return {};
+          }
+          if (assignment.RHS->type.GetTypePtr()->GetTriviality() == TypeTriviality::NonTrivial) {
+            AddTemporaryCleanup(source, *assignment.RHS->type.GetTypePtr());
+          }
+        }
         if (!source) {
           return {};
         }
@@ -1345,6 +1389,14 @@ bool CodeGenFunction::EmitAggExpr(const Expr& expression, Address destination) {
       return EmitAggExpr(*static_cast<const ParenExpr&>(expression).SubExpr, destination);
     case NodeKind::ConstructionExpr:
       return EmitConstruction(static_cast<const ConstructionExpr&>(expression), destination);
+    case NodeKind::ImplicitOverloadSetSelectionExpr: {
+      auto* value = EmitScalarExpr(expression);
+      if (!value) {
+        return false;
+      }
+      EmitCoercedStore(value, destination);
+      return true;
+    }
     case NodeKind::ArrayConstructionExpr: {
       const auto& construction = static_cast<const ArrayConstructionExpr&>(expression);
       Address source = EmitLValue(*construction.Source);
@@ -1365,13 +1417,21 @@ bool CodeGenFunction::EmitAggExpr(const Expr& expression, Address destination) {
           cast.conversion_kind == ImplicitConversionKind::Identity) {
         return EmitAggExpr(*cast.SubExpr, destination);
       }
+      if (cast.conversion_kind == ImplicitConversionKind::NullToPointer) {
+        auto* value = EmitScalarExpr(expression);
+        if (!value) {
+          return false;
+        }
+        EmitCoercedStore(value, destination);
+        return true;
+      }
       break;
     }
     case NodeKind::ArrayValueExpr: {
       const auto& array = static_cast<const ArrayValueExpr&>(expression);
       for (std::size_t index = 0; index < array.Elements.size(); ++index) {
         const Expr& element = *array.Elements[index];
-        Address storage = EmitArrayElement(destination, builder_.getInt64(index), /*in_bounds=*/true);
+        Address storage = EmitArrayElement(destination, GetTargetIndex(index), /*in_bounds=*/true);
         if (!EmitInitialization(storage, *element.type.GetTypePtr(), element)) {
           return false;
         }
@@ -1412,14 +1472,23 @@ bool CodeGenFunction::EmitAggExpr(const Expr& expression, Address destination) {
 }
 
 bool CodeGenFunction::EmitConstruction(const ConstructionExpr& expression, Address destination) {
-  // Without virtual bases, structor bodies share one entry and treat this as a
-  // possibly overlapping subobject. The enclosing initialization supplies its address.
   if (expression.constructor) {
     std::vector<const Expr*> sources;
     for (const auto& argument : expression.Args) {
       sources.push_back(argument.get());
     }
-    return EmitStructorCall(*expression.constructor, destination, sources);
+    auto kind = CodeGen::StructorKind::Complete;
+    switch (expression.construction_kind) {
+      case ConstructionKind::CompleteObject:
+        break;
+      case ConstructionKind::BaseSubobject:
+        kind = CodeGen::StructorKind::Base;
+        break;
+      case ConstructionKind::Delegating:
+        kind = structor_kind_;
+        break;
+    }
+    return EmitStructorCall(*expression.constructor, destination, sources, kind);
   }
   BOOST_ASSERT(expression.Args.empty());
   const auto size = GetOperationSize(destination);
@@ -1447,7 +1516,9 @@ bool CodeGenFunction::EmitArrayConstruction(Address destination, Address source,
     std::vector<llvm::Value*> arguments(info.type->getNumParams());
     arguments[*info.this_index] = target_element.pointer;
     arguments[*info.parameters.front().llvm_index] = source_element.pointer;
-    auto* call = builder_.CreateCall(info.type, codegen_.functions_.at(&constructor), arguments);
+    auto* function = codegen_.GetOrCreateFunction(constructor, CodeGen::StructorKind::Complete);
+    if (!function) return false;
+    auto* call = builder_.CreateCall(info.type, function, arguments);
     NameCallResult(*call);
     call->setAttributes(info.attributes);
     return true;
@@ -1474,14 +1545,18 @@ bool CodeGenFunction::EmitArrayAssignment(Address destination, Address source, c
     arguments[*info.parameters[1].llvm_index] = source_element.pointer;
     // Each implicit element call is a full-expression; operand temporaries belong to the outer one.
     const auto depth = temporary_cleanups_.size();
-    EmitCall(signature, info, codegen_.functions_.at(&assignment), arguments, {{}, true});
+    auto* function = codegen_.GetOrCreateFunction(assignment);
+    if (!function) return false;
+    EmitCall(signature, info, function, arguments, {{}, true});
     return EmitTemporaryCleanups(depth);
   });
 }
 
 bool CodeGenFunction::EmitStructorCall(const FunctionDecl& declaration, Address target,
-                                       llvm::ArrayRef<const Expr*> sources) {
-  const auto& info = *std::get<const CodeGen::FunctionInfo*>(codegen_.GetFunctionInfo(declaration));
+                                       llvm::ArrayRef<const Expr*> sources, CodeGen::StructorKind kind) {
+  auto* function = codegen_.GetOrCreateFunction(declaration, kind);
+  if (!function) return false;
+  const auto& info = *std::get<const CodeGen::FunctionInfo*>(codegen_.GetFunctionInfo(declaration, kind));
   BOOST_ASSERT(info.this_index && target.element_type == info.this_type);
   std::vector<llvm::Value*> arguments(info.type->getNumParams());
   arguments[*info.this_index] = target.pointer;
@@ -1489,7 +1564,7 @@ bool CodeGenFunction::EmitStructorCall(const FunctionDecl& declaration, Address 
                          arguments)) {
     return false;
   }
-  auto* call = builder_.CreateCall(info.type, codegen_.functions_.at(&declaration), arguments);
+  auto* call = builder_.CreateCall(info.type, function, arguments);
   NameCallResult(*call);
   call->setAttributes(info.attributes);
   return true;
@@ -1542,13 +1617,8 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
         return codegen_.GetVirtualFunctionPointer(
             static_cast<const VirtualFunctionDecl&>(*selection.selected_declaration));
       }
-      const auto it = codegen_.functions_.find(selection.selected_declaration);
-      if (it == codegen_.functions_.end()) {
-        codegen_.InternalError(expression, "selected function has no LLVM declaration");
-        return nullptr;
-      }
       // The source overload set is retained for diagnostics, not runtime evaluation.
-      return it->second;
+      return codegen_.GetOrCreateFunction(*selection.selected_declaration);
     }
     case NodeKind::ImplicitCastExpr: {
       const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
@@ -1843,19 +1913,16 @@ std::optional<RValue> CodeGenFunction::EmitCall(const CallExpr& expression, Retu
     const auto& function = static_cast<const VirtualFunctionDecl&>(*declaration);
     signature = function.type.GetTypePtr()->AsFunctionType();
     if (expression.is_nonvirtual) {
-      target = codegen_.functions_.at(function.definition);
+      target = codegen_.GetOrCreateFunction(*function.implementation);
+      if (!target) return std::nullopt;
     } else {
       virtual_function = &function;
     }
   } else if (declaration && declaration->GetKind() == NodeKind::FunctionDecl) {
     const auto* function = static_cast<const FunctionDecl*>(declaration);
     signature = function->type.GetTypePtr()->AsFunctionType();
-    const auto it = codegen_.functions_.find(function);
-    if (it == codegen_.functions_.end()) {
-      codegen_.InternalError(expression, "selected function has no LLVM declaration");
-      return std::nullopt;
-    }
-    target = it->second;
+    target = codegen_.GetOrCreateFunction(*function);
+    if (!target) return std::nullopt;
   } else {
     const auto* slot_type = callee->type.GetTypePtr()->AsVirtualSlotType();
     const auto* pointer_type =

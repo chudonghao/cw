@@ -1,16 +1,26 @@
 %struct.Token = type { i8 }
 
-define noundef ptr @Token.ctor(ptr noundef returned %this) {
+define noundef ptr @"cw:Token:ctor():complete"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define noundef ptr @Token.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Token:ctor():base"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define noundef zeroext i1 @Check(ptr noundef nonnull align 1 dereferenceable(1) %value) {
+define noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Token:dtor():base"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define noundef zeroext i1 @"cw:Check:func(&copy Token)bool"(ptr noundef nonnull align 1 dereferenceable(1) %value) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca ptr, align 8
@@ -21,7 +31,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef i32 @Next() {
+define noundef i32 @"cw:Next:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 7, ptr %.result, align 4
@@ -29,7 +39,7 @@ entry:
   ret i32 %0
 }
 
-define void @Use(i1 noundef zeroext %test, i32 noundef %next) {
+define void @"cw:Use:func(bool,i32)void"(i1 noundef zeroext %test, i32 noundef %next) {
 entry:
   %test.addr = alloca i8, align 1
   %next.addr = alloca i32, align 4
@@ -39,7 +49,7 @@ entry:
   ret void
 }
 
-define void @Short(i1 noundef zeroext %flag) {
+define void @"cw:Short:func(bool)void"(i1 noundef zeroext %flag) {
 entry:
   %flag.addr = alloca i8, align 1
   %temporary = alloca %struct.Token, align 1
@@ -50,25 +60,25 @@ entry:
   br i1 %loadedv, label %land.rhs, label %land.end
 
 land.rhs:                                         ; preds = %entry
-  %call = call noundef ptr @Token.ctor(ptr noundef returned %temporary)
-  %call1 = call noundef zeroext i1 @Check(ptr noundef nonnull align 1 dereferenceable(1) %temporary)
+  %call = call noundef ptr @"cw:Token:ctor():complete"(ptr noundef returned %temporary)
+  %call1 = call noundef zeroext i1 @"cw:Check:func(&copy Token)bool"(ptr noundef nonnull align 1 dereferenceable(1) %temporary)
   br label %land.end
 
 land.end:                                         ; preds = %land.rhs, %entry
   %1 = phi i1 [ false, %entry ], [ %call1, %land.rhs ]
-  %call2 = call noundef i32 @Next()
-  call void @Use(i1 noundef zeroext %1, i32 noundef %call2)
+  %call2 = call noundef i32 @"cw:Next:func()i32"()
+  call void @"cw:Use:func(bool,i32)void"(i1 noundef zeroext %1, i32 noundef %call2)
   br i1 %loadedv, label %cleanup.destroy, label %cleanup.end
 
 cleanup.destroy:                                  ; preds = %land.end
-  %call3 = call noundef ptr @Token.dtor(ptr noundef returned %temporary)
+  %call3 = call noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %temporary)
   br label %cleanup.end
 
 cleanup.end:                                      ; preds = %cleanup.destroy, %land.end
   ret void
 }
 
-define void @Repeat(ptr noundef nonnull align 1 dereferenceable(1) %flag, i1 noundef zeroext %other) {
+define void @"cw:Repeat:func(&mut bool,bool)void"(ptr noundef nonnull align 1 dereferenceable(1) %flag, i1 noundef zeroext %other) {
 entry:
   %flag.addr = alloca ptr, align 8
   %other.addr = alloca i8, align 1
@@ -92,9 +102,9 @@ land.rhs:                                         ; preds = %while.cond
   br i1 %loadedv2, label %land.rhs1, label %cond.cleanup.false
 
 land.rhs1:                                        ; preds = %land.rhs
-  %call = call noundef ptr @Token.ctor(ptr noundef returned %temporary)
+  %call = call noundef ptr @"cw:Token:ctor():complete"(ptr noundef returned %temporary)
   store i1 true, ptr %cleanup.active, align 1
-  %call3 = call noundef zeroext i1 @Check(ptr noundef nonnull align 1 dereferenceable(1) %temporary)
+  %call3 = call noundef zeroext i1 @"cw:Check:func(&copy Token)bool"(ptr noundef nonnull align 1 dereferenceable(1) %temporary)
   br i1 %call3, label %cond.cleanup.true, label %cond.cleanup.false
 
 cond.cleanup.true:                                ; preds = %land.rhs1
@@ -109,7 +119,7 @@ cond.cleanup:                                     ; preds = %cond.cleanup.false,
   br i1 %cleanup.active4, label %cleanup.destroy, label %cleanup.end
 
 cleanup.destroy:                                  ; preds = %cond.cleanup
-  %call5 = call noundef ptr @Token.dtor(ptr noundef returned %temporary)
+  %call5 = call noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %temporary)
   br label %cleanup.end
 
 cleanup.end:                                      ; preds = %cleanup.destroy, %cond.cleanup
@@ -124,7 +134,7 @@ while.end:                                        ; preds = %cleanup.end
   ret void
 }
 
-define noundef i32 @Change(ptr noundef nonnull align 1 dereferenceable(1) %flag) {
+define noundef i32 @"cw:Change:func(&mut bool)i32"(ptr noundef nonnull align 1 dereferenceable(1) %flag) {
 entry:
   %.result = alloca i32, align 4
   %flag.addr = alloca ptr, align 8
@@ -136,7 +146,7 @@ entry:
   ret i32 %1
 }
 
-define void @Choice(i1 noundef zeroext %flag) {
+define void @"cw:Choice:func(bool)void"(i1 noundef zeroext %flag) {
 entry:
   %flag.addr = alloca i8, align 1
   %temporary = alloca %struct.Token, align 1
@@ -149,30 +159,30 @@ entry:
   br i1 %loadedv, label %cond.true, label %cond.false
 
 cond.true:                                        ; preds = %entry
-  %call = call noundef ptr @Token.ctor(ptr noundef returned %temporary)
-  %call1 = call noundef zeroext i1 @Check(ptr noundef nonnull align 1 dereferenceable(1) %temporary)
+  %call = call noundef ptr @"cw:Token:ctor():complete"(ptr noundef returned %temporary)
+  %call1 = call noundef zeroext i1 @"cw:Check:func(&copy Token)bool"(ptr noundef nonnull align 1 dereferenceable(1) %temporary)
   br label %cond.end
 
 cond.false:                                       ; preds = %entry
-  %call3 = call noundef ptr @Token.ctor(ptr noundef returned %temporary2)
-  %call4 = call noundef zeroext i1 @Check(ptr noundef nonnull align 1 dereferenceable(1) %temporary2)
+  %call3 = call noundef ptr @"cw:Token:ctor():complete"(ptr noundef returned %temporary2)
+  %call4 = call noundef zeroext i1 @"cw:Check:func(&copy Token)bool"(ptr noundef nonnull align 1 dereferenceable(1) %temporary2)
   br label %cond.end
 
 cond.end:                                         ; preds = %cond.false, %cond.true
   %cond = phi i1 [ %call1, %cond.true ], [ %call4, %cond.false ]
-  %call5 = call noundef i32 @Change(ptr noundef nonnull align 1 dereferenceable(1) %flag.addr)
-  call void @Use(i1 noundef zeroext %cond, i32 noundef %call5)
+  %call5 = call noundef i32 @"cw:Change:func(&mut bool)i32"(ptr noundef nonnull align 1 dereferenceable(1) %flag.addr)
+  call void @"cw:Use:func(bool,i32)void"(i1 noundef zeroext %cond, i32 noundef %call5)
   br i1 %cleanup.condition, label %cleanup.destroy, label %cleanup.end
 
 cleanup.destroy:                                  ; preds = %cond.end
-  %call6 = call noundef ptr @Token.dtor(ptr noundef returned %temporary2)
+  %call6 = call noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %temporary2)
   br label %cleanup.end
 
 cleanup.end:                                      ; preds = %cleanup.destroy, %cond.end
   br i1 %loadedv, label %cleanup.destroy7, label %cleanup.end8
 
 cleanup.destroy7:                                 ; preds = %cleanup.end
-  %call9 = call noundef ptr @Token.dtor(ptr noundef returned %temporary)
+  %call9 = call noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %temporary)
   br label %cleanup.end8
 
 cleanup.end8:                                     ; preds = %cleanup.destroy7, %cleanup.end

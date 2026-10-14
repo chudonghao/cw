@@ -55,6 +55,17 @@ Source comments identify C++ adaptations for deferred local initialization, init
 
 Virtual cases cover inherited and overridden calls, qualified ordinary calls, covariant pointer and reference results, and unbound virtual interface pointers. Their Clang references use `-fno-rtti`. The lifetime case distinguishes CW's activation after the last initialization's full-expression cleanup and exit before member destruction from C++'s different dispatch stages. Abstract interfaces retain the runtime error entry even when an ordinary definition supports `nonvirtual` calls.
 
+Import cases use C++ declarations whose definitions belong to another translation unit. They compare external calls and object operations, inherited virtual implementations in local tables, covariant results, and virtual dispatch without direct implementation references. C++ has no matching per-declaration `import` or `export` marker; source comments identify the relevant visibility and representation differences. These are compile-only references and do not require linking the external definitions.
+
+The `import_virtual` reference uses a free-function adapter for the ordinary implementation address. Its derived destructor leaves the base-vptr transition to the external base destructor, while CW also restores the imported base table in the caller. In `import_covariance`, Clang references external return-adjusting thunks and emits `Local`'s table with `linkonce_odr` linkage; CW emits private thunks shared by `Local` and `Another`, and named tables with external linkage. In `import_indirect`, Clang omits unused external declarations while CW retains them; neither creates direct references to the virtual implementations or a concrete table.
+
+The `symbol_types` case covers stable semantic identities: same-width integers, reference modes,
+const at different pointer layers, evaluated array bounds, ordinary and virtual function pointers,
+namespaced `main`, and UTF-8 names. Its C++ address objects retain external declarations for comparison;
+CW retains imported declarations directly. CW root `main` remains the fixed entry name. Complete and
+base structor entries are distinct; delegation retains the active entry, while base subobject cleanup
+uses the base destructor. Named source entities do not use LLVM overload suffixes.
+
 ## Naming
 
 File stems and CMake targets use snake_case. Primary C++ and CW declarations and GTest parameter names use PascalCase. Each case has one primary language feature and only the supporting declarations needed to express it. Related variants belong in the same case; each case has one test entry.
@@ -163,6 +174,11 @@ The cases, in registration order, are:
 100. `virtual_covariance`
 101. `virtual_lifetimes`
 102. `abstract_dispatch`
+103. `import_calls`
+104. `import_virtual`
+105. `import_covariance`
+106. `import_indirect`
+107. `symbol_types`
 
 ## Generating Clang References
 

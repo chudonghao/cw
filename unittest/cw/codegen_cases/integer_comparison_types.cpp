@@ -1,8 +1,3 @@
-/// \file integer_comparison_types.cpp
-/// \copyright 2026 Donghao Chu
-/// \license SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-/// \url https://github.com/chudonghao/cw
-
 bool UnsignedEqual(unsigned long long left, unsigned long long right) { return left == right; }
 
 bool UnsignedNotEqual(unsigned long long left, unsigned long long right) { return left != right; }

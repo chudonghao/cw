@@ -1,4 +1,4 @@
-define noundef i32 @Replace(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef i32 @"cw:Replace:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -12,7 +12,7 @@ entry:
   ret i32 %3
 }
 
-define noundef i32 @First(i32 noundef %first, i32 noundef %second) {
+define noundef i32 @"cw:First:func(i32,i32)i32"(i32 noundef %first, i32 noundef %second) {
 entry:
   %.result = alloca i32, align 4
   %first.addr = alloca i32, align 4
@@ -25,33 +25,33 @@ entry:
   ret i32 %1
 }
 
-define noundef i32 @OrdinaryCall() {
+define noundef i32 @"cw:OrdinaryCall:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %value = alloca i32, align 4
   store i32 13, ptr %value, align 4
   %0 = load i32, ptr %value, align 4
-  %call = call noundef i32 @Replace(ptr noundef nonnull align 4 dereferenceable(4) %value)
-  %call1 = call noundef i32 @First(i32 noundef %0, i32 noundef %call)
+  %call = call noundef i32 @"cw:Replace:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value)
+  %call1 = call noundef i32 @"cw:First:func(i32,i32)i32"(i32 noundef %0, i32 noundef %call)
   store i32 %call1, ptr %.result, align 4
   %1 = load i32, ptr %.result, align 4
   ret i32 %1
 }
 
-define noundef i32 @ReceiverCall() {
+define noundef i32 @"cw:ReceiverCall:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %value = alloca i32, align 4
   store i32 13, ptr %value, align 4
   %0 = load i32, ptr %value, align 4
-  %call = call noundef i32 @Replace(ptr noundef nonnull align 4 dereferenceable(4) %value)
-  %call1 = call noundef i32 @First(i32 noundef %0, i32 noundef %call)
+  %call = call noundef i32 @"cw:Replace:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value)
+  %call1 = call noundef i32 @"cw:First:func(i32,i32)i32"(i32 noundef %0, i32 noundef %call)
   store i32 %call1, ptr %.result, align 4
   %1 = load i32, ptr %.result, align 4
   ret i32 %1
 }
 
-define noundef i32 @ConditionalFirst(i32 noundef %value, i32 noundef %ignored) {
+define noundef i32 @"cw:ConditionalFirst:func(i32,i32)i32"(i32 noundef %value, i32 noundef %ignored) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca i32, align 4
@@ -64,7 +64,7 @@ entry:
   ret i32 %1
 }
 
-define noundef i32 @ConditionalArgument(i1 noundef zeroext %flag) {
+define noundef i32 @"cw:ConditionalArgument:func(bool)i32"(i1 noundef zeroext %flag) {
 entry:
   %.result = alloca i32, align 4
   %flag.addr = alloca i8, align 1
@@ -88,13 +88,13 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   %1 = load i32, ptr %cond, align 4
   store i32 11, ptr %value, align 4
   %2 = load i32, ptr %value, align 4
-  %call = call noundef i32 @ConditionalFirst(i32 noundef %1, i32 noundef %2)
+  %call = call noundef i32 @"cw:ConditionalFirst:func(i32,i32)i32"(i32 noundef %1, i32 noundef %2)
   store i32 %call, ptr %.result, align 4
   %3 = load i32, ptr %.result, align 4
   ret i32 %3
 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @Locate(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:Locate:func(&mut i32)&mut i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -107,21 +107,21 @@ entry:
   ret ptr %2
 }
 
-define noundef i32 @ReceiverSource() {
+define noundef i32 @"cw:ReceiverSource:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %value = alloca i32, align 4
   store i32 13, ptr %value, align 4
-  %call = call noundef nonnull align 4 dereferenceable(4) ptr @Locate(ptr noundef nonnull align 4 dereferenceable(4) %value)
+  %call = call noundef nonnull align 4 dereferenceable(4) ptr @"cw:Locate:func(&mut i32)&mut i32"(ptr noundef nonnull align 4 dereferenceable(4) %value)
   %0 = load i32, ptr %call, align 4
-  %call1 = call noundef i32 @Replace(ptr noundef nonnull align 4 dereferenceable(4) %value)
-  %call2 = call noundef i32 @First(i32 noundef %0, i32 noundef %call1)
+  %call1 = call noundef i32 @"cw:Replace:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value)
+  %call2 = call noundef i32 @"cw:First:func(i32,i32)i32"(i32 noundef %0, i32 noundef %call1)
   store i32 %call2, ptr %.result, align 4
   %1 = load i32, ptr %.result, align 4
   ret i32 %1
 }
 
-define noundef i32 @ReadFirst(ptr noundef nonnull align 4 dereferenceable(4) %first, i32 noundef %ignored) {
+define noundef i32 @"cw:ReadFirst:func(&copy i32,i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %first, i32 noundef %ignored) {
 entry:
   %.result = alloca i32, align 4
   %first.addr = alloca ptr, align 8
@@ -135,14 +135,14 @@ entry:
   ret i32 %2
 }
 
-define noundef i32 @ReferenceArgument() {
+define noundef i32 @"cw:ReferenceArgument:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %value = alloca i32, align 4
   store i32 13, ptr %value, align 4
-  %call = call noundef nonnull align 4 dereferenceable(4) ptr @Locate(ptr noundef nonnull align 4 dereferenceable(4) %value)
-  %call1 = call noundef i32 @Replace(ptr noundef nonnull align 4 dereferenceable(4) %value)
-  %call2 = call noundef i32 @ReadFirst(ptr noundef nonnull align 4 dereferenceable(4) %call, i32 noundef %call1)
+  %call = call noundef nonnull align 4 dereferenceable(4) ptr @"cw:Locate:func(&mut i32)&mut i32"(ptr noundef nonnull align 4 dereferenceable(4) %value)
+  %call1 = call noundef i32 @"cw:Replace:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value)
+  %call2 = call noundef i32 @"cw:ReadFirst:func(&copy i32,i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %call, i32 noundef %call1)
   store i32 %call2, ptr %.result, align 4
   %0 = load i32, ptr %.result, align 4
   ret i32 %0

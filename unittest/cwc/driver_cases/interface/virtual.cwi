@@ -1,0 +1,25 @@
+namespace api {
+  import struct Base {
+    virtual {
+      abstract func Read(this &copy ::api::Base) i32;
+      func Keep(this &copy ::api::Base) i32;
+    }
+    marker i32;
+  }
+  import ctor Base(value i32);
+  import dtor Base();
+  import struct Derived : ::api::Base {
+    virtual {
+      override func Read(this &copy ::api::Derived) i32;
+    }
+  }
+  import ctor Derived(value i32);
+  import dtor Derived();
+  import func Read(this &copy ::api::Derived) i32;
+  import struct Abstract : ::api::Base {
+    virtual {
+      override abstract func Keep(this &copy ::api::Abstract) i32;
+    }
+  }
+  import dtor Abstract();
+}

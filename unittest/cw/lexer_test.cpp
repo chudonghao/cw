@@ -20,13 +20,13 @@ TEST(Lexer, TokenType) {
       R"("str" "\nstr")"
       "\n"
       // Keywords.
-      "struct trivial virtual abstract override func var alias const mut copy move this\n"
+      "struct trivial virtual abstract override func var alias namespace export const mut copy move this\n"
       "if else for while break continue return\n"
       "ctor dtor operator\n"
       // Identifiers, including non-ASCII spelling.
       "abc_123 标识符\n"
       // Operators and punctuation.
-      "~ || |= | ^= ^ ? >>= >> >= > == = <<= << <= < := : /= / . -> -= -- - , "
+      "~ || |= | ^= ^ ? >>= >> >= > == = <<= << <= < :: := : /= / . -> -= -- - , "
       "+= ++ + *= * &= && & %= % != ! ; [ ] ( ) { }\n"
       // undefined
       "\1"
@@ -80,6 +80,10 @@ TEST(Lexer, TokenType) {
   ASSERT_EQ(lexer.Token().type, cw::tok::var);
   lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::alias);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::namespace_);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::export_);
   lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::const_);
   lexer.Advance();
@@ -152,6 +156,8 @@ TEST(Lexer, TokenType) {
   ASSERT_EQ(lexer.Token().type, cw::tok::lessequal);
   lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::less);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::coloncolon);
   lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::colonequal);
   lexer.Advance();
@@ -474,4 +480,24 @@ TEST(Lexer, TokenProperty) {
 
   // eos
   ASSERT_EQ(lexer.Token().type, cw::tok::eos);
+}
+
+TEST(Lexer, DoesNotJoinLiteralsAcrossSourceBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> fragments = {
+      {"\"a", "b\""}, {"\"a\\", "b\""}, {"'", "'"}, {"'\\x", "41'"}};
+  for (const auto& [first, second] : fragments) {
+    SCOPED_TRACE(first + " | " + second);
+    std::vector<cw::Source> sources{{"first", first}, {"second", second}};
+    cw::Lexer lexer;
+    lexer.Reset(&sources);
+    int boundaries = 0;
+    while (lexer.Token().type != cw::tok::eos) {
+      EXPECT_NE(lexer.Token().type, cw::tok::string_literal);
+      EXPECT_NE(lexer.Token().type, cw::tok::character_literal);
+      EXPECT_EQ(lexer.Token().range.begin.file, lexer.Token().range.end.file);
+      if (lexer.Token().type == cw::tok::eof) ++boundaries;
+      lexer.Advance(false);
+    }
+    EXPECT_EQ(boundaries, 2);
+  }
 }

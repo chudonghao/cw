@@ -584,7 +584,7 @@ class AnalysisEngine {
   }
 
   void IndexGlobals(const TranslationUnitDecl& translation_unit) {
-    for (const auto& declaration : translation_unit.Decls) {
+    for (const auto& declaration : translation_unit.FlattenedDecls()) {
       if (!declaration || declaration->GetKind() != NodeKind::VarGroupDecl) {
         continue;
       }

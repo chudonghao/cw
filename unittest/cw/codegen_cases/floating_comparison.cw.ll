@@ -1,4 +1,4 @@
-define noundef zeroext i1 @Equal(float noundef %left, float noundef %right) {
+define noundef zeroext i1 @"cw:Equal:func(f32,f32)bool"(float noundef %left, float noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca float, align 4
@@ -15,7 +15,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NotEqual(double noundef %left, double noundef %right) {
+define noundef zeroext i1 @"cw:NotEqual:func(f64,f64)bool"(double noundef %left, double noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca double, align 8
@@ -32,7 +32,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @Less(float noundef %left, float noundef %right) {
+define noundef zeroext i1 @"cw:Less:func(f32,f32)bool"(float noundef %left, float noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca float, align 4
@@ -49,7 +49,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @LessEqual(double noundef %left, double noundef %right) {
+define noundef zeroext i1 @"cw:LessEqual:func(f64,f64)bool"(double noundef %left, double noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca double, align 8
@@ -66,7 +66,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @Greater(float noundef %left, float noundef %right) {
+define noundef zeroext i1 @"cw:Greater:func(f32,f32)bool"(float noundef %left, float noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca float, align 4
@@ -83,7 +83,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @GreaterEqual(double noundef %left, double noundef %right) {
+define noundef zeroext i1 @"cw:GreaterEqual:func(f64,f64)bool"(double noundef %left, double noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca double, align 8
@@ -100,7 +100,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @MixedLess(i32 noundef %left, double noundef %right) {
+define noundef zeroext i1 @"cw:MixedLess:func(i32,f64)bool"(i32 noundef %left, double noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i32, align 4
@@ -118,7 +118,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NaNEqual() {
+define noundef zeroext i1 @"cw:NaNEqual:func()bool"() {
 entry:
   %.result = alloca i8, align 1
   store i8 0, ptr %.result, align 1
@@ -127,7 +127,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NaNNotEqual() {
+define noundef zeroext i1 @"cw:NaNNotEqual:func()bool"() {
 entry:
   %.result = alloca i8, align 1
   store i8 1, ptr %.result, align 1
@@ -136,7 +136,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NaNLess() {
+define noundef zeroext i1 @"cw:NaNLess:func()bool"() {
 entry:
   %.result = alloca i8, align 1
   store i8 0, ptr %.result, align 1
@@ -145,7 +145,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NaNLessEqual() {
+define noundef zeroext i1 @"cw:NaNLessEqual:func()bool"() {
 entry:
   %.result = alloca i8, align 1
   store i8 0, ptr %.result, align 1
@@ -154,7 +154,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NaNGreater() {
+define noundef zeroext i1 @"cw:NaNGreater:func()bool"() {
 entry:
   %.result = alloca i8, align 1
   store i8 0, ptr %.result, align 1
@@ -163,7 +163,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NaNGreaterEqual() {
+define noundef zeroext i1 @"cw:NaNGreaterEqual:func()bool"() {
 entry:
   %.result = alloca i8, align 1
   store i8 0, ptr %.result, align 1
@@ -172,7 +172,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @SignedZerosEqual() {
+define noundef zeroext i1 @"cw:SignedZerosEqual:func()bool"() {
 entry:
   %.result = alloca i8, align 1
   store i8 1, ptr %.result, align 1

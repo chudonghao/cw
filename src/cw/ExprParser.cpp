@@ -61,13 +61,13 @@ std::unique_ptr<Expr> ExprParser::operator()() {
   BOOST_ASSERT(diagnostic_engine_);
 
   Reset();
-  lexer_->SkipBlankComment();
+  // Parser supplies a non-trivia token, preserving per-file EOF.
 
   for (;;) {
     auto& token = lexer_->Token();
 
     HandleSymbolResult result = kHandleSymbolResultError;
-    if (token.type == tok::eos) {
+    if (token.type == tok::eos || token.type == tok::eof) {
       result = static_cast<HandleSymbolResult>(LRStateMachine::operator()(expr::$));
     } else if (is_terminal(static_cast<expr::ExprGrammarSymbol>(token.type))) {
       result = static_cast<HandleSymbolResult>(LRStateMachine::operator()(token.type));
@@ -180,6 +180,11 @@ void ExprParser::SetupRealReduceFunctions() {
   map[Production(expr::StringLiterals, {expr::string_literal})] = &ExprParser::Reduce_StringLiterals__string_literal;
   map[Production(expr::StringLiterals, {expr::StringLiterals, expr::string_literal})] = &ExprParser::Reduce_StringLiterals__StringLiterals_string_literal;
   map[Production(expr::ID, {expr::identifier})] = &ExprParser::Reduce_ID__identifier;
+  map[Production(expr::ID, {expr::NamePrefix, expr::identifier})] = &ExprParser::Reduce_ID__NamePrefix_identifier;
+  map[Production(expr::NamePrefix, {expr::coloncolon})] = &ExprParser::Reduce_NamePrefix__coloncolon;
+  map[Production(expr::NamePrefix, {expr::ID, expr::coloncolon})] = &ExprParser::Reduce_NamePrefix__ID_coloncolon;
+  map[Production(expr::OperatorFunctionName, {expr::UnqualifiedOperatorFunctionName})] = &ExprParser::Reduce_PassThrough;
+  map[Production(expr::OperatorFunctionName, {expr::NamePrefix, expr::UnqualifiedOperatorFunctionName})] = &ExprParser::Reduce_OperatorFunctionName__qualified;
   map[Production(expr::ArgumentList, {expr::T16})] = &ExprParser::Reduce_ArgumentList__T16;
   map[Production(expr::ArgumentList, {expr::ArgumentList, expr::comma, expr::T16})] = &ExprParser::Reduce_ArgumentList__ArgumentList_comma_T16;
   map[Production(expr::ParenthesizedArgumentList, {expr::l_paren, expr::r_paren})] = &ExprParser::Reduce_ParenthesizedArgumentList__l_paren_r_paren;
@@ -190,21 +195,21 @@ void ExprParser::SetupRealReduceFunctions() {
   map[Production(expr::ArrayElementList, {expr::ArrayElementList, expr::comma, expr::ArrayElement})] = &ExprParser::Reduce_ArrayElementList__ArrayElementList_comma_ArrayElement;
   map[Production(expr::ArrayInitializer, {expr::l_brace, expr::r_brace})] = &ExprParser::Reduce_ArrayInitializer__l_brace_r_brace;
   map[Production(expr::ArrayInitializer, {expr::l_brace, expr::ArrayElementList, expr::r_brace})] = &ExprParser::Reduce_ArrayInitializer__l_brace_ArrayElementList_r_brace;
-  map[Production(expr::NonVirtualCallName, {expr::nonvirtual_, expr::identifier})] = &ExprParser::Reduce_NonVirtualCallName__nonvirtual_identifier;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::plus})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::minus})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::exclaim})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::star})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::slash})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::percent})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::less})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::lessequal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::greater})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::greaterequal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::equalequal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::exclaimequal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::equal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
-  map[Production(expr::OperatorFunctionName, {expr::operator_, expr::l_paren, expr::r_paren})] = &ExprParser::Reduce_OperatorFunctionName__operator_l_paren_r_paren;
+  map[Production(expr::NonVirtualCallName, {expr::nonvirtual_, expr::ID})] = &ExprParser::Reduce_NonVirtualCallName__nonvirtual_identifier;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::plus})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::minus})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::exclaim})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::star})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::slash})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::percent})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::less})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::lessequal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::greater})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::greaterequal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::equalequal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::exclaimequal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::equal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
+  map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::l_paren, expr::r_paren})] = &ExprParser::Reduce_OperatorFunctionName__operator_l_paren_r_paren;
   map[Production(expr::PrimaryExpr, {expr::ID})] = &ExprParser::Reduce_PassThrough;
   map[Production(expr::PrimaryExpr, {expr::integer_literal})] = &ExprParser::Reduce_PrimaryExpr__integer_literal;
   map[Production(expr::PrimaryExpr, {expr::character_literal})] = &ExprParser::Reduce_PrimaryExpr__character_literal;
@@ -226,8 +231,8 @@ void ExprParser::SetupRealReduceFunctions() {
   map[Production(expr::PostfixExpr, {expr::PostfixExpr, expr::l_square, expr::Expr, expr::r_square})] = &ExprParser::Reduce_PostfixExpr__PostfixExpr_l_square_Expr_r_square;
   map[Production(expr::PostfixExpr, {expr::PostfixExpr, expr::plusplus})] = &ExprParser::Reduce_PostfixExpr__PostfixExpr_postfix_operator;
   map[Production(expr::PostfixExpr, {expr::PostfixExpr, expr::minusminus})] = &ExprParser::Reduce_PostfixExpr__PostfixExpr_postfix_operator;
-  map[Production(expr::PostfixExpr, {expr::ctor_, expr::l_paren, expr::Expr, expr::r_paren, expr::identifier, expr::ParenthesizedArgumentList})] = &ExprParser::Reduce_PostfixExpr__ctor_l_paren_Expr_r_paren_identifier_ParenthesizedArgumentList;
-  map[Production(expr::PostfixExpr, {expr::dtor_, expr::l_paren, expr::Expr, expr::r_paren, expr::identifier, expr::l_paren, expr::r_paren})] = &ExprParser::Reduce_PostfixExpr__dtor_l_paren_Expr_r_paren_identifier_l_paren_r_paren;
+  map[Production(expr::PostfixExpr, {expr::ctor_, expr::l_paren, expr::Expr, expr::r_paren, expr::ID, expr::ParenthesizedArgumentList})] = &ExprParser::Reduce_PostfixExpr__ctor_l_paren_Expr_r_paren_identifier_ParenthesizedArgumentList;
+  map[Production(expr::PostfixExpr, {expr::dtor_, expr::l_paren, expr::Expr, expr::r_paren, expr::ID, expr::l_paren, expr::r_paren})] = &ExprParser::Reduce_PostfixExpr__dtor_l_paren_Expr_r_paren_identifier_l_paren_r_paren;
   map[Production(expr::PostfixExpr, {expr::NonVirtualCallName, expr::ParenthesizedArgumentList})] = &ExprParser::Reduce_PostfixExpr__NonVirtualCallName_ParenthesizedArgumentList;
   map[Production(expr::T3, {expr::PostfixExpr})] = &ExprParser::Reduce_PassThrough;
   map[Production(expr::T3, {expr::plusplus, expr::T3})] = &ExprParser::Reduce_T3__plusplus_T3;
@@ -450,13 +455,11 @@ int ExprParser::Reduce_PrimaryExpr__type_ArrayInitializer() {
 int ExprParser::Reduce_NonVirtualCallName__nonvirtual_identifier() {
   BOOST_ASSERT(real_symbol_stack_.size() >= 2);
   const auto& keyword = std::get<Token>(real_symbol_stack_[real_symbol_stack_.size() - 2].value);
-  const auto& identifier = std::get<Token>(real_symbol_stack_.back().value);
-  if (!std::holds_alternative<IdentifierProperty>(identifier.property)) {
-    return kHandleSymbolResultError;
-  }
+  const auto& identifier =
+      static_cast<const DeclRefExpr&>(*std::get<std::unique_ptr<Expr>>(real_symbol_stack_.back().value));
 
   ParsedNonVirtualCallName name;
-  name.name = std::get<IdentifierProperty>(identifier.property).name;
+  name.name = identifier.name;
   name.name_range = identifier.range;
   name.keyword_range = keyword.range;
   real_symbol_stack_.pop_back();
@@ -472,7 +475,8 @@ int ExprParser::Reduce_OperatorFunctionName__operator_operator() {
 
   auto reference = std::make_unique<DeclRefExpr>();
   reference->range = {keyword.range.begin, operation.range.end};
-  reference->name = expr::to_string(static_cast<expr::ExprGrammarSymbol>(operation.type));
+  reference->name =
+      NameSyntax::Operator(expr::to_string(static_cast<expr::ExprGrammarSymbol>(operation.type)), reference->range);
   real_symbol_stack_.pop_back();
   real_symbol_stack_.pop_back();
   real_symbol_stack_.emplace_back(SymbolValue{std::unique_ptr<Expr>(std::move(reference))});
@@ -486,7 +490,7 @@ int ExprParser::Reduce_OperatorFunctionName__operator_l_paren_r_paren() {
 
   auto reference = std::make_unique<DeclRefExpr>();
   reference->range = {keyword.range.begin, closing_parenthesis.range.end};
-  reference->name = "()";
+  reference->name = NameSyntax::Operator("()", reference->range);
   real_symbol_stack_.pop_back();
   real_symbol_stack_.pop_back();
   real_symbol_stack_.pop_back();
@@ -503,8 +507,47 @@ int ExprParser::Reduce_ID__identifier() {
 
   auto reference = std::make_unique<DeclRefExpr>();
   reference->range = token.range;
-  reference->name = std::get<IdentifierProperty>(token.property).name;
+  reference->name = NameSyntax::Identifier(std::get<IdentifierProperty>(token.property).name, token.range);
   symbol.value = std::unique_ptr<Expr>(std::move(reference));
+  return kHandleSymbolResultReduce;
+}
+
+int ExprParser::Reduce_NamePrefix__coloncolon() {
+  auto& value = real_symbol_stack_.back().value;
+  auto reference = std::make_unique<DeclRefExpr>();
+  reference->range = std::get<Token>(value).range;
+  reference->name.absolute = true;
+  reference->name.global_range = reference->range;
+  value = std::unique_ptr<Expr>(std::move(reference));
+  return kHandleSymbolResultReduce;
+}
+
+int ExprParser::Reduce_NamePrefix__ID_coloncolon() {
+  auto& reference = static_cast<DeclRefExpr&>(
+      *std::get<std::unique_ptr<Expr>>(real_symbol_stack_[real_symbol_stack_.size() - 2].value));
+  reference.range.end = std::get<Token>(real_symbol_stack_.back().value).range.end;
+  real_symbol_stack_.pop_back();
+  return kHandleSymbolResultReduce;
+}
+
+int ExprParser::Reduce_ID__NamePrefix_identifier() {
+  auto& reference = static_cast<DeclRefExpr&>(
+      *std::get<std::unique_ptr<Expr>>(real_symbol_stack_[real_symbol_stack_.size() - 2].value));
+  const auto& identifier = std::get<Token>(real_symbol_stack_.back().value);
+  reference.name.segments.push_back({identifier.get<IdentifierProperty>().name, identifier.range});
+  reference.range.end = identifier.range.end;
+  real_symbol_stack_.pop_back();
+  return kHandleSymbolResultReduce;
+}
+
+int ExprParser::Reduce_OperatorFunctionName__qualified() {
+  auto& prefix = static_cast<DeclRefExpr&>(
+      *std::get<std::unique_ptr<Expr>>(real_symbol_stack_[real_symbol_stack_.size() - 2].value));
+  const auto& operation =
+      static_cast<const DeclRefExpr&>(*std::get<std::unique_ptr<Expr>>(real_symbol_stack_.back().value));
+  prefix.name.segments.push_back(operation.name.segments.back());
+  prefix.range.end = operation.range.end;
+  real_symbol_stack_.pop_back();
   return kHandleSymbolResultReduce;
 }
 
@@ -577,7 +620,7 @@ int ExprParser::Reduce_PrimaryExpr__this() {
   const auto& token = std::get<Token>(symbol.value);
   auto reference = std::make_unique<DeclRefExpr>();
   reference->range = token.range;
-  reference->name = "this";
+  reference->name = NameSyntax::Identifier("this", token.range);
   symbol.value = std::unique_ptr<Expr>(std::move(reference));
   return kHandleSymbolResultReduce;
 }
@@ -611,7 +654,7 @@ int ExprParser::Reduce_PostfixExpr__PostfixExpr_ParenthesizedArgumentList() {
     std::unique_ptr<MemberExpr> member(static_cast<MemberExpr*>(callee.release()));
     auto named_callee = std::make_unique<DeclRefExpr>();
     named_callee->range = member->member_range;
-    named_callee->name = member->member;
+    named_callee->name = NameSyntax::Identifier(member->member, member->member_range);
 
     auto call = std::make_unique<ReceiverCallExpr>();
     call->range = {member->range.begin, arguments.range.end};
@@ -667,6 +710,11 @@ int ExprParser::Reduce_PostfixExpr__PostfixExpr_access_NonVirtualCallName_Parent
   auto name = std::move(std::get<ParsedNonVirtualCallName>(real_symbol_stack_[real_symbol_stack_.size() - 2].value));
   auto arguments = std::move(std::get<ParsedArgumentList>(real_symbol_stack_.back().value));
 
+  if (name.name.IsQualified()) {
+    parent_->ReportCurrentTokenError("receiver call requires an unqualified function name");
+    return kHandleSymbolResultError;
+  }
+
   auto callee = std::make_unique<DeclRefExpr>();
   callee->range = name.name_range;
   callee->name = std::move(name.name);
@@ -707,16 +755,13 @@ int ExprParser::Reduce_PostfixExpr__ctor_l_paren_Expr_r_paren_identifier_Parenth
   BOOST_ASSERT(real_symbol_stack_.size() >= 6);
   const auto& keyword = std::get<Token>(real_symbol_stack_[real_symbol_stack_.size() - 6].value);
   auto target = std::move(std::get<std::unique_ptr<Expr>>(real_symbol_stack_[real_symbol_stack_.size() - 4].value));
-  const auto& identifier = std::get<Token>(real_symbol_stack_[real_symbol_stack_.size() - 2].value);
+  const auto& identifier = static_cast<const DeclRefExpr&>(
+      *std::get<std::unique_ptr<Expr>>(real_symbol_stack_[real_symbol_stack_.size() - 2].value));
   auto arguments = std::move(std::get<ParsedArgumentList>(real_symbol_stack_.back().value));
-  if (!std::holds_alternative<IdentifierProperty>(identifier.property)) {
-    return kHandleSymbolResultError;
-  }
 
   auto construction = std::make_unique<ConstructionExpr>();
   construction->range = {keyword.range.begin, arguments.range.end};
-  construction->target_name = std::get<IdentifierProperty>(identifier.property).name;
-  construction->target_name_range = identifier.range;
+  construction->target_name = identifier.name;
   construction->TargetAddress = std::move(target);
   construction->Args = std::move(arguments.arguments);
   for (int count = 0; count < 6; ++count) real_symbol_stack_.pop_back();
@@ -728,15 +773,13 @@ int ExprParser::Reduce_PostfixExpr__dtor_l_paren_Expr_r_paren_identifier_l_paren
   BOOST_ASSERT(real_symbol_stack_.size() >= 7);
   const auto& keyword = std::get<Token>(real_symbol_stack_[real_symbol_stack_.size() - 7].value);
   auto target = std::move(std::get<std::unique_ptr<Expr>>(real_symbol_stack_[real_symbol_stack_.size() - 5].value));
-  const auto& identifier = std::get<Token>(real_symbol_stack_[real_symbol_stack_.size() - 3].value);
+  const auto& identifier = static_cast<const DeclRefExpr&>(
+      *std::get<std::unique_ptr<Expr>>(real_symbol_stack_[real_symbol_stack_.size() - 3].value));
   const auto& right = std::get<Token>(real_symbol_stack_.back().value);
-  if (!std::holds_alternative<IdentifierProperty>(identifier.property)) {
-    return kHandleSymbolResultError;
-  }
 
   auto callee = std::make_unique<DeclRefExpr>();
   callee->range = identifier.range;
-  callee->name = std::get<IdentifierProperty>(identifier.property).name;
+  callee->name = identifier.name;
   auto call = std::make_unique<DestructorCallExpr>();
   call->range = {keyword.range.begin, right.range.end};
   call->TargetAddress = std::move(target);

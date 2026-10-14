@@ -1,4 +1,4 @@
-define noundef float @SingleArithmetic(float noundef %left, float noundef %right) {
+define noundef float @"cw:SingleArithmetic:func(f32,f32)f32"(float noundef %left, float noundef %right) {
 entry:
   %.result = alloca float, align 4
   %left.addr = alloca float, align 4
@@ -20,7 +20,7 @@ entry:
   ret float %5
 }
 
-define noundef double @DoubleArithmetic(double noundef %left, double noundef %right) {
+define noundef double @"cw:DoubleArithmetic:func(f64,f64)f64"(double noundef %left, double noundef %right) {
 entry:
   %.result = alloca double, align 8
   %left.addr = alloca double, align 8
@@ -42,7 +42,7 @@ entry:
   ret double %5
 }
 
-define noundef double @MultiplyAdd(double noundef %left, double noundef %right, double noundef %addend) {
+define noundef double @"cw:MultiplyAdd:func(f64,f64,f64)f64"(double noundef %left, double noundef %right, double noundef %addend) {
 entry:
   %.result = alloca double, align 8
   %left.addr = alloca double, align 8
@@ -61,7 +61,7 @@ entry:
   ret double %3
 }
 
-define noundef float @Grouped(float noundef %first, float noundef %second, float noundef %third) {
+define noundef float @"cw:Grouped:func(f32,f32,f32)f32"(float noundef %first, float noundef %second, float noundef %third) {
 entry:
   %.result = alloca float, align 4
   %first.addr = alloca float, align 4
@@ -80,7 +80,7 @@ entry:
   ret float %3
 }
 
-define noundef double @PositiveInfinity() {
+define noundef double @"cw:PositiveInfinity:func()f64"() {
 entry:
   %.result = alloca double, align 8
   store double +inf, ptr %.result, align 8
@@ -88,7 +88,7 @@ entry:
   ret double %0
 }
 
-define noundef float @NegativeInfinity() {
+define noundef float @"cw:NegativeInfinity:func()f32"() {
 entry:
   %.result = alloca float, align 4
   store float -inf, ptr %.result, align 4
@@ -96,7 +96,7 @@ entry:
   ret float %0
 }
 
-define noundef double @Overflow() {
+define noundef double @"cw:Overflow:func()f64"() {
 entry:
   %.result = alloca double, align 8
   store double +inf, ptr %.result, align 8
@@ -104,7 +104,7 @@ entry:
   ret double %0
 }
 
-define noundef double @NegativeUnderflow() {
+define noundef double @"cw:NegativeUnderflow:func()f64"() {
 entry:
   %.result = alloca double, align 8
   store double -0.000000e+00, ptr %.result, align 8
@@ -112,7 +112,7 @@ entry:
   ret double %0
 }
 
-define noundef float @GradualUnderflow() {
+define noundef float @"cw:GradualUnderflow:func()f32"() {
 entry:
   %.result = alloca float, align 4
   store float f0x00400000, ptr %.result, align 4
@@ -120,7 +120,7 @@ entry:
   ret float %0
 }
 
-define noundef float @RoundEachStep() {
+define noundef float @"cw:RoundEachStep:func()f32"() {
 entry:
   %.result = alloca float, align 4
   store float 0.000000e+00, ptr %.result, align 4

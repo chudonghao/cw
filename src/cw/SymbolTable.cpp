@@ -7,69 +7,29 @@
 
 #include <boost/assert.hpp>
 
-namespace cw {
+#include "ast.h"
 
-SymbolTable::SymbolTable() : scopes_(1) {}
+namespace cw {
 
 void SymbolTable::PushScope() { scopes_.emplace_back(); }
 
 void SymbolTable::PopScope() {
-  BOOST_ASSERT(scopes_.size() > 1);
+  BOOST_ASSERT(!scopes_.empty());
   scopes_.pop_back();
 }
 
-std::pair<Symbol*, bool> SymbolTable::Insert(std::string name, std::unique_ptr<Symbol> symbol) {
-  BOOST_ASSERT(!name.empty());
-  BOOST_ASSERT(symbol);
-
-  const auto existing = scopes_.back().find(name);
-  if (existing != scopes_.back().end()) {
-    return {existing->second.get(), false};
-  }
-
-  Symbol* result = symbol.get();
-  scopes_.back().emplace(std::move(name), std::move(symbol));
-  return {result, true};
+std::pair<const VarDecl*, bool> SymbolTable::InsertLocal(const VarDecl& declaration) {
+  BOOST_ASSERT(!scopes_.empty() && !declaration.name.empty());
+  const auto [entry, inserted] = scopes_.back().emplace(declaration.name, &declaration);
+  return {entry->second, inserted};
 }
 
-Symbol* SymbolTable::LookupCurrent(const std::string& name) {
-  const auto it = scopes_.back().find(name);
-  return it == scopes_.back().end() ? nullptr : it->second.get();
-}
-
-const Symbol* SymbolTable::LookupCurrent(const std::string& name) const {
-  const auto it = scopes_.back().find(name);
-  return it == scopes_.back().end() ? nullptr : it->second.get();
-}
-
-Symbol* SymbolTable::Lookup(const std::string& name) {
-  for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
-    const auto symbol = it->find(name);
-    if (symbol != it->end()) {
-      return symbol->second.get();
-    }
+const VarDecl* SymbolTable::LookupLocal(const std::string& name) const {
+  for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
+    const auto found = scope->find(name);
+    if (found != scope->end()) return found->second;
   }
   return nullptr;
-}
-
-const Symbol* SymbolTable::Lookup(const std::string& name) const {
-  for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
-    const auto symbol = it->find(name);
-    if (symbol != it->end()) {
-      return symbol->second.get();
-    }
-  }
-  return nullptr;
-}
-
-Symbol* SymbolTable::LookupRoot(const std::string& name) {
-  const auto it = scopes_.front().find(name);
-  return it == scopes_.front().end() ? nullptr : it->second.get();
-}
-
-const Symbol* SymbolTable::LookupRoot(const std::string& name) const {
-  const auto it = scopes_.front().find(name);
-  return it == scopes_.front().end() ? nullptr : it->second.get();
 }
 
 }  // namespace cw

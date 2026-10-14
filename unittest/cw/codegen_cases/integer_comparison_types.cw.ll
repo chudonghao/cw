@@ -1,4 +1,4 @@
-define noundef zeroext i1 @UnsignedEqual(i64 noundef %left, i64 noundef %right) {
+define noundef zeroext i1 @"cw:UnsignedEqual:func(u64,u64)bool"(i64 noundef %left, i64 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i64, align 8
@@ -15,7 +15,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @UnsignedNotEqual(i64 noundef %left, i64 noundef %right) {
+define noundef zeroext i1 @"cw:UnsignedNotEqual:func(u64,u64)bool"(i64 noundef %left, i64 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i64, align 8
@@ -32,7 +32,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @UnsignedLess(i64 noundef %left, i64 noundef %right) {
+define noundef zeroext i1 @"cw:UnsignedLess:func(u64,u64)bool"(i64 noundef %left, i64 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i64, align 8
@@ -49,7 +49,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @UnsignedLessEqual(i64 noundef %left, i64 noundef %right) {
+define noundef zeroext i1 @"cw:UnsignedLessEqual:func(u64,u64)bool"(i64 noundef %left, i64 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i64, align 8
@@ -66,7 +66,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @UnsignedGreater(i64 noundef %left, i64 noundef %right) {
+define noundef zeroext i1 @"cw:UnsignedGreater:func(u64,u64)bool"(i64 noundef %left, i64 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i64, align 8
@@ -83,7 +83,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @UnsignedGreaterEqual(i64 noundef %left, i64 noundef %right) {
+define noundef zeroext i1 @"cw:UnsignedGreaterEqual:func(u64,u64)bool"(i64 noundef %left, i64 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i64, align 8
@@ -100,7 +100,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @MixedUnsignedLess(i8 noundef signext %left, i16 noundef zeroext %right) {
+define noundef zeroext i1 @"cw:MixedUnsignedLess:func(i8,u16)bool"(i8 noundef signext %left, i16 noundef zeroext %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i8, align 1
@@ -118,7 +118,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @MixedSignedLess(i16 noundef signext %left, i8 noundef zeroext %right) {
+define noundef zeroext i1 @"cw:MixedSignedLess:func(i16,u8)bool"(i16 noundef signext %left, i8 noundef zeroext %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i16, align 2
@@ -136,7 +136,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @SameWidthLess(i32 noundef %left, i32 noundef %right) {
+define noundef zeroext i1 @"cw:SameWidthLess:func(i32,u32)bool"(i32 noundef %left, i32 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i32, align 4
