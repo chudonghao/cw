@@ -1,4 +1,4 @@
-define noundef i32 @ConditionalValue(i1 noundef zeroext %flag, i1 noundef zeroext %other, i32 noundef %left, i32 noundef %right) {
+define noundef i32 @"cw:ConditionalValue:func(bool,bool,i32,i32)i32"(i1 noundef zeroext %flag, i1 noundef zeroext %other, i32 noundef %left, i32 noundef %right) {
 entry:
   %.result = alloca i32, align 4
   %flag.addr = alloca i8, align 1

@@ -1,7 +1,7 @@
 %struct.Value = type { i64 }
 %struct.Empty = type { i8 }
 
-define noundef i64 @"+"(i64 %left.coerce, i64 noundef %right) {
+define noundef i64 @"cw:operator+:func(Value,i64)i64"(i64 %left.coerce, i64 noundef %right) {
 entry:
   %.result = alloca i64, align 8
   %left = alloca %struct.Value, align 8
@@ -21,7 +21,7 @@ entry:
   ret i64 %3
 }
 
-define noundef i64 @Change(ptr noundef nonnull align 8 dereferenceable(8) %value) {
+define noundef i64 @"cw:Change:func(&mut Value)i64"(ptr noundef nonnull align 8 dereferenceable(8) %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca ptr, align 8
@@ -34,7 +34,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i64 @Capture(ptr noundef nonnull align 8 dereferenceable(8) %value) {
+define noundef i64 @"cw:Capture:func(&mut Value)i64"(ptr noundef nonnull align 8 dereferenceable(8) %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca ptr, align 8
@@ -44,14 +44,14 @@ entry:
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %argument, ptr align 8 %0, i64 8, i1 false)
   %1 = load i64, ptr %argument, align 8
   %2 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i64 @Change(ptr noundef nonnull align 8 dereferenceable(8) %2)
-  %call1 = call noundef i64 @"+"(i64 %1, i64 noundef %call)
+  %call = call noundef i64 @"cw:Change:func(&mut Value)i64"(ptr noundef nonnull align 8 dereferenceable(8) %2)
+  %call1 = call noundef i64 @"cw:operator+:func(Value,i64)i64"(i64 %1, i64 noundef %call)
   store i64 %call1, ptr %.result, align 8
   %3 = load i64, ptr %.result, align 8
   ret i64 %3
 }
 
-define noundef i64 @"()"(ptr noundef nonnull align 8 dereferenceable(8) %object, i64 noundef %value) {
+define noundef i64 @"cw:operator():func(&copy Value,i64)i64"(ptr noundef nonnull align 8 dereferenceable(8) %object, i64 noundef %value) {
 entry:
   %.result = alloca i64, align 8
   %object.addr = alloca ptr, align 8
@@ -68,7 +68,7 @@ entry:
   ret i64 %3
 }
 
-define noundef nonnull align 8 dereferenceable(8) ptr @Locate(ptr noundef nonnull align 8 dereferenceable(8) %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define noundef nonnull align 8 dereferenceable(8) ptr @"cw:Locate:func(&mut Value,&mut i32)&mut Value"(ptr noundef nonnull align 8 dereferenceable(8) %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -86,7 +86,7 @@ entry:
   ret ptr %4
 }
 
-define noundef i64 @Invoke(ptr noundef nonnull align 8 dereferenceable(8) %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define noundef i64 @"cw:Invoke:func(&mut Value,&mut i32)i64"(ptr noundef nonnull align 8 dereferenceable(8) %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca ptr, align 8
@@ -95,23 +95,23 @@ entry:
   store ptr %counter, ptr %counter.addr, align 8
   %0 = load ptr, ptr %value.addr, align 8
   %1 = load ptr, ptr %counter.addr, align 8
-  %call = call noundef nonnull align 8 dereferenceable(8) ptr @Locate(ptr noundef nonnull align 8 dereferenceable(8) %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call = call noundef nonnull align 8 dereferenceable(8) ptr @"cw:Locate:func(&mut Value,&mut i32)&mut Value"(ptr noundef nonnull align 8 dereferenceable(8) %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
   %2 = load ptr, ptr %value.addr, align 8
-  %call1 = call noundef i64 @Change(ptr noundef nonnull align 8 dereferenceable(8) %2)
-  %call2 = call noundef i64 @"()"(ptr noundef nonnull align 8 dereferenceable(8) %call, i64 noundef %call1)
+  %call1 = call noundef i64 @"cw:Change:func(&mut Value)i64"(ptr noundef nonnull align 8 dereferenceable(8) %2)
+  %call2 = call noundef i64 @"cw:operator():func(&copy Value,i64)i64"(ptr noundef nonnull align 8 dereferenceable(8) %call, i64 noundef %call1)
   store i64 %call2, ptr %.result, align 8
   %3 = load i64, ptr %.result, align 8
   ret i64 %3
 }
 
-define void @"!"() {
+define void @"cw:operator!:func(Empty)Empty"() {
 entry:
   %.result = alloca %struct.Empty, align 1
   %value = alloca %struct.Empty, align 1
   ret void
 }
 
-define void @MakeEmpty(ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:MakeEmpty:func(&mut i32)Empty"(ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca %struct.Empty, align 1
   %counter.addr = alloca ptr, align 8
@@ -124,13 +124,13 @@ entry:
   ret void
 }
 
-define void @EmptyResult(ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:EmptyResult:func(&mut i32)void"(ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %counter.addr = alloca ptr, align 8
   store ptr %counter, ptr %counter.addr, align 8
   %0 = load ptr, ptr %counter.addr, align 8
-  call void @MakeEmpty(ptr noundef nonnull align 4 dereferenceable(4) %0)
-  call void @"!"()
+  call void @"cw:MakeEmpty:func(&mut i32)Empty"(ptr noundef nonnull align 4 dereferenceable(4) %0)
+  call void @"cw:operator!:func(Empty)Empty"()
   ret void
 }
 

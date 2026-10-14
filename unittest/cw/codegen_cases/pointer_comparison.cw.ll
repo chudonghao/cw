@@ -1,4 +1,4 @@
-define noundef zeroext i1 @Equal(ptr noundef %left, ptr noundef %right) {
+define noundef zeroext i1 @"cw:Equal:func(*i32,*const i32)bool"(ptr noundef %left, ptr noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca ptr, align 8
@@ -15,7 +15,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NotEqual(ptr noundef %left, ptr noundef %right) {
+define noundef zeroext i1 @"cw:NotEqual:func(*const i32,*i32)bool"(ptr noundef %left, ptr noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca ptr, align 8
@@ -32,7 +32,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @IsNull(ptr noundef %pointer) {
+define noundef zeroext i1 @"cw:IsNull:func(*i32)bool"(ptr noundef %pointer) {
 entry:
   %.result = alloca i8, align 1
   %pointer.addr = alloca ptr, align 8
@@ -46,7 +46,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NotNull(ptr noundef %pointer) {
+define noundef zeroext i1 @"cw:NotNull:func(*i32)bool"(ptr noundef %pointer) {
 entry:
   %.result = alloca i8, align 1
   %pointer.addr = alloca ptr, align 8
@@ -60,7 +60,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @CallbackIsNull(ptr noundef %callback) {
+define noundef zeroext i1 @"cw:CallbackIsNull:func(*func(i32)i32)bool"(ptr noundef %callback) {
 entry:
   %.result = alloca i8, align 1
   %callback.addr = alloca ptr, align 8
@@ -74,7 +74,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef ptr @EmptyCallback() {
+define noundef ptr @"cw:EmptyCallback:func()*func(i32)i32"() {
 entry:
   %.result = alloca ptr, align 8
   store ptr null, ptr %.result, align 8
@@ -82,7 +82,7 @@ entry:
   ret ptr %0
 }
 
-define noundef zeroext i1 @NullEqual() {
+define noundef zeroext i1 @"cw:NullEqual:func()bool"() {
 entry:
   %.result = alloca i8, align 1
   store i8 1, ptr %.result, align 1
@@ -91,7 +91,7 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef zeroext i1 @NullUnequal() {
+define noundef zeroext i1 @"cw:NullUnequal:func()bool"() {
 entry:
   %.result = alloca i8, align 1
   store i8 0, ptr %.result, align 1
@@ -100,7 +100,7 @@ entry:
   ret i1 %loadedv
 }
 
-define void @DiscardNull() {
+define void @"cw:DiscardNull:func()void"() {
 entry:
   ret void
 }

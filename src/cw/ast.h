@@ -10,7 +10,6 @@
 #include <optional>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <llvm/ADT/APFloat.h>
@@ -18,9 +17,12 @@
 
 #include "BuiltinTypes.h"
 #include "ExprGrammar.h"
+#include "NameSyntax.h"
 #include "Source.h"
 
 namespace cw {
+
+class NamespaceContext;
 
 /// \brief Node kind enumeration for RTTI.
 enum class NodeKind {
@@ -36,6 +38,7 @@ enum class NodeKind {
   ArrayTypeSyntax,
   // Decl
   TranslationUnitDecl,
+  NamespaceDecl,
   VirtualDecl,
   VarGroupDecl,
   VarDecl,
@@ -202,13 +205,19 @@ struct VarDecl;
 struct ParmVarDecl;
 struct ReturnVarDecl;
 struct FunctionDecl;
+struct ConstructorDecl;
+struct DestructorDecl;
 struct VirtualFunctionDecl;
 struct CompoundStmt;
 struct Expr;
 
+// Node members are grouped as owned children, source attributes, and semantic annotations.
+// Non-owning declaration links are annotations; shared fields remain in their base node.
+
 /// \brief Base class for all AST nodes.
 struct Node {
-  SourceRange range{};           ///< Half-open character range occupied by this syntax node.
+  SourceRange range{};  ///< Half-open character range occupied by this syntax node.
+
   bool contains_errors = false;  ///< True when this node or a descendant has a fatal front-end error.
 
   virtual ~Node() = default;
@@ -234,7 +243,7 @@ struct BuiltinTypeSyntax : TypeSyntax {
 
 /// \brief User-defined type name syntax.
 struct NamedTypeSyntax : TypeSyntax {
-  std::string name{};  ///< Type name as written in source.
+  NameSyntax name{};  ///< Type name as written in source.
 
   NodeKind GetKind() const override { return NodeKind::NamedTypeSyntax; }
   void Accept(ASTVisitor& visitor) override;
@@ -262,8 +271,9 @@ struct FunctionTypeSyntax : TypeSyntax {
 
 /// \brief Virtual slot type syntax (`virtual *func(...) R`).
 struct VirtualSlotTypeSyntax : TypeSyntax {
-  SourceRange virtual_range{};                         ///< Exact source range of `virtual`.
   std::unique_ptr<PointerTypeSyntax> FunctionPointer;  ///< Required direct function pointer child.
+
+  SourceRange virtual_range{};  ///< Exact source range of `virtual`.
 
   NodeKind GetKind() const override { return NodeKind::VirtualSlotTypeSyntax; }
   void Accept(ASTVisitor& visitor) override;
@@ -281,8 +291,9 @@ struct ConstTypeSyntax : TypeSyntax {
 
 /// \brief Prefix reference type syntax.
 struct ReferenceTypeSyntax : TypeSyntax {
-  ReferenceMode mode{};                        ///< Reference mode written by the prefix.
   std::unique_ptr<TypeSyntax> ReferentType{};  ///< Referent type, null for a partial error node.
+
+  ReferenceMode mode{};  ///< Reference mode written by the prefix.
 
   NodeKind GetKind() const override { return NodeKind::ReferenceTypeSyntax; }
   void Accept(ASTVisitor& visitor) override;
@@ -291,24 +302,34 @@ struct ReferenceTypeSyntax : TypeSyntax {
 
 /// \brief Fixed-size array type syntax (`[N] T`).
 struct ArrayTypeSyntax : TypeSyntax {
-  SourceRange left_bracket_range{};           ///< Exact source range of `[`.
-  SourceRange right_bracket_range{};          ///< Exact source range of `]`.
   std::unique_ptr<Expr> Length{};             ///< Required length expression.
   std::unique_ptr<TypeSyntax> ElementType{};  ///< Required element type syntax.
+
+  SourceRange left_bracket_range{};   ///< Exact source range of `[`.
+  SourceRange right_bracket_range{};  ///< Exact source range of `]`.
 
   NodeKind GetKind() const override { return NodeKind::ArrayTypeSyntax; }
   void Accept(ASTVisitor& visitor) override;
   void Traverse(ASTVisitor& visitor) override;
 };
 
+enum class DeclModifier { None, Export, Import };
+
 /// \brief Base class for declarations.
 struct Decl : Node {
-  bool is_invalid = false;  ///< True when Sema has explicitly made this declaration unusable.
+  DeclModifier modifier{DeclModifier::None};  ///< Source-level declaration modifier.
+
+  NamespaceContext* owning_namespace{};  ///< Persistent membership, established by Sema.
+  bool is_invalid = false;               ///< True when Sema has explicitly made this declaration unusable.
 };
 
 /// \brief Translation unit declaration (root of AST).
 struct TranslationUnitDecl : Decl {
   std::vector<std::unique_ptr<Decl>> Decls{};  ///< Top-level declarations.
+
+  /// Returns non-namespace declarations in source order, including reopened namespaces.
+  std::vector<Decl*> FlattenedDecls();
+  std::vector<const Decl*> FlattenedDecls() const;
 
   NodeKind GetKind() const override { return NodeKind::TranslationUnitDecl; }
   void Accept(ASTVisitor& visitor) override;
@@ -319,11 +340,27 @@ struct TranslationUnitDecl : Decl {
 struct NamedDecl : Decl {
   std::string name{};        ///< Declaration name.
   SourceRange name_range{};  ///< Exact source range of the written declaration name, including an operator spelling.
+
+  std::string QualifiedName() const;
 };
 
 /// \brief Base class for named declarations that produce a value.
 struct ValueDecl : NamedDecl {
   QualType type{};  ///< Canonical semantic declaration type.
+};
+
+/// \brief One namespace name; qualified definitions expand into nested declarations.
+struct NamespaceDecl : NamedDecl {
+  std::vector<std::unique_ptr<Decl>> Decls{};  ///< Declarations in this namespace layer.
+
+  bool is_nested{};                ///< Whether this name follows `::` in the same namespace header.
+  SourceRange left_brace_range{};  ///< Opening brace shared by all layers; invalid for an incomplete header.
+
+  NamespaceContext* context{};  ///< Namespace declared by this layer, established by Sema.
+
+  NodeKind GetKind() const override { return NodeKind::NamespaceDecl; }
+  void Accept(ASTVisitor& visitor) override;
+  void Traverse(ASTVisitor& visitor) override;
 };
 
 /// \brief Virtual function block declaration.
@@ -346,19 +383,28 @@ struct FieldDecl : ValueDecl {
 
 /// \brief Struct declaration.
 struct StructDecl : NamedDecl {
+  std::unique_ptr<VirtualDecl> VirtualDecl{};        ///< Virtual function block.
+  std::vector<std::unique_ptr<FieldDecl>> Fields{};  ///< Field declarations.
+
+  NameSyntax base{};           ///< Optional base class name.
+  bool is_declared_trivial{};  ///< Source-level `trivial` modifier.
+
+  const StructType* base_type{};                       ///< Non-owning resolved base type.
+  TypeTriviality triviality{TypeTriviality::Unknown};  ///< Final semantic triviality classification.
+  bool is_abstract{};                                  ///< Whether a final virtual slot remains abstract.
+
+  // Non-owning lifecycle and assignment declarations, formed by Sema.
+  std::vector<ConstructorDecl*> constructors;
+  ConstructorDecl* copy_constructor{};
+  ConstructorDecl* move_constructor{};
+  DestructorDecl* destructor{};
+  FunctionDecl* copy_assignment{};
+  FunctionDecl* move_assignment{};
+
  private:
   mutable std::optional<bool> cxx11_standard_layout_;
 
  public:
-  std::string base{};                                  ///< Optional base class name.
-  SourceRange base_range{};                            ///< Source range of the base name.
-  const StructType* base_type{};                       ///< Non-owning resolved base type.
-  TypeTriviality triviality{TypeTriviality::Unknown};  ///< Final semantic triviality classification.
-  bool is_declared_trivial{};                          ///< Source-level `trivial` modifier.
-  bool is_abstract{};                                  ///< Whether a final virtual slot remains abstract.
-  std::unique_ptr<VirtualDecl> VirtualDecl{};          ///< Virtual function block.
-  std::vector<std::unique_ptr<FieldDecl>> Fields{};    ///< Field declarations.
-
   /// \brief Queries declared or inherited virtual functions in a complete, valid type structure.
   bool IsPolymorphic() const;
 
@@ -380,7 +426,8 @@ struct FunctionDecl : ValueDecl {
   std::vector<std::unique_ptr<ParmVarDecl>> ParmVars{};  ///< Parameter declarations.
   std::unique_ptr<ReturnVarDecl> ReturnVar{};            ///< Return declaration.
   std::unique_ptr<CompoundStmt> Body{};                  ///< Function body.
-  VirtualFunctionDecl* virtual_declaration{};            ///< Non-owning associated virtual declaration.
+
+  VirtualFunctionDecl* virtual_declaration{};  ///< Non-owning associated virtual declaration.
 
   NodeKind GetKind() const override { return NodeKind::FunctionDecl; }
   void Accept(ASTVisitor& visitor) override;
@@ -405,10 +452,11 @@ struct DestructorDecl : FunctionDecl {
 
 /// \brief Virtual function slot declaration.
 struct VirtualFunctionDecl : FunctionDecl {
-  bool is_abstract{};                                  ///< Whether the declaration is explicitly abstract.
-  bool is_override{};                                  ///< Whether the declaration is explicitly an override.
+  bool is_abstract{};  ///< Whether the declaration is explicitly abstract.
+  bool is_override{};  ///< Whether the declaration is explicitly an override.
+
   VirtualFunctionDecl* overridden_virtual_function{};  ///< Non-owning directly overridden declaration.
-  FunctionDecl* definition{};                          ///< Non-owning associated function definition.
+  FunctionDecl* implementation{};                      ///< Non-owning associated ordinary function declaration.
 
   NodeKind GetKind() const override { return NodeKind::VirtualFunctionDecl; }
   void Accept(ASTVisitor& visitor) override;
@@ -428,7 +476,8 @@ struct VarGroupDecl : Decl {
 /// \brief Declaration of one variable entity.
 struct VarDecl : ValueDecl {
   std::unique_ptr<TypeSyntax> Type{};  ///< Optional explicit type syntax for this variable.
-  AttributeList attributes{};          ///< Attributes applied to this variable.
+
+  AttributeList attributes{};  ///< Attributes applied to this variable.
 
   NodeKind GetKind() const override { return NodeKind::VarDecl; }
   void Accept(ASTVisitor& visitor) override;
@@ -515,7 +564,8 @@ struct StringLiteral : Expr {
 
 /// \brief Declaration reference expression (foo).
 struct DeclRefExpr : Expr {
-  std::string name{};              ///< Identifier or operator spelling.
+  NameSyntax name{};  ///< Written identifier or operator name.
+
   const ValueDecl* declaration{};  ///< Non-owning final referenced declaration.
 
   NodeKind GetKind() const override { return NodeKind::DeclRefExpr; }
@@ -532,9 +582,10 @@ struct ThisExpr : Expr {
 
 /// \brief Explicitly parenthesized expression.
 struct ParenExpr : Expr {
+  std::unique_ptr<Expr> SubExpr{};  ///< Expression enclosed by the parentheses.
+
   SourceRange left_paren_range{};   ///< Exact source range of '('.
   SourceRange right_paren_range{};  ///< Exact source range of ')'.
-  std::unique_ptr<Expr> SubExpr{};  ///< Expression enclosed by the parentheses.
 
   NodeKind GetKind() const override { return NodeKind::ParenExpr; }
   void Accept(ASTVisitor& visitor) override;
@@ -543,10 +594,11 @@ struct ParenExpr : Expr {
 
 /// \brief Unary operator expression (++x, x++, -x, *x, &x, !x, ~x).
 struct UnaryOperator : Expr {
-  expr::ExprGrammarSymbol op{};     ///< Operator (plus, minus, star, amp, exclaim, tilde, plusplus, minusminus).
-  SourceRange operator_range{};     ///< Exact source range of the operator token.
-  bool is_postfix{};                ///< true for x++/x--, false for ++x/--x.
   std::unique_ptr<Expr> Operand{};  ///< Operand expression.
+
+  expr::ExprGrammarSymbol op{};  ///< Operator (plus, minus, star, amp, exclaim, tilde, plusplus, minusminus).
+  SourceRange operator_range{};  ///< Exact source range of the operator token.
+  bool is_postfix{};             ///< true for x++/x--, false for ++x/--x.
 
   NodeKind GetKind() const override { return NodeKind::UnaryOperator; }
   void Accept(ASTVisitor& visitor) override;
@@ -555,10 +607,11 @@ struct UnaryOperator : Expr {
 
 /// \brief Binary operator expression (a + b, a = b, etc.).
 struct BinaryOperator : Expr {
+  std::unique_ptr<Expr> LHS{};  ///< Left-hand side expression.
+  std::unique_ptr<Expr> RHS{};  ///< Right-hand side expression.
+
   expr::ExprGrammarSymbol op{};  ///< Operator.
   SourceRange operator_range{};  ///< Exact source range of the operator token.
-  std::unique_ptr<Expr> LHS{};   ///< Left-hand side expression.
-  std::unique_ptr<Expr> RHS{};   ///< Right-hand side expression.
 
   NodeKind GetKind() const override { return NodeKind::BinaryOperator; }
   void Accept(ASTVisitor& visitor) override;
@@ -578,8 +631,9 @@ struct InitializationExpr : Expr {
 
 /// \brief Implicit initialization of a result object from a source expression.
 struct ImplicitResultInitializationExpr : Expr {
-  const VarDecl* Target{};         ///< Non-owning result object initialized by this node.
   std::unique_ptr<Expr> Source{};  ///< Source expression used to initialize the result object.
+
+  const VarDecl* Target{};  ///< Non-owning result object initialized by this node.
 
   NodeKind GetKind() const override { return NodeKind::ImplicitResultInitializationExpr; }
   void Accept(ASTVisitor& visitor) override;
@@ -601,11 +655,13 @@ struct ConditionalOperator : Expr {
 /// After Sema, Base denotes the declaring struct or a pointer to it; inherited
 /// access records the intervening base path in an implicit BaseSubobject cast.
 struct MemberExpr : Expr {
-  std::unique_ptr<Expr> Base{};    ///< Base expression.
-  std::string member{};            ///< Member name.
-  SourceRange member_range{};      ///< Exact source range of the member name.
-  SourceRange operator_range{};    ///< Exact source range of '.' or '->'.
-  expr::ExprGrammarSymbol op{};    ///< Access operator (period or arrow).
+  std::unique_ptr<Expr> Base{};  ///< Base expression.
+
+  std::string member{};          ///< Member name.
+  SourceRange member_range{};    ///< Exact source range of the member name.
+  SourceRange operator_range{};  ///< Exact source range of '.' or '->'.
+  expr::ExprGrammarSymbol op{};  ///< Access operator (period or arrow).
+
   const FieldDecl* declaration{};  ///< Non-owning final referenced field.
 
   NodeKind GetKind() const override { return NodeKind::MemberExpr; }
@@ -615,9 +671,11 @@ struct MemberExpr : Expr {
 
 /// \brief Explicit selection of a base subobject (a.Base, a->Base).
 struct BaseSubobjectExpr : Expr {
-  std::unique_ptr<Expr> Base{};                ///< Owning expression containing the selected base subobject.
-  SourceRange operator_range{};                ///< Exact source range of '.' or '->'.
-  expr::ExprGrammarSymbol op{};                ///< Access operator (period or arrow).
+  std::unique_ptr<Expr> Base{};  ///< Owning expression containing the selected base subobject.
+
+  SourceRange operator_range{};  ///< Exact source range of '.' or '->'.
+  expr::ExprGrammarSymbol op{};  ///< Access operator (period or arrow).
+
   std::vector<const StructDecl*> base_path{};  ///< Non-owning direct-base path to the selected subobject.
 
   NodeKind GetKind() const override { return NodeKind::BaseSubobjectExpr; }
@@ -640,9 +698,10 @@ struct SubscriptExpr : Expr {
 /// \brief Complete fixed-array value (`[N] T { ... }`) or contextual nested array value (`{ ... }`).
 struct ArrayValueExpr : Expr {
   std::unique_ptr<ArrayTypeSyntax> Type{};  ///< Explicit type for an outer value; null for a contextual nested value.
-  SourceRange left_brace_range{};           ///< Exact source range of `{`.
-  SourceRange right_brace_range{};          ///< Exact source range of `}`.
   std::vector<std::unique_ptr<Expr>> Elements{};  ///< Elements in source order.
+
+  SourceRange left_brace_range{};   ///< Exact source range of `{`.
+  SourceRange right_brace_range{};  ///< Exact source range of `}`.
 
   NodeKind GetKind() const override { return NodeKind::ArrayValueExpr; }
   void Accept(ASTVisitor& visitor) override;
@@ -653,8 +712,9 @@ struct ArrayValueExpr : Expr {
 struct CallExpr : Expr {
   std::unique_ptr<Expr> Callee{};             ///< Callee expression.
   std::vector<std::unique_ptr<Expr>> Args{};  ///< Arguments.
-  bool is_nonvirtual{};                       ///< Whether source explicitly disables virtual candidate selection.
-  SourceRange nonvirtual_range{};             ///< Exact source range of the written `nonvirtual` keyword.
+
+  bool is_nonvirtual{};            ///< Whether source explicitly disables virtual candidate selection.
+  SourceRange nonvirtual_range{};  ///< Exact source range of the written `nonvirtual` keyword.
 
   NodeKind GetKind() const override { return NodeKind::CallExpr; }
   void Accept(ASTVisitor& visitor) override;
@@ -670,12 +730,13 @@ struct OperatorCallExpr : CallExpr {
 
 /// \brief Construction of a complete object, base subobject, or delegated current object.
 struct ConstructionExpr : Expr {
-  ConstructionKind construction_kind{ConstructionKind::CompleteObject};
-  std::string target_name{};                  ///< Constructor target name as written in source, if any.
-  SourceRange target_name_range{};            ///< Exact source range of the written target name.
-  const ConstructorDecl* constructor{};       ///< Selected constructor; null on successful trivial default formation.
   std::unique_ptr<Expr> TargetAddress{};      ///< Present only for explicit-address construction.
   std::vector<std::unique_ptr<Expr>> Args{};  ///< Constructor arguments in source order.
+
+  NameSyntax target_name{};         ///< Constructor target name as written in source, if any.
+
+  ConstructionKind construction_kind{ConstructionKind::CompleteObject};
+  const ConstructorDecl* constructor{};  ///< Selected constructor; null on successful trivial default formation.
 
   NodeKind GetKind() const override { return NodeKind::ConstructionExpr; }
   void Accept(ASTVisitor& visitor) override;
@@ -684,8 +745,9 @@ struct ConstructionExpr : Expr {
 
 /// \brief Compact whole-array copy or move construction.
 struct ArrayConstructionExpr : Expr {
+  std::unique_ptr<Expr> Source{};  ///< Whole source array expression.
+
   const ConstructorDecl* element_constructor{};  ///< Non-owning selected final leaf constructor.
-  std::unique_ptr<Expr> Source{};                ///< Whole source array expression.
 
   NodeKind GetKind() const override { return NodeKind::ArrayConstructionExpr; }
   void Accept(ASTVisitor& visitor) override;
@@ -694,10 +756,12 @@ struct ArrayConstructionExpr : Expr {
 
 /// \brief Compact whole-array copy or move assignment.
 struct ArrayAssignmentExpr : Expr {
-  SourceRange operator_range{};              ///< Exact source range of `=`.
+  std::unique_ptr<Expr> LHS{};  ///< Destination array expression.
+  std::unique_ptr<Expr> RHS{};  ///< Source array expression.
+
+  SourceRange operator_range{};  ///< Exact source range of `=`.
+
   const FunctionDecl* element_assignment{};  ///< Non-owning selected final leaf assignment.
-  std::unique_ptr<Expr> LHS{};               ///< Destination array expression.
-  std::unique_ptr<Expr> RHS{};               ///< Source array expression.
 
   NodeKind GetKind() const override { return NodeKind::ArrayAssignmentExpr; }
   void Accept(ASTVisitor& visitor) override;
@@ -718,8 +782,9 @@ struct DestructorCallExpr : CallExpr {
 /// Formation failure preserves the prepared source; consumers never repeat an arrow dereference.
 struct ReceiverCallExpr : CallExpr {
   std::unique_ptr<Expr> Receiver{};  ///< Syntax operand; Sema stores the prepared or converted first argument.
-  SourceRange operator_range{};      ///< Exact source range of '.' or '->'.
-  expr::ExprGrammarSymbol op{};      ///< Access operator (period or arrow).
+
+  SourceRange operator_range{};  ///< Exact source range of '.' or '->'.
+  expr::ExprGrammarSymbol op{};  ///< Access operator (period or arrow).
 
   NodeKind GetKind() const override { return NodeKind::ReceiverCallExpr; }
   void Accept(ASTVisitor& visitor) override;
@@ -728,8 +793,9 @@ struct ReceiverCallExpr : CallExpr {
 
 /// \brief Target-driven selection of one declaration from an addressed function overload set.
 struct ImplicitOverloadSetSelectionExpr : Expr {
+  std::unique_ptr<Expr> SubExpr{};  ///< Source-level addressed overload-set expression.
+
   const FunctionDecl* selected_declaration{};  ///< Non-owning uniquely selected declaration.
-  std::unique_ptr<Expr> SubExpr{};             ///< Source-level addressed overload-set expression.
 
   NodeKind GetKind() const override { return NodeKind::ImplicitOverloadSetSelectionExpr; }
   void Accept(ASTVisitor& visitor) override;
@@ -742,8 +808,9 @@ struct ImplicitOverloadSetSelectionExpr : Expr {
 /// For objects, BaseSubobject preserves identity and glvalue category without a read;
 /// for pointers, it produces a pointer value and preserves null pointers.
 struct ImplicitCastExpr : Expr {
+  std::unique_ptr<Expr> SubExpr{};  ///< Converted source expression.
+
   ImplicitConversionKind conversion_kind{ImplicitConversionKind::Invalid};  ///< Performed conversion.
-  std::unique_ptr<Expr> SubExpr{};                                          ///< Converted source expression.
   std::vector<const StructDecl*> base_path{};  ///< Non-owning direct-base path for BaseSubobject.
 
   NodeKind GetKind() const override { return NodeKind::ImplicitCastExpr; }

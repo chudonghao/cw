@@ -1,4 +1,4 @@
-define noundef nonnull align 4 dereferenceable(8) ptr @Choose(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(8) %left, ptr noundef nonnull align 4 dereferenceable(8) %right) {
+define noundef nonnull align 4 dereferenceable(8) ptr @"cw:Choose:func(bool,&mut [2]i32,&mut [2]i32)&mut [2]i32"(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(8) %left, ptr noundef nonnull align 4 dereferenceable(8) %right) {
 entry:
   %.result = alloca ptr, align 8
   %flag.addr = alloca i8, align 1
@@ -27,7 +27,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret ptr %3
 }
 
-define noundef i32 @Value(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(8) %source, i64 noundef %index) {
+define noundef i32 @"cw:Value:func(bool,&copy [2]i32,usize)i32"(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(8) %source, i64 noundef %index) {
 entry:
   %.result = alloca i32, align 4
   %flag.addr = alloca i8, align 1
@@ -63,7 +63,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret i32 %4
 }
 
-define noundef i32 @Temporary(i64 noundef %index) {
+define noundef i32 @"cw:Temporary:func(usize)i32"(i64 noundef %index) {
 entry:
   %.result = alloca i32, align 4
   %index.addr = alloca i64, align 8

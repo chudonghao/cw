@@ -1,6 +1,6 @@
 %struct.Value = type { i32 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @Choose(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %left, ptr noundef nonnull align 4 dereferenceable(4) %right) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:Choose:func(bool,&mut Value,&mut Value)&mut Value"(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %left, ptr noundef nonnull align 4 dereferenceable(4) %right) {
 entry:
   %.result = alloca ptr, align 8
   %flag.addr = alloca i8, align 1
@@ -29,7 +29,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret ptr %3
 }
 
-define noundef i32 @Form(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %source) {
+define noundef i32 @"cw:Form:func(bool,&copy Value)i32"(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %source) {
 entry:
   %.result = alloca i32, align 4
   %flag.addr = alloca i8, align 1
@@ -59,7 +59,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret i32 %3
 }
 
-define noundef i32 @Read(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef i32 @"cw:Read:func(&copy Value)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -72,18 +72,18 @@ entry:
   ret i32 %2
 }
 
-define noundef i32 @Temporary() {
+define noundef i32 @"cw:Temporary:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %temporary = alloca %struct.Value, align 4
   call void @llvm.memset.p0.i64(ptr align 4 %temporary, i8 0, i64 4, i1 false)
-  %call = call noundef i32 @Read(ptr noundef nonnull align 4 dereferenceable(4) %temporary)
+  %call = call noundef i32 @"cw:Read:func(&copy Value)i32"(ptr noundef nonnull align 4 dereferenceable(4) %temporary)
   store i32 %call, ptr %.result, align 4
   %0 = load i32, ptr %.result, align 4
   ret i32 %0
 }
 
-define void @Discard(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %source) {
+define void @"cw:Discard:func(bool,&copy Value)void"(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %source) {
 entry:
   %flag.addr = alloca i8, align 1
   %source.addr = alloca ptr, align 8

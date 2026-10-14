@@ -1,4 +1,4 @@
-define noundef i32 @CopyAndMove(ptr noundef nonnull align 4 dereferenceable(8) %source, i64 noundef %index) {
+define noundef i32 @"cw:CopyAndMove:func(&copy [2]i32,usize)i32"(ptr noundef nonnull align 4 dereferenceable(8) %source, i64 noundef %index) {
 entry:
   %.result = alloca i32, align 4
   %source.addr = alloca ptr, align 8
@@ -21,7 +21,7 @@ entry:
   ret i32 %4
 }
 
-define noundef nonnull align 4 dereferenceable(8) ptr @Assign(ptr noundef nonnull align 4 dereferenceable(8) %target, ptr noundef nonnull align 4 dereferenceable(8) %source) {
+define noundef nonnull align 4 dereferenceable(8) ptr @"cw:Assign:func(&mut [2]i32,&copy [2]i32)&mut [2]i32"(ptr noundef nonnull align 4 dereferenceable(8) %target, ptr noundef nonnull align 4 dereferenceable(8) %source) {
 entry:
   %.result = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -36,7 +36,7 @@ entry:
   ret ptr %2
 }
 
-define void @Chain(ptr noundef nonnull align 4 dereferenceable(8) %target, ptr noundef nonnull align 4 dereferenceable(8) %middle, ptr noundef nonnull align 4 dereferenceable(8) %source) {
+define void @"cw:Chain:func(&mut [2]i32,&mut [2]i32,&copy [2]i32)void"(ptr noundef nonnull align 4 dereferenceable(8) %target, ptr noundef nonnull align 4 dereferenceable(8) %middle, ptr noundef nonnull align 4 dereferenceable(8) %source) {
 entry:
   %target.addr = alloca ptr, align 8
   %middle.addr = alloca ptr, align 8

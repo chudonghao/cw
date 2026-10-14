@@ -1,4 +1,4 @@
-define noundef i32 @Sum(ptr noundef nonnull align 4 dereferenceable(8) %values, i64 noundef %begin, i64 noundef %end, i64 noundef %step) {
+define noundef i32 @"cw:Sum:func(&copy [2]i32,usize,usize,usize)i32"(ptr noundef nonnull align 4 dereferenceable(8) %values, i64 noundef %begin, i64 noundef %end, i64 noundef %step) {
 entry:
   %.result = alloca i32, align 4
   %values.addr = alloca ptr, align 8

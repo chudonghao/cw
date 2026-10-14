@@ -1,4 +1,4 @@
-define noundef i32 @ReadInteger(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef i32 @"cw:ReadInteger:func(&copy i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -10,18 +10,18 @@ entry:
   ret i32 %2
 }
 
-define noundef i32 @IntegerTemporary() {
+define noundef i32 @"cw:IntegerTemporary:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %temporary = alloca i32, align 4
   store i32 53, ptr %temporary, align 4
-  %call = call noundef i32 @ReadInteger(ptr noundef nonnull align 4 dereferenceable(4) %temporary)
+  %call = call noundef i32 @"cw:ReadInteger:func(&copy i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %temporary)
   store i32 %call, ptr %.result, align 4
   %0 = load i32, ptr %.result, align 4
   ret i32 %0
 }
 
-define noundef zeroext i1 @ReadBoolean(ptr noundef nonnull align 1 dereferenceable(1) %value) {
+define noundef zeroext i1 @"cw:ReadBoolean:func(&copy bool)bool"(ptr noundef nonnull align 1 dereferenceable(1) %value) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca ptr, align 8
@@ -36,7 +36,7 @@ entry:
   ret i1 %loadedv1
 }
 
-define noundef zeroext i1 @ConditionalBooleanTemporary(i1 noundef zeroext %flag) {
+define noundef zeroext i1 @"cw:ConditionalBooleanTemporary:func(bool)bool"(i1 noundef zeroext %flag) {
 entry:
   %.result = alloca i8, align 1
   %flag.addr = alloca i8, align 1
@@ -57,7 +57,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   %cond = phi i1 [ false, %cond.true ], [ true, %cond.false ]
   %storedv1 = zext i1 %cond to i8
   store i8 %storedv1, ptr %temporary, align 1
-  %call = call noundef zeroext i1 @ReadBoolean(ptr noundef nonnull align 1 dereferenceable(1) %temporary)
+  %call = call noundef zeroext i1 @"cw:ReadBoolean:func(&copy bool)bool"(ptr noundef nonnull align 1 dereferenceable(1) %temporary)
   %storedv2 = zext i1 %call to i8
   store i8 %storedv2, ptr %.result, align 1
   %1 = load i8, ptr %.result, align 1

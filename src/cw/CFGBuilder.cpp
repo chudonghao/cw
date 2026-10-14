@@ -207,7 +207,7 @@ std::unique_ptr<CFG> CFGBuilder::BuildFunction() {
 std::unique_ptr<CFG> CFGBuilder::BuildGlobals(const TranslationUnitDecl& translation_unit) {
   CFGBlock* current = &cfg_->CreateBlock();
   cfg_->Connect(cfg_->GetEntry(), *current, CFGEdgeKind::Unconditional);
-  for (const auto& declaration : translation_unit.Decls) {
+  for (const auto& declaration : translation_unit.FlattenedDecls()) {
     if (!current) {
       break;
     }

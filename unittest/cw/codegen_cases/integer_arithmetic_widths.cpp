@@ -1,8 +1,3 @@
-/// \file integer_arithmetic_widths.cpp
-/// \copyright 2026 Donghao Chu
-/// \license SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-/// \url https://github.com/chudonghao/cw
-
 // CW keeps narrow arithmetic at its common type width. C++ promotes narrow operands to int.
 // Native Clang's C++17 signed narrowing keeps low bits; CW defines that result directly.
 signed char SignedByteArithmetic(signed char left, signed char right) {

@@ -1,4 +1,4 @@
-define void @Set(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define void @"cw:Set:func(&mut i32)void"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %value.addr = alloca ptr, align 8
   store ptr %value, ptr %value.addr, align 8
@@ -7,25 +7,25 @@ entry:
   ret void
 }
 
-define void @Empty() {
+define void @"cw:Empty:func()void"() {
 entry:
   ret void
 }
 
-define noundef i32 @ExplicitReturn() {
+define noundef i32 @"cw:ExplicitReturn:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %value = alloca i32, align 4
   store i32 1, ptr %value, align 4
-  call void @Set(ptr noundef nonnull align 4 dereferenceable(4) %value)
-  call void @Empty()
+  call void @"cw:Set:func(&mut i32)void"(ptr noundef nonnull align 4 dereferenceable(4) %value)
+  call void @"cw:Empty:func()void"()
   %0 = load i32, ptr %value, align 4
   store i32 %0, ptr %.result, align 4
   %1 = load i32, ptr %.result, align 4
   ret i32 %1
 }
 
-define noundef i32 @ReturningBranches(i1 noundef zeroext %a, i1 noundef zeroext %b, i1 noundef zeroext %c) {
+define noundef i32 @"cw:ReturningBranches:func(bool,bool,bool)i32"(i1 noundef zeroext %a, i1 noundef zeroext %b, i1 noundef zeroext %c) {
 entry:
   %.result = alloca i32, align 4
   %a.addr = alloca i8, align 1
@@ -69,7 +69,7 @@ return:                                           ; preds = %if.else, %if.then
   ret i32 %4
 }
 
-define noundef i32 @TailResult(i1 noundef zeroext %flag, i1 noundef zeroext %other) {
+define noundef i32 @"cw:TailResult:func(bool,bool)i32"(i1 noundef zeroext %flag, i1 noundef zeroext %other) {
 entry:
   %.result = alloca i32, align 4
   %flag.addr = alloca i8, align 1
@@ -104,7 +104,7 @@ if.end3:                                          ; preds = %if.then, %if.else, 
   ret i32 %2
 }
 
-define void @SetUnless(i1 noundef zeroext %flag, ptr noundef nonnull align 1 dereferenceable(1) %target) {
+define void @"cw:SetUnless:func(bool,&mut bool)void"(i1 noundef zeroext %flag, ptr noundef nonnull align 1 dereferenceable(1) %target) {
 entry:
   %flag.addr = alloca i8, align 1
   %target.addr = alloca ptr, align 8

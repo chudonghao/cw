@@ -1,4 +1,4 @@
-define noundef nonnull align 4 dereferenceable(4) ptr @Touch(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:Touch:func(&mut i32)&copy i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -11,12 +11,12 @@ entry:
   ret ptr %2
 }
 
-define noundef i32 @DiscardedExpression() {
+define noundef i32 @"cw:DiscardedExpression:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %value = alloca i32, align 4
   store i32 1, ptr %value, align 4
-  %call = call noundef nonnull align 4 dereferenceable(4) ptr @Touch(ptr noundef nonnull align 4 dereferenceable(4) %value)
+  %call = call noundef nonnull align 4 dereferenceable(4) ptr @"cw:Touch:func(&mut i32)&copy i32"(ptr noundef nonnull align 4 dereferenceable(4) %value)
   %0 = load i32, ptr %value, align 4
   store i32 %0, ptr %.result, align 4
   %1 = load i32, ptr %.result, align 4

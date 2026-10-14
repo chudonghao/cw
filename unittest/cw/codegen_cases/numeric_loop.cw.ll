@@ -1,4 +1,4 @@
-define noundef i32 @NumericLoop(i32 noundef %limit) {
+define noundef i32 @"cw:NumericLoop:func(i32)i32"(i32 noundef %limit) {
 entry:
   %.result = alloca i32, align 4
   %limit.addr = alloca i32, align 4

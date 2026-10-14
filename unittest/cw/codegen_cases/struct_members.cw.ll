@@ -1,7 +1,7 @@
 %struct.Pair = type { i32, i32 }
 %struct.Callback = type { ptr }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @Member(ptr noundef nonnull align 4 dereferenceable(8) %value, i32 noundef %input) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:Member:func(&mut Pair,i32)&mut i32"(ptr noundef nonnull align 4 dereferenceable(8) %value, i32 noundef %input) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -19,7 +19,7 @@ entry:
   ret ptr %3
 }
 
-define noundef ptr @Pointer(ptr noundef %value, i32 noundef %input) {
+define noundef ptr @"cw:Pointer:func(*Pair,i32)*i32"(ptr noundef %value, i32 noundef %input) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -37,7 +37,7 @@ entry:
   ret ptr %3
 }
 
-define noundef i32 @Call(ptr noundef nonnull align 8 dereferenceable(8) %value, i32 noundef %input) {
+define noundef i32 @"cw:Call:func(&copy Callback,i32)i32"(ptr noundef nonnull align 8 dereferenceable(8) %value, i32 noundef %input) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -54,7 +54,7 @@ entry:
   ret i32 %3
 }
 
-define noundef i32 @Temporary() {
+define noundef i32 @"cw:Temporary:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %temporary = alloca %struct.Pair, align 4

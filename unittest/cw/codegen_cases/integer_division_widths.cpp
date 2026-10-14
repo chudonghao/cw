@@ -1,8 +1,3 @@
-/// \file integer_division_widths.cpp
-/// \copyright 2026 Donghao Chu
-/// \license SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-/// \url https://github.com/chudonghao/cw
-
 // All divisors are nonzero. The signed cases explicitly preserve CW's MIN / -1 and MIN % -1 results.
 
 signed char ByteQuotient(signed char dividend, signed char divisor) {

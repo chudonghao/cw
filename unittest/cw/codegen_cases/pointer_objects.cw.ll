@@ -1,4 +1,4 @@
-define noundef ptr @Address(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef ptr @"cw:Address:func(&mut i32)*i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -9,7 +9,7 @@ entry:
   ret ptr %1
 }
 
-define noundef i32 @Read(ptr noundef %pointer) {
+define noundef i32 @"cw:Read:func(*const i32)i32"(ptr noundef %pointer) {
 entry:
   %.result = alloca i32, align 4
   %pointer.addr = alloca ptr, align 8
@@ -21,7 +21,7 @@ entry:
   ret i32 %2
 }
 
-define void @Write(ptr noundef %pointer, i32 noundef %value) {
+define void @"cw:Write:func(*i32,i32)void"(ptr noundef %pointer, i32 noundef %value) {
 entry:
   %pointer.addr = alloca ptr, align 8
   %value.addr = alloca i32, align 4
@@ -33,7 +33,7 @@ entry:
   ret void
 }
 
-define noundef zeroext i1 @Toggle(ptr noundef %pointer) {
+define noundef zeroext i1 @"cw:Toggle:func(*bool)bool"(ptr noundef %pointer) {
 entry:
   %.result = alloca i8, align 1
   %pointer.addr = alloca ptr, align 8
@@ -55,7 +55,7 @@ entry:
   ret i1 %loadedv3
 }
 
-define noundef double @Double(ptr noundef %pointer, double noundef %value) {
+define noundef double @"cw:Double:func(*f64,f64)f64"(ptr noundef %pointer, double noundef %value) {
 entry:
   %.result = alloca double, align 8
   %pointer.addr = alloca ptr, align 8
@@ -72,7 +72,7 @@ entry:
   ret double %4
 }
 
-define noundef ptr @Nested(ptr noundef %pointer, ptr noundef %other) {
+define noundef ptr @"cw:Nested:func(**i32,*i32)*i32"(ptr noundef %pointer, ptr noundef %other) {
 entry:
   %.result = alloca ptr, align 8
   %pointer.addr = alloca ptr, align 8
@@ -89,7 +89,7 @@ entry:
   ret ptr %4
 }
 
-define noundef i32 @Local() {
+define noundef i32 @"cw:Local:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %value = alloca i32, align 4
@@ -99,19 +99,19 @@ entry:
   %0 = load ptr, ptr %pointer, align 8
   store i32 11, ptr %0, align 4
   %1 = load ptr, ptr %pointer, align 8
-  %call = call noundef i32 @Read(ptr noundef %1)
+  %call = call noundef i32 @"cw:Read:func(*const i32)i32"(ptr noundef %1)
   store i32 %call, ptr %.result, align 4
   %2 = load i32, ptr %.result, align 4
   ret i32 %2
 }
 
-define noundef ptr @Receiver(ptr noundef %pointer) {
+define noundef ptr @"cw:Receiver:func(*i32)*i32"(ptr noundef %pointer) {
 entry:
   %.result = alloca ptr, align 8
   %pointer.addr = alloca ptr, align 8
   store ptr %pointer, ptr %pointer.addr, align 8
   %0 = load ptr, ptr %pointer.addr, align 8
-  %call = call noundef ptr @Address(ptr noundef nonnull align 4 dereferenceable(4) %0)
+  %call = call noundef ptr @"cw:Address:func(&mut i32)*i32"(ptr noundef nonnull align 4 dereferenceable(4) %0)
   store ptr %call, ptr %.result, align 8
   %1 = load ptr, ptr %.result, align 8
   ret ptr %1

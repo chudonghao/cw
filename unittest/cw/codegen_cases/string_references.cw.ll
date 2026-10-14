@@ -1,22 +1,22 @@
-@.str = private constant [3 x i8] c"abc", align 1
+@"cw:str" = private constant [3 x i8] c"abc", align 1
 
-define noundef nonnull align 1 dereferenceable(3) ptr @Borrow() {
+define noundef nonnull align 1 dereferenceable(3) ptr @"cw:Borrow:func()&copy [3]u8"() {
 entry:
   %.result = alloca ptr, align 8
-  store ptr @.str, ptr %.result, align 8
+  store ptr @"cw:str", ptr %.result, align 8
   %0 = load ptr, ptr %.result, align 8
   ret ptr %0
 }
 
-define noundef ptr @Pointer() {
+define noundef ptr @"cw:Pointer:func()*const [3]u8"() {
 entry:
   %.result = alloca ptr, align 8
-  store ptr @.str, ptr %.result, align 8
+  store ptr @"cw:str", ptr %.result, align 8
   %0 = load ptr, ptr %.result, align 8
   ret ptr %0
 }
 
-define noundef zeroext i8 @Read(ptr noundef nonnull align 1 dereferenceable(3) %value, i64 noundef %index) {
+define noundef zeroext i8 @"cw:Read:func(&copy [3]u8,usize)u8"(ptr noundef nonnull align 1 dereferenceable(3) %value, i64 noundef %index) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca ptr, align 8
@@ -32,23 +32,23 @@ entry:
   ret i8 %3
 }
 
-define noundef zeroext i8 @Use(i64 noundef %index) {
+define noundef zeroext i8 @"cw:Use:func(usize)u8"(i64 noundef %index) {
 entry:
   %.result = alloca i8, align 1
   %index.addr = alloca i64, align 8
   %callback = alloca ptr, align 8
   store i64 %index, ptr %index.addr, align 8
-  store ptr @Read, ptr %callback, align 8
-  %call = call noundef nonnull align 1 dereferenceable(3) ptr @Borrow()
+  store ptr @"cw:Read:func(&copy [3]u8,usize)u8", ptr %callback, align 8
+  %call = call noundef nonnull align 1 dereferenceable(3) ptr @"cw:Borrow:func()&copy [3]u8"()
   %0 = load i64, ptr %index.addr, align 8
-  %call1 = call noundef zeroext i8 @Read(ptr noundef nonnull align 1 dereferenceable(3) %call, i64 noundef %0)
+  %call1 = call noundef zeroext i8 @"cw:Read:func(&copy [3]u8,usize)u8"(ptr noundef nonnull align 1 dereferenceable(3) %call, i64 noundef %0)
   %1 = load ptr, ptr %callback, align 8
-  %call2 = call noundef ptr @Pointer()
+  %call2 = call noundef ptr @"cw:Pointer:func()*const [3]u8"()
   %2 = load i64, ptr %index.addr, align 8
   %call3 = call noundef zeroext i8 %1(ptr noundef nonnull align 1 dereferenceable(3) %call2, i64 noundef %2)
   %add = add i8 %call1, %call3
   %3 = load i64, ptr %index.addr, align 8
-  %call4 = call noundef zeroext i8 @Read(ptr noundef nonnull align 1 dereferenceable(3) @.str, i64 noundef %3)
+  %call4 = call noundef zeroext i8 @"cw:Read:func(&copy [3]u8,usize)u8"(ptr noundef nonnull align 1 dereferenceable(3) @"cw:str", i64 noundef %3)
   %add5 = add i8 %add, %call4
   store i8 %add5, ptr %.result, align 1
   %4 = load i8, ptr %.result, align 1

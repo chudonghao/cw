@@ -1,4 +1,4 @@
-define noundef signext i8 @Signed8(double noundef %value) {
+define noundef signext i8 @"cw:Signed8:func(f64)i8"(double noundef %value) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca double, align 8
@@ -10,7 +10,7 @@ entry:
   ret i8 %1
 }
 
-define noundef zeroext i8 @Unsigned8(double noundef %value) {
+define noundef zeroext i8 @"cw:Unsigned8:func(f64)u8"(double noundef %value) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca double, align 8
@@ -22,7 +22,7 @@ entry:
   ret i8 %1
 }
 
-define noundef signext i16 @Signed16(double noundef %value) {
+define noundef signext i16 @"cw:Signed16:func(f64)i16"(double noundef %value) {
 entry:
   %.result = alloca i16, align 2
   %value.addr = alloca double, align 8
@@ -34,7 +34,7 @@ entry:
   ret i16 %1
 }
 
-define noundef zeroext i16 @Unsigned16(double noundef %value) {
+define noundef zeroext i16 @"cw:Unsigned16:func(f64)u16"(double noundef %value) {
 entry:
   %.result = alloca i16, align 2
   %value.addr = alloca double, align 8
@@ -46,7 +46,7 @@ entry:
   ret i16 %1
 }
 
-define noundef i32 @Signed32(double noundef %value) {
+define noundef i32 @"cw:Signed32:func(f64)i32"(double noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca double, align 8
@@ -58,7 +58,7 @@ entry:
   ret i32 %1
 }
 
-define noundef i32 @Unsigned32(double noundef %value) {
+define noundef i32 @"cw:Unsigned32:func(f64)u32"(double noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca double, align 8
@@ -70,7 +70,7 @@ entry:
   ret i32 %1
 }
 
-define noundef i64 @Signed64(double noundef %value) {
+define noundef i64 @"cw:Signed64:func(f64)i64"(double noundef %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca double, align 8
@@ -82,7 +82,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i64 @Unsigned64(double noundef %value) {
+define noundef i64 @"cw:Unsigned64:func(f64)u64"(double noundef %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca double, align 8
@@ -94,7 +94,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i32 @SignedSingle(float noundef %value) {
+define noundef i32 @"cw:SignedSingle:func(f32)i32"(float noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca float, align 4
@@ -106,7 +106,7 @@ entry:
   ret i32 %1
 }
 
-define noundef i64 @UnsignedSingle(float noundef %value) {
+define noundef i64 @"cw:UnsignedSingle:func(f32)u64"(float noundef %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca float, align 4
@@ -118,7 +118,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i32 @Fraction() {
+define noundef i32 @"cw:Fraction:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %conv = call i32 @llvm.fptosi.sat.i32.f64(double -3.900000e+00)
@@ -127,7 +127,7 @@ entry:
   ret i32 %0
 }
 
-define noundef zeroext i8 @ClampByte() {
+define noundef zeroext i8 @"cw:ClampByte:func()u8"() {
 entry:
   %.result = alloca i8, align 1
   %conv = call i8 @llvm.fptoui.sat.i8.f64(double 3.000000e+02)
@@ -136,7 +136,7 @@ entry:
   ret i8 %0
 }
 
-define noundef signext i8 @ClampSignedByte() {
+define noundef signext i8 @"cw:ClampSignedByte:func()i8"() {
 entry:
   %.result = alloca i8, align 1
   %conv = call i8 @llvm.fptosi.sat.i8.f64(double 1.280000e+02)
@@ -145,7 +145,7 @@ entry:
   ret i8 %0
 }
 
-define noundef zeroext i8 @ClampNegative() {
+define noundef zeroext i8 @"cw:ClampNegative:func()u8"() {
 entry:
   %.result = alloca i8, align 1
   %conv = call i8 @llvm.fptoui.sat.i8.f64(double -5.000000e-01)
@@ -154,7 +154,7 @@ entry:
   ret i8 %0
 }
 
-define noundef i32 @NaNToZero() {
+define noundef i32 @"cw:NaNToZero:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %conv = call i32 @llvm.fptosi.sat.i32.f64(double +qnan)
@@ -163,7 +163,7 @@ entry:
   ret i32 %0
 }
 
-define noundef i64 @PositiveInfinity() {
+define noundef i64 @"cw:PositiveInfinity:func()i64"() {
 entry:
   %.result = alloca i64, align 8
   %conv = call i64 @llvm.fptosi.sat.i64.f64(double +inf)
@@ -172,7 +172,7 @@ entry:
   ret i64 %0
 }
 
-define noundef i64 @NegativeInfinity() {
+define noundef i64 @"cw:NegativeInfinity:func()i64"() {
 entry:
   %.result = alloca i64, align 8
   %conv = call i64 @llvm.fptosi.sat.i64.f64(double -inf)
@@ -181,7 +181,7 @@ entry:
   ret i64 %0
 }
 
-define noundef i64 @UnsignedInfinity() {
+define noundef i64 @"cw:UnsignedInfinity:func()u64"() {
 entry:
   %.result = alloca i64, align 8
   %conv = call i64 @llvm.fptoui.sat.i64.f64(double +inf)
@@ -190,7 +190,7 @@ entry:
   ret i64 %0
 }
 
-define noundef i64 @UnsignedNegativeInfinity() {
+define noundef i64 @"cw:UnsignedNegativeInfinity:func()u64"() {
 entry:
   %.result = alloca i64, align 8
   %conv = call i64 @llvm.fptoui.sat.i64.f64(double -inf)
@@ -199,7 +199,7 @@ entry:
   ret i64 %0
 }
 
-define noundef i64 @SignedUpperBoundary() {
+define noundef i64 @"cw:SignedUpperBoundary:func()i64"() {
 entry:
   %.result = alloca i64, align 8
   %conv = call i64 @llvm.fptosi.sat.i64.f64(double f0x43E0000000000000)
@@ -208,7 +208,7 @@ entry:
   ret i64 %0
 }
 
-define noundef i64 @UnsignedUpperBoundary() {
+define noundef i64 @"cw:UnsignedUpperBoundary:func()u64"() {
 entry:
   %.result = alloca i64, align 8
   %conv = call i64 @llvm.fptoui.sat.i64.f64(double f0x43F0000000000000)
@@ -217,7 +217,7 @@ entry:
   ret i64 %0
 }
 
-define noundef i32 @NegativeZero() {
+define noundef i32 @"cw:NegativeZero:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %conv = call i32 @llvm.fptosi.sat.i32.f64(double -0.000000e+00)
@@ -226,7 +226,7 @@ entry:
   ret i32 %0
 }
 
-define noundef zeroext i8 @ViaInteger() {
+define noundef zeroext i8 @"cw:ViaInteger:func()u8"() {
 entry:
   %.result = alloca i8, align 1
   %value = alloca i32, align 4

@@ -1,4 +1,4 @@
-define noundef double @Widen(float noundef %value) {
+define noundef double @"cw:Widen:func(f32)f64"(float noundef %value) {
 entry:
   %.result = alloca double, align 8
   %value.addr = alloca float, align 4
@@ -10,7 +10,7 @@ entry:
   ret double %1
 }
 
-define noundef float @Narrow(double noundef %value) {
+define noundef float @"cw:Narrow:func(f64)f32"(double noundef %value) {
 entry:
   %.result = alloca float, align 4
   %value.addr = alloca double, align 8
@@ -22,7 +22,7 @@ entry:
   ret float %1
 }
 
-define noundef float @SignedSingle(i64 noundef %value) {
+define noundef float @"cw:SignedSingle:func(i64)f32"(i64 noundef %value) {
 entry:
   %.result = alloca float, align 4
   %value.addr = alloca i64, align 8
@@ -34,7 +34,7 @@ entry:
   ret float %1
 }
 
-define noundef float @UnsignedSingle(i64 noundef %value) {
+define noundef float @"cw:UnsignedSingle:func(u64)f32"(i64 noundef %value) {
 entry:
   %.result = alloca float, align 4
   %value.addr = alloca i64, align 8
@@ -46,7 +46,7 @@ entry:
   ret float %1
 }
 
-define noundef double @SignedDouble(i32 noundef %value) {
+define noundef double @"cw:SignedDouble:func(i32)f64"(i32 noundef %value) {
 entry:
   %.result = alloca double, align 8
   %value.addr = alloca i32, align 4
@@ -58,7 +58,7 @@ entry:
   ret double %1
 }
 
-define noundef double @UnsignedDouble(i32 noundef %value) {
+define noundef double @"cw:UnsignedDouble:func(u32)f64"(i32 noundef %value) {
 entry:
   %.result = alloca double, align 8
   %value.addr = alloca i32, align 4
@@ -70,7 +70,7 @@ entry:
   ret double %1
 }
 
-define noundef float @SignedByte(i8 noundef signext %value) {
+define noundef float @"cw:SignedByte:func(i8)f32"(i8 noundef signext %value) {
 entry:
   %.result = alloca float, align 4
   %value.addr = alloca i8, align 1
@@ -82,7 +82,7 @@ entry:
   ret float %1
 }
 
-define noundef double @UnsignedByte(i8 noundef zeroext %value) {
+define noundef double @"cw:UnsignedByte:func(u8)f64"(i8 noundef zeroext %value) {
 entry:
   %.result = alloca double, align 8
   %value.addr = alloca i8, align 1
@@ -94,7 +94,7 @@ entry:
   ret double %1
 }
 
-define noundef float @RoundedInteger() {
+define noundef float @"cw:RoundedInteger:func()f32"() {
 entry:
   %.result = alloca float, align 4
   store float f0x4B800000, ptr %.result, align 4
@@ -102,7 +102,7 @@ entry:
   ret float %0
 }
 
-define noundef double @NegativeInteger() {
+define noundef double @"cw:NegativeInteger:func()f64"() {
 entry:
   %.result = alloca double, align 8
   store double f0xC170000010000000, ptr %.result, align 8
@@ -110,7 +110,7 @@ entry:
   ret double %0
 }
 
-define noundef float @NarrowOverflow() {
+define noundef float @"cw:NarrowOverflow:func()f32"() {
 entry:
   %.result = alloca float, align 4
   store float +inf, ptr %.result, align 4
@@ -118,7 +118,7 @@ entry:
   ret float %0
 }
 
-define noundef float @NarrowUnderflow() {
+define noundef float @"cw:NarrowUnderflow:func()f32"() {
 entry:
   %.result = alloca float, align 4
   store float -0.000000e+00, ptr %.result, align 4
@@ -126,7 +126,7 @@ entry:
   ret float %0
 }
 
-define noundef float @NarrowSubnormal() {
+define noundef float @"cw:NarrowSubnormal:func()f32"() {
 entry:
   %.result = alloca float, align 4
   store float 1.401300e-45, ptr %.result, align 4

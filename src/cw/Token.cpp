@@ -86,6 +86,8 @@ const char* to_string(TokenType type) {
       return ":";
     case colonequal:
       return ":=";
+    case coloncolon:
+      return "::";
     case equal:
       return "=";
     case plusequal:
@@ -152,6 +154,12 @@ const char* to_string(TokenType type) {
       return "var";
     case alias:
       return "alias";
+    case namespace_:
+      return "namespace";
+    case export_:
+      return "export";
+    case import_:
+      return "import";
     case ctor:
       return "ctor";
     case dtor:
@@ -300,6 +308,9 @@ TokenType from_string(const char* str) {
   if (strcmp(str, ":=") == 0) {
     return colonequal;
   }
+  if (strcmp(str, "::") == 0) {
+    return coloncolon;
+  }
   if (strcmp(str, "=") == 0) {
     return equal;
   }
@@ -398,6 +409,15 @@ TokenType from_string(const char* str) {
   }
   if (strcmp(str, "alias") == 0) {
     return alias;
+  }
+  if (strcmp(str, "namespace") == 0) {
+    return namespace_;
+  }
+  if (strcmp(str, "import") == 0) {
+    return import_;
+  }
+  if (strcmp(str, "export") == 0) {
+    return export_;
   }
   if (strcmp(str, "ctor") == 0) {
     return ctor;

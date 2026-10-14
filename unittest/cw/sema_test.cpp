@@ -35,10 +35,14 @@ class SemaTest : public ::testing::Test {
 
  protected:
   void Analyze(std::string content, std::string path = "test.cw") {
+    Analyze(std::vector<cw::Source>{{std::move(path), std::move(content)}});
+  }
+
+  void Analyze(std::vector<cw::Source> sources) {
     ASSERT_FALSE(analyzed_);
     analyzed_ = true;
 
-    sources_ = {{std::move(path), std::move(content)}};
+    sources_ = std::move(sources);
     diagnostic_engine_.SetSources(&sources_);
     lexer_.Reset(&sources_);
     parser_.SetLexer(&lexer_);
@@ -168,6 +172,727 @@ INSTANTIATE_TEST_SUITE_P(
         LanguageFeatureCase{"nonvirtual_call", "NonVirtualCall"},
         LanguageFeatureCase{"callable_object", "CallableObject"}, LanguageFeatureCase{"fixed_array", "FixedArray"}),
     LanguageFeatureCaseName);
+
+// Namespace lookup, declaration ownership, and initialization.
+
+TEST_F(SemaTest, AllowsPackageAsAnOrdinaryIdentifier) {
+  Analyze("namespace package { func package(package i32) i32 { package } } func F() i32 { package::package(7) }");
+}
+
+TEST_F(SemaTest, ResolvesReopenedScopesAndForwardReferencesAcrossFiles) {
+  Analyze(std::vector<cw::Source>{
+      {"first", "namespace A { func Run() i32 { Later() } func Use(x &copy T) i32 { x.value } }"},
+      {"second", "namespace A { trivial struct T { value i32; } func Later() i32 { 7 } }"},
+      {"third", "func Call() i32 { ::A::Run() }"},
+  });
+}
+
+TEST_F(SemaTest, ResolvesRelativeAndAbsoluteNamesAndQualifiedFunctionAddresses) {
+  Analyze(R"(namespace A {
+    trivial struct T {}
+    func F() i32 { 1 }
+    namespace B {
+      func G(x &copy T, y &copy ::A::T) i32 {
+        var pointer *func() i32 := &A::F;
+        pointer() + ::A::F() + F()
+      }
+    }
+  })");
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsCallTarget) {
+  Analyze("namespace A {} func Use() { A(); }");
+  ExpectError(0, 28, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsCallTargetWithArguments) {
+  Analyze("namespace A {} func Use() { A(1); }");
+  ExpectError(0, 28, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsRelativeCallTarget) {
+  Analyze("namespace A { namespace B {} } func Use() { A::B(); }");
+  ExpectError(0, 44, "namespace 'A::B' cannot be used as an expression", 4);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsAbsoluteCallTarget) {
+  Analyze("namespace A { namespace B {} } func Use() { ::A::B(); }");
+  ExpectError(0, 44, "namespace '::A::B' cannot be used as an expression", 6);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsNonvirtualCallTarget) {
+  Analyze("namespace A {} func Use() { nonvirtual A(); }");
+  ExpectError(0, 39, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsQualifiedNonvirtualCallTarget) {
+  Analyze("namespace A { namespace B {} } func Use() { nonvirtual ::A::B(); }");
+  ExpectError(0, 55, "namespace '::A::B' cannot be used as an expression", 6);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsDeducedGlobalInitializer) {
+  Analyze("namespace A {} var value := A();");
+  ExpectError(0, 28, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsTypedGlobalInitializer) {
+  Analyze("namespace A {} var value i32 := ::A();");
+  ExpectError(0, 32, "namespace '::A' cannot be used as an expression", 3);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsBlockGlobalInitializer) {
+  Analyze("namespace A {} var value i32 := { A(); value := 1; }");
+  ExpectError(0, 34, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsReturnExpression) {
+  Analyze("namespace A {} func Use() i32 { A() }");
+  ExpectError(0, 32, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsReceiverCallTarget) {
+  Analyze("namespace A {} func Use(value i32) { value.A(); }");
+  ExpectError(0, 43, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsPointerReceiverCallTarget) {
+  Analyze("namespace A {} func Use(value *i32) { value->A(); }");
+  ExpectError(0, 45, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsNonvirtualReceiverCallTarget) {
+  Analyze("namespace A {} func Use(value i32) { value.nonvirtual A(); }");
+  ExpectError(0, 54, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsNonvirtualPointerReceiverCallTarget) {
+  Analyze("namespace A {} func Use(value *i32) { value->nonvirtual A(); }");
+  ExpectError(0, 56, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAsCallTargetHidingOuterFunction) {
+  Analyze("func F() {} namespace Inner { namespace F {} func Use() { F(); } }");
+  ExpectError(0, 58, "namespace 'F' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceObjectReference) {
+  Analyze("namespace A {} func Use() { A; }");
+  ExpectError(0, 28, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceObjectAddress) {
+  Analyze("namespace A {} func Use() { &A; }");
+  ExpectError(0, 29, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceParenthesizedCallee) {
+  Analyze("namespace A {} func Use() { (A)(); }");
+  ExpectError(0, 29, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, RejectsNamespaceBinaryOperand) {
+  Analyze("namespace A {} func Use() { A + 1; }");
+  ExpectError(0, 28, "namespace 'A' cannot be used as an expression", 1);
+}
+
+TEST_F(SemaTest, AllowsNamespacePrefixesForFunctionAndConstructorCalls) {
+  Analyze(R"(namespace A {
+    trivial struct T {}
+    func F() i32 { 1 }
+  }
+  var global := ::A::F();
+  var object := A::T();
+  func Use() i32 {
+    var local := ::A::T();
+    var pointer *func() i32 := &A::F;
+    A::F() + ::A::F() + nonvirtual A::F() + pointer()
+  })");
+}
+
+TEST_F(SemaTest, InnerFunctionHidesOuterType) {
+  Analyze("trivial struct T {} namespace Inner { func T() {} func Use(value T) {} }");
+  ExpectError(0, 65, "name 'T' is declared but not yet bound", 1);
+}
+
+TEST_F(SemaTest, UnboundInnerGlobalHidesOuterTypeInFunctionSignature) {
+  Analyze("trivial struct T {} namespace Inner { var T i32 := 0; func Use(value T) {} }");
+  ExpectError(0, 69, "name 'T' is declared but not yet bound", 1);
+}
+
+TEST_F(SemaTest, InnerNonNamespaceQualifierHidesOuterNamespace) {
+  Analyze(
+      "namespace A { namespace B { func F() {} } } namespace Inner { namespace A { trivial struct B {}"
+      " } func Use() { A::B::F(); } }");
+  ExpectError(0, 114, "'B' does not name a namespace", 1);
+}
+
+TEST_F(SemaTest, LocalVariableHidesOuterType) {
+  Analyze("trivial struct T {} func Use() { var T i32 := 0; var x T; }");
+  ExpectError(0, 55, "unknown type 'T'", 1);
+}
+
+TEST_F(SemaTest, AllowsExplicitRootCallPastInnerOverloads) {
+  Analyze("func F() {} namespace Inner { func F(x i32) {} func Use() { ::F(); F(1); } }");
+}
+
+TEST_F(SemaTest, DoesNotFallbackPastNearestNamespaceOverloadSet) {
+  Analyze("func F() {} namespace Inner { func F(x i32) {} func Use() { F(); } }");
+  ExpectError(0, 60, "no matching function for call to 'F'", 3);
+  ExpectNote(0, 30, "candidate function requires 1 argument, but 0 were provided", 0);
+}
+
+TEST_F(SemaTest, RejectsTypeAfterNamespaceAcrossFiles) {
+  Analyze(std::vector<cw::Source>{
+      {"first", "namespace A::B {}"},
+      {"second", "trivial struct A {}"},
+  });
+  ExpectError(0, 15, "declaration of type 'A' conflicts with namespace declaration", 0);
+  ExpectNote(0, 10, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAfterTypeAcrossFiles) {
+  Analyze(std::vector<cw::Source>{
+      {"first", "trivial struct A {}"},
+      {"second", "namespace A::B {}"},
+  });
+  ExpectError(0, 15, "declaration of type 'A' conflicts with namespace declaration", 0);
+  ExpectNote(0, 10, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, RejectsFunctionAfterNamespaceAcrossFiles) {
+  Analyze(std::vector<cw::Source>{
+      {"first", "namespace A::B {}"},
+      {"second", "func A() {}"},
+  });
+  ExpectError(0, 5, "declaration of function 'A' conflicts with namespace declaration", 0);
+  ExpectNote(0, 10, "conflicting declaration is here", 0);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAfterFunctionAcrossFiles) {
+  Analyze(std::vector<cw::Source>{
+      {"first", "func A() {}"},
+      {"second", "namespace A::B {}"},
+  });
+  ExpectError(0, 5, "declaration of function 'A' conflicts with namespace declaration", 0);
+  ExpectNote(0, 10, "conflicting declaration is here", 0);
+}
+
+TEST_F(SemaTest, RejectsVariableAfterNamespaceAcrossFiles) {
+  Analyze(std::vector<cw::Source>{
+      {"first", "namespace A::B {}"},
+      {"second", "var A i32 := 0;"},
+  });
+  ExpectError(0, 4, "declaration of variable 'A' conflicts with namespace declaration", 0);
+  ExpectNote(0, 10, "conflicting declaration is here", 0);
+}
+
+TEST_F(SemaTest, RejectsNamespaceAfterVariableAcrossFiles) {
+  Analyze(std::vector<cw::Source>{
+      {"first", "var A i32 := 0;"},
+      {"second", "namespace A::B {}"},
+  });
+  ExpectError(0, 4, "declaration of variable 'A' conflicts with namespace declaration", 0);
+  ExpectNote(0, 10, "conflicting declaration is here", 0);
+}
+
+TEST_F(SemaTest, ReportsConflictWithFirstNamespaceSegment) {
+  Analyze("namespace A::B::C {} trivial struct A {}");
+  ExpectError(0, 36, "declaration of type 'A' conflicts with namespace declaration", 0);
+  ExpectNote(0, 10, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, ReportsConflictWithMiddleNamespaceSegment) {
+  Analyze("namespace A::B::C {} namespace A { trivial struct B {} }");
+  ExpectError(0, 50, "declaration of type 'B' conflicts with namespace declaration", 0);
+  ExpectNote(0, 13, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, ReportsConflictWithLastNamespaceSegment) {
+  Analyze("namespace A::B::C {} namespace A::B { trivial struct C {} }");
+  ExpectError(0, 53, "declaration of type 'C' conflicts with namespace declaration", 0);
+  ExpectNote(0, 16, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, RejectsDuplicateFunctionInReopenedNamespace) {
+  Analyze("namespace A { func F() {} } namespace A { func F() {} }");
+  ExpectError(0, 47, "redefinition of function 'F'", 0);
+  ExpectNote(0, 19, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, PreservesOverloadsInReopenedNamespace) {
+  Analyze("namespace A { func F() {} } namespace A { func F(x i32) {} } namespace B { func F() {} }");
+}
+
+TEST_F(SemaTest, KeepsSameShortTypeNamesDistinct) {
+  Analyze(R"(namespace A { trivial struct T {} }
+    namespace B { trivial struct T {} }
+    func F(value &copy A::T) i32 { 1 }
+    func F(value &copy B::T) i32 { 2 }
+    func Run() i32 { F(A::T()) + F(B::T()) })");
+}
+
+TEST_F(SemaTest, BindsLifecycleAndAssignmentByTypeIdentityAcrossFiles) {
+  Analyze(std::vector<cw::Source>{
+      {"types", R"(namespace A { struct T { value i32; } }
+         namespace B { trivial struct T {} })"},
+      {"operations", R"(namespace A {
+         ctor T(value i32) { this.value := value; }
+         ctor T(other &copy T) { this.value := other.value; }
+         ctor T(other &move T) { this.value := other.value; }
+         dtor T() {}
+         func operator=(to &mut T, from &copy T) { to.value = from.value; }
+         func operator=(to &mut T, from &move T) { to.value = from.value; }
+       })"},
+      {"use", R"(namespace B { func Use(source &mut A::T) {
+         var copied A::T := source;
+         var moved A::T := move source;
+         copied = source;
+         copied = move moved;
+         A::operator=(copied, source);
+         var T i32 := 0;
+         var again A::T := source;
+       } }
+       func Place(p *A::T) { ctor (p) ::A::T(1); dtor (p) A::T(); })"},
+  });
+}
+
+TEST_F(SemaTest, RejectsConstructorOutsideTypeNamespace) {
+  Analyze("namespace A { struct T {} ctor T() {} dtor T() {} } namespace B { ctor T() {} }");
+  ExpectError(0, 71, "unknown constructor target type 'T'", 1);
+}
+
+TEST_F(SemaTest, RejectsDestructorOutsideTypeNamespace) {
+  Analyze("namespace A { struct T {} ctor T() {} dtor T() {} } namespace B { dtor T() {} }");
+  ExpectError(0, 71, "unknown destructor target type 'T'", 1);
+}
+
+TEST_F(SemaTest, RejectsCopyAssignmentOutsideTypeNamespace) {
+  Analyze(
+      "namespace A { struct T {} ctor T() {} dtor T() {} } namespace B { func operator=(to &mut A::T, from &copy A::T) "
+      "{} }");
+  ExpectError(0, 71, "copy or move assignment must be declared in the target type's namespace", 9);
+}
+
+TEST_F(SemaTest, RejectsMoveAssignmentOutsideTypeNamespace) {
+  Analyze(
+      "namespace A { struct T {} ctor T() {} dtor T() {} } namespace B { func operator=(to &mut A::T, from &move A::T) "
+      "{} }");
+  ExpectError(0, 71, "copy or move assignment must be declared in the target type's namespace", 9);
+}
+
+TEST_F(SemaTest, InnerReceiverOverloadsHideOuterOverloads) {
+  Analyze(
+      "namespace A { trivial struct T {} func F(value &copy T) {} } func F(value &copy A::T) {} "
+      "namespace B { func F() {} func Use(value &copy A::T) { value.F(); } }");
+  ExpectError(0, 144, "no matching receiver function for call to 'F'", 9);
+  ExpectNote(0, 103, "candidate function is not viable: no receiver parameter is declared", 0);
+}
+
+TEST_F(SemaTest, ResolvesReceiverCallsInCallerNamespace) {
+  Analyze(
+      "namespace A { trivial struct T {} func F(value &copy T) {} } func Use(value &copy A::T) { "
+      "A::F(value); } namespace A { func Use(value *T) { value->F(); } }");
+}
+
+TEST_F(SemaTest, DoesNotLookupReceiverFunctionsInArgumentNamespace) {
+  Analyze("namespace A { trivial struct T {} func F(value &copy T) {} } func Use(value &copy A::T) { value.F(); }");
+  ExpectError(0, 96, "use of undeclared identifier 'F'", 1);
+}
+
+TEST_F(SemaTest, DoesNotLookupBinaryOperatorInArgumentNamespace) {
+  Analyze(R"(namespace A { trivial struct T {}
+    func operator+(left &copy T, right &copy T) i32 { 1 }
+    func operator()(value &copy T) i32 { 2 }
+  }func Use(value &copy A::T) i32 { value + value })");
+  ExpectError(3, 36, "binary operator '+' cannot be applied to types 'const A::T' and 'const A::T'", 13);
+}
+
+TEST_F(SemaTest, DoesNotLookupCallOperatorInArgumentNamespace) {
+  Analyze(R"(namespace A { trivial struct T {}
+    func operator+(left &copy T, right &copy T) i32 { 1 }
+    func operator()(value &copy T) i32 { 2 }
+  }func Use(value &copy A::T) i32 { value() })");
+  ExpectError(3, 36, "expression of type 'const A::T' is not callable", 7);
+}
+
+TEST_F(SemaTest, ResolvesOperatorsInCallerNamespace) {
+  Analyze(R"(namespace A { trivial struct T {}
+    func operator+(left &copy T, right &copy T) i32 { 1 }
+    func operator()(value &copy T) i32 { 2 }
+  }namespace A { func Use(value &copy T) i32 { (value + value) + value() } }
+    func Explicit(value &copy A::T) i32 {
+      var pointer *func(&copy A::T, &copy A::T) i32 := &::A::operator+;
+      A::operator+(value, value) + A::operator()(value) + pointer(value, value)
+    })");
+}
+
+TEST_F(SemaTest, AllowsUnrelatedFunctionMatchingVirtualSignature) {
+  Analyze(
+      "namespace A { struct T { virtual { func F(this &copy T) i32; } } ctor T() {} dtor T() {} } "
+      "namespace A { func F(this &copy T) i32 { 1 } } namespace B { func F(this &copy A::T) i32 { 2 } "
+      "}");
+}
+
+TEST_F(SemaTest, RequiresVirtualDefinitionInTypeNamespace) {
+  Analyze(
+      "namespace A { struct T { virtual { func F(this &copy T) i32; } } ctor T() {} dtor T() {} } "
+      "namespace B { func F(this &copy A::T) i32 { 1 } }");
+  ExpectError(0, 40, "virtual function 'F' requires a definition", 1);
+}
+
+TEST_F(SemaTest, SupportsCrossNamespaceOverridesAndQualifiedNonvirtualCalls) {
+  Analyze(R"(namespace A {
+    struct Base { virtual { func Read(this &copy Base) i32; } }
+    ctor Base() {} dtor Base() {}
+    func Read(this &copy Base) i32 { 1 }
+  }
+  namespace B {
+    struct Derived : A::Base { virtual { override func Read(this &copy Derived) i32; } }
+    ctor Derived() { this.Base := A::Base(); } dtor Derived() {}
+    func Read(this &copy Derived) i32 { 2 }
+    func Invoke(value &copy Derived) i32 { nonvirtual A::Read(value) + Read(value) }
+  }
+  func Use(value &copy B::Derived) i32 { A::Read(value) + B::Read(value) })");
+}
+
+TEST_F(SemaTest, RejectsExportOfHiddenTypeOrGlobalAcrossNamespaces) {
+  Analyze(R"(namespace A { trivial struct Hidden {} }
+    namespace B { export func Expose(value &copy A::Hidden) {} export var global i32 := 0; })");
+  ExpectError(1, 43, "exported declaration uses non-exported struct 'A::Hidden'", 15);
+  ExpectError(1, 63, "global variables cannot be exported", 6);
+}
+
+TEST_F(SemaTest, KeepsExportVisibilityIndependentOfNamespace) {
+  Analyze(R"(namespace A { trivial struct Internal {} export trivial struct Public {} }
+    namespace B { func InternalUse(value &copy A::Internal) {} export func PublicUse(value &copy A::Public) {} })");
+}
+
+TEST_F(SemaTest, RejectsReferenceToLaterGlobalInReopenedNamespace) {
+  Analyze("namespace A { var first i32 := second; } namespace A { var second i32 := 1; }");
+  ExpectError(0, 31, "use of undeclared identifier 'second'", 6);
+}
+
+TEST_F(SemaTest, PreservesGlobalInitializerVisibilityAcrossFiles) {
+  Analyze(std::vector<cw::Source>{
+      {"one", "namespace A { var first i32 := 1; } namespace B { var second i32 := A::first; }"},
+      {"two", "namespace A { var third i32 := B::second; } func Read() i32 { A::third }"},
+  });
+}
+
+TEST_F(SemaTest, RejectsDelegationToSameShortNameInOtherNamespace) {
+  Analyze(R"(namespace A { struct T {} ctor T() {} dtor T() {} }
+    namespace B { struct T {} ctor T() { this := A::T(); } dtor T() {} })");
+  ExpectError(1, 49, "constructor delegation must directly construct the current type 'T'", 6);
+}
+
+TEST_F(SemaTest, AllowsQualifiedConstructorDelegation) {
+  Analyze(R"(namespace A {
+    struct T { value i32; }
+    ctor T(value i32) { this.value := value; }
+    ctor T() { this := ::A::T(7); }
+    dtor T() {}
+  })");
+}
+
+TEST_F(SemaTest, DoesNotMergeOuterBinaryOperatorOverloads) {
+  Analyze(R"(trivial struct T {}
+    func operator+(left &copy T, right &copy T) i32 { 1 }
+    func operator()(value &copy T) i32 { 1 }
+    namespace Inner {
+      func operator+(left &copy T, right i32) i32 { 2 }
+      func operator()(value &copy T, argument i32) i32 { 2 }
+  func Use(value &copy T) i32 { value + value } })");
+  ExpectError(6, 32, "no matching overloaded operator '+'", 13);
+  ExpectNote(4, 6, "candidate function is not viable: no implicit conversion from 'T' to 'i32' for operand 2", 0);
+}
+
+TEST_F(SemaTest, DoesNotMergeOuterCallOperatorOverloads) {
+  Analyze(R"(trivial struct T {}
+    func operator+(left &copy T, right &copy T) i32 { 1 }
+    func operator()(value &copy T) i32 { 1 }
+    namespace Inner {
+      func operator+(left &copy T, right i32) i32 { 2 }
+      func operator()(value &copy T, argument i32) i32 { 2 }
+  func Use(value &copy T) i32 { value() } })");
+  ExpectError(6, 32, "no matching function for call to object of type 'const T'", 7);
+  ExpectNote(5, 6, "candidate function requires 1 explicit argument, but 0 were provided", 0);
+}
+
+TEST_F(SemaTest, AllowsExplicitRootOperatorCallsPastInnerOverloads) {
+  Analyze(R"(trivial struct T {}
+    func operator+(left &copy T, right &copy T) i32 { 1 }
+    func operator()(value &copy T) i32 { 1 }
+    namespace Inner {
+      func operator+(left &copy T, right i32) i32 { 2 }
+      func operator()(value &copy T, argument i32) i32 { 2 }
+  func Use(value &copy T) i32 { ::operator+(value, value) + ::operator()(value) } })");
+}
+
+TEST_F(SemaTest, RequiresExportedLifecycleInNamespace) {
+  Analyze("namespace A { export struct T {} ctor T() {} dtor T() {} }");
+  ExpectError(0, 50, "destructor of exported non-trivial struct 'T' must be exported", 1);
+}
+
+TEST_F(SemaTest, AllowsExportedLifecycleInReopenedNamespace) {
+  Analyze(std::vector<cw::Source>{
+      {"type", "namespace A { export struct T {} }"},
+      {"lifecycle", "namespace A { export ctor T() {} export dtor T() {} }"},
+  });
+}
+
+TEST_F(SemaTest, InvalidOperatorsDoNotSuppressErrorsInOtherScopes) {
+  Analyze(R"(namespace A { func operator()() i32 { 1 } }
+    namespace B { trivial struct T {} func Use(value &copy T) i32 { value() } })");
+  ExpectError(0, 19, "operator '()' requires a receiver parameter", 10);
+  ExpectError(1, 68, "expression of type 'const B::T' is not callable", 7);
+}
+
+TEST_F(SemaTest, ReportsNonNamespaceFirstQualifier) {
+  Analyze("namespace A { func F() {} } func Use() { var A i32 := 0; A::F(); }");
+  ExpectError(0, 57, "'A' does not name a namespace", 1);
+}
+
+TEST_F(SemaTest, ReportsMissingMemberOfNearestNamespace) {
+  Analyze("namespace A { func F() {} } namespace Inner { namespace A {} func Use() { A::F(); } }");
+  ExpectError(0, 77, "no member named 'F' in namespace 'Inner::A'", 1);
+}
+
+TEST_F(SemaTest, ReportsNonNamespaceIntermediateQualifier) {
+  Analyze("namespace A { trivial struct B {} } func Use() { A::B::F(); }");
+  ExpectError(0, 52, "'B' does not name a namespace", 1);
+}
+
+TEST_F(SemaTest, ReportsMissingFirstQualifierInTypeName) {
+  Analyze("func Use(value Missing::T) {}");
+  ExpectError(0, 15, "use of undeclared name 'Missing'", 7);
+}
+
+TEST_F(SemaTest, ReportsUnboundNameHidingOuterType) {
+  Analyze("trivial struct T {} namespace A { func Use(value T) {} func T() {} }");
+  ExpectError(0, 49, "name 'T' is declared but not yet bound", 1);
+}
+
+TEST_F(SemaTest, ReportsMissingQualifiedBaseType) {
+  Analyze("namespace A {} trivial struct D : A::Missing {}");
+  ExpectError(0, 37, "no member named 'Missing' in namespace 'A'", 7);
+}
+
+TEST_F(SemaTest, ReportsMissingQualifiedConstructorTarget) {
+  Analyze("namespace A {} func Use(pointer *i32) { ctor(pointer) A::T(); }");
+  ExpectError(0, 57, "no member named 'T' in namespace 'A'", 1);
+}
+
+TEST_F(SemaTest, ReportsMissingQualifiedDestructorTarget) {
+  Analyze("namespace A {} func Use(pointer *i32) { dtor(pointer) A::T(); }");
+  ExpectError(0, 57, "no member named 'T' in namespace 'A'", 1);
+}
+
+TEST_F(SemaTest, ReportsMissingQualifiedOperator) {
+  Analyze("namespace A {} func Use() { ::A::operator+(1, 2); }");
+  ExpectError(0, 33, "no member named '+' in namespace 'A'", 9);
+}
+
+TEST_F(SemaTest, ReportsMissingQualifiedFunctionAddress) {
+  Analyze("namespace A {} func Use() { var p *func() i32 := &::A::Missing; }");
+  ExpectError(0, 55, "no member named 'Missing' in namespace 'A'", 7);
+}
+
+TEST_F(SemaTest, RejectsQualifiedReferenceToLaterGlobal) {
+  Analyze("var x i32 := 1; namespace A { var before i32 := A::x; var x i32 := 2; }");
+  ExpectError(0, 51, "no member named 'x' in namespace 'A'", 1);
+}
+
+TEST_F(SemaTest, RejectsAbsoluteReferenceToLaterGlobal) {
+  Analyze("var x i32 := 1; namespace A { var before i32 := ::A::x; var x i32 := 2; }");
+  ExpectError(0, 53, "no member named 'x' in namespace 'A'", 1);
+}
+
+TEST_F(SemaTest, GlobalDeclarationHidesNamespaceOnlyAfterItsDeclaration) {
+  Analyze(R"(namespace A { func Value() i32 { 1 } }
+    namespace B {
+      var before i32 := A::Value();
+      var A i32 := 2;
+      var after i32 := A::Value();
+      func Read() i32 { ::A::Value() }
+    })");
+  ExpectError(4, 23, "'A' does not name a namespace", 1);
+}
+
+TEST_F(SemaTest, InnerFunctionsAndTypesPrecedeVisibleOuterGlobals) {
+  Analyze(R"(var F i32 := 1;
+    var T i32 := 2;
+    namespace A {
+      func F() i32 { 3 }
+      trivial struct T {}
+      var result i32 := F();
+      var object T := T();
+    })");
+}
+
+TEST_F(SemaTest, DiagnosesGlobalInitializersBeforeRedefinition) {
+  Analyze("var x i32 := missing; var x i32 := missing_later;");
+  ExpectError(0, 13, "use of undeclared identifier 'missing'", 7);
+  ExpectError(0, 35, "use of undeclared identifier 'missing_later'", 13);
+  ExpectError(0, 26, "redefinition of variable 'x'", 0);
+  ExpectNote(0, 4, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, GlobalTypeAnnotationsUseDeclarationPointLookup) {
+  Analyze(R"(trivial struct T {}
+    namespace A { var T T := T(); }
+    func Read() { var value ::T := A::T; }
+  )");
+}
+
+TEST_F(SemaTest, GlobalConstructorArgumentsRetainTheCallerVisibilityBound) {
+  Analyze(R"(namespace A {
+      func F(value bool) bool { value }
+      struct T {}
+      ctor T(callback *func(i32) i32) {}
+      dtor T() {}
+    }
+    namespace B {
+      func F(value i32) i32 { value }
+      namespace C {
+        var object := A::T(&F);
+        var F i32 := 1;
+      }
+    })");
+}
+
+TEST_F(SemaTest, RejectsArrayLengthCallInFieldType) {
+  Analyze("namespace A { trivial struct T {} trivial struct S { values [T()] i32; } }");
+  ExpectError(0, 61, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RejectsArrayLengthCallInVirtualFunctionParameter) {
+  Analyze(
+      "namespace A { trivial struct T {} struct S { virtual { abstract func F(this &mut S, values "
+      "[T()] i32) void; } } ctor S() {} dtor S() {} }");
+  ExpectError(0, 92, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RejectsArrayLengthCallInConstructorParameter) {
+  Analyze("namespace A { trivial struct T {} struct S {} ctor S(values [T()] i32) {} dtor S() {} }");
+  ExpectError(0, 61, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RejectsArrayLengthCallInFunctionParameter) {
+  Analyze("namespace A { trivial struct T {} func F(values [T()] i32) {} }");
+  ExpectError(0, 49, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RejectsArrayLengthCallInFunctionReturnType) {
+  Analyze("namespace A { trivial struct T {} func F() [T()] i32 {} }");
+  ExpectError(0, 44, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RejectsArrayLengthCallInGlobalType) {
+  Analyze("namespace A { trivial struct T {} var values [T()] i32 := [1] i32 {0}; }");
+  ExpectError(0, 46, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RejectsArrayLengthCallInLocalType) {
+  Analyze("namespace A { trivial struct T {} func F() { var values [T()] i32; } }");
+  ExpectError(0, 57, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RejectsNonConstantArrayLengthCall) {
+  Analyze("trivial struct T {} func F(values [T()] i32) {}");
+  ExpectError(0, 35, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RejectsNonConstantArrayLengthMemberAccess) {
+  Analyze("trivial struct T {} func F(values [T().field] i32) {}");
+  ExpectError(0, 35, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RejectsNonConstantArrayLengthSubscript) {
+  Analyze("trivial struct T {} func F(values [T()[0]] i32) {}");
+  ExpectError(0, 35, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RejectsNonConstantArrayLengthConstruction) {
+  Analyze("trivial struct T {} func F(values [ctor (null) T()] i32) {}");
+  ExpectError(0, 35, "array length is not a constant integer expression", 15);
+}
+
+TEST_F(SemaTest, RejectsNonConstantArrayLengthDestruction) {
+  Analyze("trivial struct T {} func F(values [dtor (null) T()] i32) {}");
+  ExpectError(0, 35, "array length is not a constant integer expression", 15);
+}
+
+TEST_F(SemaTest, RejectsNonConstantArrayLengthConditional) {
+  Analyze("trivial struct T {} func F(values [true ? 1 : 2] i32) {}");
+  ExpectError(0, 35, "array length is not a constant integer expression", 12);
+}
+
+TEST_F(SemaTest, RejectsNonConstantArrayLengthArrayLiteral) {
+  Analyze("trivial struct T {} func F(values [[1] i32 {1}] i32) {}");
+  ExpectError(0, 35, "array length is not a constant integer expression", 11);
+}
+
+TEST_F(SemaTest, RejectsNonConstantArrayLengthNestedArrayLiteral) {
+  Analyze("trivial struct T {} func F(values [[[T()] i32 {0}] i32 {0}] i32) {}");
+  ExpectError(0, 37, "array length is not a constant integer expression", 3);
+}
+
+TEST_F(SemaTest, RecoversIndependentChildrenOfUnsupportedArrayLengths) {
+  Analyze(R"(trivial struct T {}
+    func F(values [T(missing_one, 18446744073709551616, missing_two)] i32) {})");
+  ExpectError(1, 21, "use of undeclared identifier 'missing_one'", 11);
+  ExpectError(1, 34, "integer constant cannot be represented by any default integer type", 20);
+  ExpectError(1, 56, "use of undeclared identifier 'missing_two'", 11);
+}
+
+TEST_F(SemaTest, RejectsUnboundArrayLengthName) {
+  Analyze("trivial struct T {} namespace N { func F(values [T] i32) {} var T i32 := 1; }");
+  ExpectError(0, 49, "name 'T' is declared but not yet bound", 1);
+}
+
+TEST_F(SemaTest, RejectsUnboundArrayLengthCall) {
+  Analyze("trivial struct T {} namespace N { func F(values [T()] i32) {} var T i32 := 1; }");
+  ExpectError(0, 49, "name 'T' is declared but not yet bound", 1);
+}
+
+TEST_F(SemaTest, RejectsUnboundArrayLengthQualifiedCall) {
+  Analyze("trivial struct T {} namespace N { func F(values [N::T()] i32) {} var T i32 := 1; }");
+  ExpectError(0, 52, "name 'T' is declared but not yet bound", 1);
+}
+
+TEST_F(SemaTest, RejectsQualifiedArrayLengthReferenceToLaterGlobal) {
+  Analyze("namespace A { var first [A::N] i32 := [1] i32 {0}; var N i32 := 2; }");
+  ExpectError(0, 28, "no member named 'N' in namespace 'A'", 1);
+}
+
+TEST_F(SemaTest, RejectsNonConstantGlobalAndLocalArrayLengths) {
+  Analyze(R"(var N i32 := 1;
+    namespace A {
+      var first [N] i32 := [1] i32 {0};
+      var N i32 := 2;
+      func F() {
+        var N i32 := 3;
+        var values [N] i32;
+      }
+    })");
+  ExpectError(2, 17, "array length is not a constant integer expression", 1);
+  ExpectError(6, 20, "array length is not a constant integer expression", 1);
+}
+
+TEST_F(SemaTest, ChecksArrayLengthOverflowInFieldType) {
+  Analyze("trivial struct S { values [(2147483647 + 1) - 1] i32; }");
+  ExpectError(0, 28, "array length constant expression overflows its integer type", 14);
+}
+
+TEST_F(SemaTest, ChecksArrayLengthOverflowInConstructorParameter) {
+  Analyze("struct S {} ctor S(values [(2147483647 + 1) - 1] i32) {} dtor S() {}");
+  ExpectError(0, 28, "array length constant expression overflows its integer type", 14);
+}
+
+TEST_F(SemaTest, ChecksArrayLengthOverflowInFunctionParameter) {
+  Analyze("func F(values [(2147483647 + 1) - 1] i32) {}");
+  ExpectError(0, 16, "array length constant expression overflows its integer type", 14);
+}
 
 // Declarations, name conflicts, and type formation.
 
@@ -790,11 +1515,11 @@ func Use(value &copy Base) {
 | `-CompoundStmt {{address}} <col:35, col:37>
 |-StructDecl {{address:base}} <line:3:1, line:8:2> Base abstract
 | `-VirtualDecl {{address}} <line:4:3, line:7:4>
-|   |-VirtualFunctionDecl {{address:draw_interface}} <line:5:5, col:32> Draw 'func (&copy Base) void' definition Function {{address:draw_definition}} 'Draw' 'func (&copy Base) void'
+|   |-VirtualFunctionDecl {{address:draw_interface}} <line:5:5, col:32> Draw 'func (&copy Base) void' implementation Function {{address:draw_definition}} 'Draw' 'func (&copy Base) void'
 |   | `-ParmVarDecl {{address}} <col:15, col:30> this '&copy Base'
 |   |   `-ReferenceType {{address}} <col:20, col:30> '&copy'
 |   |     `-NamedType {{address}} <col:26, col:30> 'Base'
-|   `-VirtualFunctionDecl {{address:measure_interface}} <line:6:5, col:48> Measure 'func (&copy Base) void' abstract definition Function {{address:measure_definition}} 'Measure' 'func (&copy Base) void'
+|   `-VirtualFunctionDecl {{address:measure_interface}} <line:6:5, col:48> Measure 'func (&copy Base) void' abstract implementation Function {{address:measure_definition}} 'Measure' 'func (&copy Base) void'
 |     `-ParmVarDecl {{address}} <col:27, col:46> receiver '&copy Base'
 |       `-ReferenceType {{address}} <col:36, col:46> '&copy'
 |         `-NamedType {{address}} <col:42, col:46> 'Base'
@@ -983,7 +1708,7 @@ ctor S() {}
 dtor S() {})");
 
   ExpectError(3, 25,
-              "return type 'u32' of matching function definition does not match return type 'i32' of virtual function "
+              "return type 'u32' of matching function declaration does not match return type 'i32' of virtual function "
               "'Value'",
               3);
   ExpectNote(1, 17, "virtual function is declared here", 5);
@@ -1276,7 +2001,7 @@ ctor SpecialFactory() { this.Factory := Factory(); }
 dtor SpecialFactory() {})");
 
   ExpectError(8, 55,
-              "return type '*Product' of matching function definition does not match return type "
+              "return type '*Product' of matching function declaration does not match return type "
               "'*SpecialProduct' of virtual function 'Create'",
               8);
   ExpectNote(6, 26, "virtual function is declared here", 6);
@@ -7383,6 +8108,31 @@ func Make() i32 { 7 })");
         `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' 7)");
 }
 
+TEST_F(SemaTest, AnalyzesDeclarationsWithoutPackageClause) {
+  Analyze(R"(var first := Make();
+var second i64 := first;
+func Make() i32 { 7 })");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+|-VarGroupDecl {{address}} <test.cw:1:1, col:21>
+| |-VarDecl {{address:first}} <col:5, col:10> first 'i32'
+| `-CallExpr {{address}} <col:14, col:20> 'i32' pure-rvalue
+|   `-DeclRefExpr {{address}} <col:14, col:18> 'func () i32' Function {{address:make}} 'Make' 'func () i32'
+|-VarGroupDecl {{address}} <line:2:1, col:25>
+| |-VarDecl {{address}} <col:5, col:15> second 'i64'
+| | `-BuiltinType {{address}} <col:12, col:15> 'i64'
+| `-ImplicitCastExpr {{address}} <col:19, col:24> 'i64' pure-rvalue <IntegerToInteger>
+|   `-ImplicitCastExpr {{address}} <col:19, col:24> 'i32' pure-rvalue <LValueToRValue>
+|     `-DeclRefExpr {{address}} <col:19, col:24> 'i32' lvalue Var {{address:first}} 'first' 'i32'
+`-FunctionDecl {{address:make}} <line:3:1, col:22> Make 'func () i32'
+  |-ReturnVarDecl {{address:result}} <col:13, col:16> 'i32'
+  | `-BuiltinType {{address}} <col:13, col:16> 'i32'
+  `-CompoundStmt {{address}} <col:17, col:22>
+    `-ImplicitResultInitializationExpr {{address}} <col:19, col:20> 'void' ReturnVar {{address:result}} 'i32'
+      `-ImplicitCastExpr {{address}} <col:19, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+        `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' 7)");
+}
+
 TEST_F(SemaTest, KeepsGlobalExplicitAndInferredTypesIndependentInBothOrders) {
   Analyze(R"(var a, b i64 := 1, 2;
 var c bool, d := true, 3;)");
@@ -8873,6 +9623,108 @@ func Invoke(condition bool) {
   ExpectError(8, 52, "use of uninitialized variable 'first'", 5);
 }
 
+// Exported declarations.
+
+TEST_F(SemaTest, AcceptsExportedDeclarationsWithVisibleInterfaces) {
+  Analyze(R"(export trivial struct Point {
+  x i32;
+  y i32;
+}
+export struct Shape {
+  virtual {
+    func Area(this &copy Shape, scale *const [2] Point) i32;
+  }
+  origin Point;
+  next *Shape;
+}
+export struct Square : Shape {
+  virtual {
+    override func Area(this &copy Square, scale *const [2] Point) i32;
+  }
+}
+func Area(this &copy Shape, scale *const [2] Point) i32 { 0 }
+func Area(this &copy Square, scale *const [2] Point) i32 { 1 }
+export ctor Shape(origin Point) {
+  this.origin := origin;
+  this.next := null;
+}
+export dtor Shape() {}
+export ctor Square() { this.Shape := Shape(Point()); }
+export dtor Square() {}
+export func Visit(shape &mut Shape, callback *func (&copy Point) void,
+                  slot virtual *func (&copy Shape, *const [2] Point) i32) i32 { 0 }
+export func operator+(left &copy Point, right &copy Point) Point { Point() }
+trivial struct Hidden {}
+func Internal(value Hidden) Hidden { value }
+export func UsesHiddenInBody() i32 {
+  var hidden := Internal(Hidden());
+  0
+})");
+}
+
+TEST_F(SemaTest, RejectsNonExportedStructsInEachExportedInterfacePosition) {
+  Analyze(R"(trivial struct Hidden {}
+struct Private {}
+export func Param(value *Hidden) {}
+export func Return() *Hidden { null }
+export trivial struct Holder {
+  value [2] Hidden;
+}
+export trivial struct Derived : Hidden {}
+export struct Widget {
+  virtual {
+    abstract func Take(this &copy Widget, value &copy Hidden);
+    abstract func Give(this &copy Widget) *Hidden;
+  }
+}
+export ctor Widget() {}
+export dtor Widget() {}
+export ctor Private() {}
+export dtor Private() {})");
+
+  ExpectError(2, 24, "exported declaration uses non-exported struct 'Hidden'", 7);
+  ExpectError(3, 21, "exported declaration uses non-exported struct 'Hidden'", 7);
+  ExpectError(5, 8, "exported declaration uses non-exported struct 'Hidden'", 10);
+  ExpectError(7, 32, "exported declaration uses non-exported struct 'Hidden'", 6);
+  ExpectError(10, 48, "exported declaration uses non-exported struct 'Hidden'", 12);
+  ExpectError(11, 42, "exported declaration uses non-exported struct 'Hidden'", 7);
+  ExpectError(16, 12, "exported declaration uses non-exported struct 'Private'", 7);
+  ExpectError(17, 12, "exported declaration uses non-exported struct 'Private'", 7);
+}
+
+TEST_F(SemaTest, ChecksIndirectTypesOncePerPositionWithoutCascading) {
+  Analyze(R"(trivial struct Hidden {}
+export func Const(value *const Hidden) {}
+export func Callback(callback *func (i32) *Hidden) {}
+export func Slot(slot &copy [1] virtual *func (&copy Hidden) void) {}
+export func Twice(callback *func (*Hidden) *Hidden, other *Hidden) {}
+export func Unknown(value *Missing) {}
+export struct Lonely {}
+export ctor Lonely() {})");
+
+  ExpectError(6, 0, "non-trivial struct 'Lonely' requires exactly one destructor", 23);
+  ExpectError(5, 27, "unknown type 'Missing'", 7);
+  ExpectError(1, 24, "exported declaration uses non-exported struct 'Hidden'", 13);
+  ExpectError(2, 30, "exported declaration uses non-exported struct 'Hidden'", 19);
+  ExpectError(3, 22, "exported declaration uses non-exported struct 'Hidden'", 43);
+  ExpectError(4, 27, "exported declaration uses non-exported struct 'Hidden'", 23);
+  ExpectError(4, 58, "exported declaration uses non-exported struct 'Hidden'", 7);
+}
+
+TEST_F(SemaTest, RequiresExportedDestructorsAndRejectsExportedGlobals) {
+  Analyze(R"(export struct Counter {
+  value i32;
+}
+export ctor Counter(value i32) {
+  this.value := value;
+}
+dtor Counter() {}
+export var counter i32 := 0;)");
+
+  ExpectError(6, 5, "destructor of exported non-trivial struct 'Counter' must be exported", 7);
+  ExpectError(7, 0, "global variables cannot be exported", 6);
+}
+
 // Cross-stage error suppression and diagnostic ordering.
 
 TEST_F(SemaTest, ChecksIndependentVirtualFunctionRulesAfterStructTypeErrors) {
@@ -8936,7 +9788,7 @@ func value() {})");
       0, 13,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
       "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-      "'-', '--', '~', '!', '(', '['",
+      "'-', '--', '~', '!', '::', '(', '['",
       1);
   ExpectError(0, 4, "declaration of variable 'value' conflicts with function declaration", 0);
   ExpectNote(1, 5, "conflicting declaration is here", 0);
@@ -8995,10 +9847,188 @@ field **MissingField;
 TEST_F(SemaTest, SuppressesSemanticDiagnosticsForIncompleteTypeSyntax) {
   Analyze("func f() * {}");
 
-  ExpectError(0, 11, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier", 1);
+  ExpectError(0, 11, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'", 1);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-FunctionDecl {{address}} <test.cw:1:1, col:14> f contains-errors
   |-ReturnVarDecl {{address}} <col:10, col:11> contains-errors
   | `-PointerType {{address}} <col:10, col:11> contains-errors
   `-CompoundStmt {{address}} <col:12, col:14>)");
+}
+
+TEST_F(SemaTest, AcceptsImportedFactoryTypeWithoutPublicConstructors) {
+  Analyze(R"(import struct Box { value i32; }
+import dtor Box();
+import func Make() Box;
+var global := Make();
+func Use() { var local := Make(); }
+)");
+}
+
+TEST_F(SemaTest, AcceptsImportsUsingLocalTypesAndExportsUsingImportedTypes) {
+  Analyze(R"(trivial struct Private { value i32; }
+import trivial struct Public { value i32; }
+import func Inspect(value &copy Private);
+export func Forward(value &copy Public) i32 { value.value }
+func Local(value &copy Private) { Inspect(value); }
+)");
+}
+
+TEST_F(SemaTest, AcceptsMixedLocalAndImportedOverloads) {
+  Analyze(R"(import func Read(value i64) i64;
+func Read(value i32) i32 { value }
+func Use(a i32, b i64) { Read(a); Read(b); }
+)");
+}
+
+TEST_F(SemaTest, ResolvesImportedLifecycleAcrossInputOrder) {
+  Analyze(
+      std::vector<cw::Source>{{"operations.cwi", "namespace api { import ctor Box(value i32); import dtor Box(); }"},
+                              {"consumer.cw", "func Use() { var box := api::Box(3); }"},
+                              {"types.cwi", "namespace api { import struct Box { value i32; } }"}});
+}
+
+TEST_F(SemaTest, AcceptsVirtualCallsWithoutOrdinaryImportAndExplicitNonvirtualWithImport) {
+  Analyze(R"(import struct Base { virtual { func Hidden(this &copy Base); func Visible(this &copy Base); } }
+import dtor Base();
+import func Visible(this &copy Base);
+func Use(value &copy Base) { value.Hidden(); value.Visible(); value.nonvirtual Visible(); }
+)");
+}
+
+TEST_F(SemaTest, RejectsNonvirtualCallWithoutOrdinaryImport) {
+  Analyze(R"(import struct Base { virtual { func Hidden(this &copy Base); } }
+import dtor Base();
+func Use(value &copy Base) { value.nonvirtual Hidden(); }
+)");
+  ExpectError(2, 29, "no matching receiver function for nonvirtual call to 'Hidden'", 25);
+}
+
+TEST_F(SemaTest, RequiresDestructorOnImportedNontrivialType) {
+  Analyze("import struct Box {}");
+  ExpectError(0, 0, "non-trivial struct 'Box' requires exactly one destructor", 20);
+}
+
+TEST_F(SemaTest, RejectsLocalConstructorForImportedType) {
+  Analyze(R"(import struct Box {}
+import dtor Box();
+ctor Box() {})");
+  ExpectError(2, 5, "operation for imported struct 'Box' must be imported", 3);
+}
+
+TEST_F(SemaTest, RejectsImportedConstructorForLocalType) {
+  Analyze(R"(struct Box {}
+import ctor Box();
+dtor Box() {})");
+  ExpectError(1, 12, "operation for local struct 'Box' cannot be imported", 3);
+}
+
+TEST_F(SemaTest, RejectsLocalDestructorForImportedType) {
+  Analyze(R"(import struct Box {}
+dtor Box() {})");
+  ExpectError(1, 5, "operation for imported struct 'Box' must be imported", 3);
+}
+
+TEST_F(SemaTest, RejectsImportedDestructorForLocalType) {
+  Analyze(R"(struct Box {}
+ctor Box() {}
+import dtor Box();)");
+  ExpectError(2, 12, "operation for local struct 'Box' cannot be imported", 3);
+}
+
+TEST_F(SemaTest, RejectsLocalVirtualImplementationForImportedType) {
+  Analyze(R"(import struct Base { virtual { func Read(this &copy Base) i32; } }
+import dtor Base();
+func Read(this &copy Base) i32 { 1 }
+)");
+  ExpectError(2, 5, "operation for imported struct 'Base' must be imported", 4);
+}
+
+TEST_F(SemaTest, RejectsImportedVirtualImplementationForLocalType) {
+  Analyze(R"(struct Base { virtual { func Read(this &copy Base) i32; } }
+ctor Base() {}
+dtor Base() {}
+import func Read(this &copy Base) i32;
+)");
+  ExpectError(3, 12, "operation for local struct 'Base' cannot be imported", 4);
+}
+
+TEST_F(SemaTest, RejectsImportedGlobalVariable) {
+  Analyze("import var value i32 := 0;");
+  ExpectError(0, 0, "global variables cannot be imported", 6);
+}
+
+TEST_F(SemaTest, RejectsDuplicateImportsRegardlessOfReturnTypeOrParameterName) {
+  Analyze(R"(import func Read(value i32) i32;
+import func Read(other i32) u32;
+)");
+  ExpectError(1, 12, "redefinition of function 'Read'", 0);
+  ExpectNote(0, 12, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, RejectsLocalDefinitionOfImportedFunction) {
+  Analyze(R"(import func Read(value i32) i32;
+func Read(other i32) i32 { other }
+)");
+  ExpectError(1, 5, "redefinition of function 'Read'", 0);
+  ExpectNote(0, 12, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, RejectsImportOfLocalFunction) {
+  Analyze(R"(func Read(value i32) i32 { value }
+import func Read(other i32) i32;
+)");
+  ExpectError(1, 12, "redefinition of function 'Read'", 0);
+  ExpectNote(0, 5, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, RejectsDuplicateImportedTypes) {
+  Analyze(R"(import trivial struct Item {}
+import trivial struct Item {}
+)");
+  ExpectError(1, 22, "redefinition of type 'Item'", 0);
+  ExpectNote(0, 22, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, RejectsLocalAssignmentForImportedType) {
+  Analyze(R"(import struct Box {}
+import dtor Box();
+func operator=(this &mut Box, source &copy Box) {}
+)");
+  ExpectError(2, 5, "operation for imported struct 'Box' must be imported", 9);
+}
+
+TEST_F(SemaTest, RejectsImportedAssignmentForLocalType) {
+  Analyze(R"(struct Box {}
+ctor Box() {}
+dtor Box() {}
+import func operator=(this &mut Box, source &move Box);
+)");
+  ExpectError(3, 12, "operation for local struct 'Box' cannot be imported", 9);
+}
+
+TEST_F(SemaTest, ChecksReturnTypeOfImportedVirtualImplementation) {
+  Analyze(R"(import struct Base { virtual { func Read(this &copy Base) i32; } }
+import dtor Base();
+import func Read(this &copy Base) u32;
+)");
+  ExpectError(
+      2, 34,
+      "return type 'u32' of matching function declaration does not match return type 'i32' of virtual function 'Read'",
+      3);
+  ExpectNote(0, 36, "virtual function is declared here", 4);
+}
+
+TEST_F(SemaTest, ChecksLayoutsOfImportedTypes) {
+  Analyze(R"(import struct Box { self Box; }
+import dtor Box();
+)");
+  ExpectError(0, 25, "by-value object containment cycle involving struct 'Box'", 3);
+}
+
+TEST_F(SemaTest, KeepsPrivateOperationsOfExportedTypeLocal) {
+  Analyze(R"(export struct Box {}
+ctor Box() {}
+export dtor Box() {}
+func Use() { var value := Box(); }
+)");
 }

@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string_view>
 
 #include <llvm/TargetParser/Triple.h>
 
@@ -19,12 +20,17 @@ class TargetInfo {
  public:
   /// \brief Selects the supported native target without creating a target machine.
   static std::optional<TargetInfo> CreateNative();
+  /// \brief Selects a supported target from its normalized LLVM triple.
+  static std::optional<TargetInfo> Create(std::string_view triple);
 
   const llvm::Triple& GetTriple() const { return triple_; }
-  unsigned GetPointerBitWidth() const { return 64; }
+  bool IsWasm32() const { return triple_.getArch() == llvm::Triple::wasm32; }
+  unsigned GetPointerBitWidth() const { return IsWasm32() ? 32 : 64; }
   std::uint64_t GetScalarAlignment(unsigned storage_bits) const;
-  std::uint64_t GetPointerAlignment() const { return 8; }
-  std::uint64_t GetMaxObjectSize() const { return (std::uint64_t{1} << 61) - 1; }
+  std::uint64_t GetPointerAlignment() const { return IsWasm32() ? 4 : 8; }
+  std::uint64_t GetMaxObjectSize() const {
+    return IsWasm32() ? (std::uint64_t{1} << 32) - 1 : (std::uint64_t{1} << 61) - 1;
+  }
 
  private:
   explicit TargetInfo(llvm::Triple triple);

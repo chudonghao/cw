@@ -1,7 +1,7 @@
 %struct.Padded = type { i8, i32, i8 }
 %struct.Defaults = type { i16, i8, float, double, ptr, ptr, [2 x i32] }
 
-define noundef zeroext i1 @Fields(i32 noundef %number, i1 noundef zeroext %enabled) {
+define noundef zeroext i1 @"cw:Fields:func(i32,bool)bool"(i32 noundef %number, i1 noundef zeroext %enabled) {
 entry:
   %.result = alloca i8, align 1
   %number.addr = alloca i32, align 4
@@ -30,7 +30,7 @@ entry:
   ret i1 %loadedv7
 }
 
-define noundef ptr @Default() {
+define noundef ptr @"cw:Default:func()*i32"() {
 entry:
   %.result = alloca ptr, align 8
   %value = alloca %struct.Defaults, align 8

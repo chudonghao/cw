@@ -39,7 +39,9 @@ add_library(
   SemaConstant.h SemaConstant.cpp
   SemaConversion.h SemaConversion.cpp
   SemaOverload.h SemaOverload.cpp
-  Symbol.h Symbol.cpp
+  NameSyntax.h NameLookup.h NameLookup.cpp
+  NamespaceContext.h NamespaceContext.cpp
+  GlobalInitLookup.h
   SymbolTable.h SymbolTable.cpp
   ASTContext.h ASTContext.cpp
   TargetInfo.h TargetInfo.cpp
@@ -55,6 +57,8 @@ add_library(
   ASTDumper.h ASTDumper.cpp
   CodeGen.h CodeGen.cpp
   CodeGenFunction.h CodeGenFunction.cpp
+  Backend.h Backend.cpp
+  Interface.h Interface.cpp
 )
 target_link_libraries(cw PUBLIC cw.lang LLVM PRIVATE fmt::fmt Boost::charconv)
 target_include_directories(cw PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../ ${CMAKE_CURRENT_BINARY_DIR})

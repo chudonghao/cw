@@ -3,7 +3,7 @@
 %struct.Derived = type { %struct.Base.base, i8, [2 x i8] }
 %struct.Base.base = type <{ %struct.Root, i8 }>
 
-define i64 @Make(i32 noundef %seed) {
+define i64 @"cw:Make:func(i32)Base"(i32 noundef %seed) {
 entry:
   %.result = alloca %struct.Base, align 4
   %seed.addr = alloca i32, align 4
@@ -19,7 +19,7 @@ entry:
   ret i64 %1
 }
 
-define i64 @Form(i32 noundef %seed) {
+define i64 @"cw:Form:func(i32)Derived"(i32 noundef %seed) {
 entry:
   %.result = alloca %struct.Derived, align 4
   %seed.addr = alloca i32, align 4
@@ -27,7 +27,7 @@ entry:
   %temporary = alloca %struct.Base, align 4
   store i32 %seed, ptr %seed.addr, align 4
   %0 = load i32, ptr %seed.addr, align 4
-  %call = call i64 @Make(i32 noundef %0)
+  %call = call i64 @"cw:Make:func(i32)Base"(i32 noundef %0)
   store i64 %call, ptr %temporary, align 4
   call void @llvm.memcpy.p0.p0.i64(ptr align 4 %value, ptr align 4 %temporary, i64 5, i1 false)
   %own = getelementptr inbounds nuw %struct.Derived, ptr %value, i32 0, i32 1
@@ -37,7 +37,7 @@ entry:
   ret i64 %1
 }
 
-define noundef zeroext i8 @Assign(ptr noundef nonnull align 4 dereferenceable(6) %target, ptr noundef nonnull align 4 dereferenceable(5) %source) {
+define noundef zeroext i8 @"cw:Assign:func(&mut Derived,&copy Base)u8"(ptr noundef nonnull align 4 dereferenceable(6) %target, ptr noundef nonnull align 4 dereferenceable(5) %source) {
 entry:
   %.result = alloca i8, align 1
   %target.addr = alloca ptr, align 8
@@ -58,7 +58,7 @@ entry:
   ret i8 %5
 }
 
-define [2 x i64] @Copy(ptr noundef nonnull align 4 dereferenceable(16) %source) {
+define [2 x i64] @"cw:Copy:func(&copy [2]Derived)[2]Derived"(ptr noundef nonnull align 4 dereferenceable(16) %source) {
 entry:
   %.result = alloca [2 x %struct.Derived], align 4
   %source.addr = alloca ptr, align 8
@@ -69,7 +69,7 @@ entry:
   ret [2 x i64] %1
 }
 
-define i64 @Default() {
+define i64 @"cw:Default:func()Derived"() {
 entry:
   %.result = alloca %struct.Derived, align 4
   %value = alloca %struct.Derived, align 4

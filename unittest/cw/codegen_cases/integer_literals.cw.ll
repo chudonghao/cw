@@ -1,4 +1,4 @@
-define noundef i64 @SignedLiteral() {
+define noundef i64 @"cw:SignedLiteral:func()i64"() {
 entry:
   %.result = alloca i64, align 8
   store i64 2147483648, ptr %.result, align 8
@@ -6,7 +6,7 @@ entry:
   ret i64 %0
 }
 
-define noundef i64 @UnsignedLiteral() {
+define noundef i64 @"cw:UnsignedLiteral:func()u64"() {
 entry:
   %.result = alloca i64, align 8
   store i64 -1, ptr %.result, align 8
@@ -14,7 +14,7 @@ entry:
   ret i64 %0
 }
 
-define noundef i64 @MinimumLiteral() {
+define noundef i64 @"cw:MinimumLiteral:func()i64"() {
 entry:
   %.result = alloca i64, align 8
   store i64 -9223372036854775808, ptr %.result, align 8
@@ -22,7 +22,7 @@ entry:
   ret i64 %0
 }
 
-define noundef zeroext i16 @CharacterValue() {
+define noundef zeroext i16 @"cw:CharacterValue:func()u16"() {
 entry:
   %.result = alloca i16, align 2
   store i16 255, ptr %.result, align 2
@@ -30,7 +30,7 @@ entry:
   ret i16 %0
 }
 
-define noundef zeroext i8 @CharacterArithmetic() {
+define noundef zeroext i8 @"cw:CharacterArithmetic:func()u8"() {
 entry:
   %.result = alloca i8, align 1
   store i8 0, ptr %.result, align 1
@@ -38,7 +38,7 @@ entry:
   ret i8 %0
 }
 
-define noundef zeroext i8 @TruncatedLiteral() {
+define noundef zeroext i8 @"cw:TruncatedLiteral:func()u8"() {
 entry:
   %.result = alloca i8, align 1
   store i8 1, ptr %.result, align 1
@@ -46,7 +46,7 @@ entry:
   ret i8 %0
 }
 
-define noundef i64 @NegativeUnsignedLiteral() {
+define noundef i64 @"cw:NegativeUnsignedLiteral:func()u64"() {
 entry:
   %.result = alloca i64, align 8
   store i64 -1, ptr %.result, align 8
@@ -54,7 +54,7 @@ entry:
   ret i64 %0
 }
 
-define noundef i64 @InferredLiteral() {
+define noundef i64 @"cw:InferredLiteral:func()u64"() {
 entry:
   %.result = alloca i64, align 8
   %value = alloca i64, align 8

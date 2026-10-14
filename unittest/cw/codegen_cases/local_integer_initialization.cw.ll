@@ -1,4 +1,4 @@
-define noundef i32 @IntegerCopy() {
+define noundef i32 @"cw:IntegerCopy:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %source = alloca i32, align 4
@@ -13,7 +13,7 @@ entry:
   ret i32 %2
 }
 
-define noundef i32 @NegativeInteger() {
+define noundef i32 @"cw:NegativeInteger:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   store i32 -1, ptr %.result, align 4

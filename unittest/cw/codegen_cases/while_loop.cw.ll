@@ -1,4 +1,4 @@
-define noundef zeroext i1 @Tick(ptr noundef nonnull align 1 dereferenceable(1) %flag) {
+define noundef zeroext i1 @"cw:Tick:func(&mut bool)bool"(ptr noundef nonnull align 1 dereferenceable(1) %flag) {
 entry:
   %.result = alloca i8, align 1
   %flag.addr = alloca ptr, align 8
@@ -20,7 +20,7 @@ entry:
   ret i1 %loadedv3
 }
 
-define noundef i32 @WhileLoop(ptr noundef nonnull align 1 dereferenceable(1) %flag, i1 noundef zeroext %skip, i1 noundef zeroext %leave) {
+define noundef i32 @"cw:WhileLoop:func(&mut bool,bool,bool)i32"(ptr noundef nonnull align 1 dereferenceable(1) %flag, i1 noundef zeroext %skip, i1 noundef zeroext %leave) {
 entry:
   %.result = alloca i32, align 4
   %flag.addr = alloca ptr, align 8
@@ -37,7 +37,7 @@ entry:
 
 while.cond:                                       ; preds = %if.end3, %if.then2, %entry
   %0 = load ptr, ptr %flag.addr, align 8
-  %call = call noundef zeroext i1 @Tick(ptr noundef nonnull align 1 dereferenceable(1) %0)
+  %call = call noundef zeroext i1 @"cw:Tick:func(&mut bool)bool"(ptr noundef nonnull align 1 dereferenceable(1) %0)
   br i1 %call, label %while.body, label %while.end
 
 while.body:                                       ; preds = %while.cond
@@ -68,7 +68,7 @@ while.end:                                        ; preds = %if.then, %while.con
   ret i32 %4
 }
 
-define noundef i32 @NestedLoops(i1 noundef zeroext %outer, i1 noundef zeroext %inner, i1 noundef zeroext %stop, i1 noundef zeroext %finish) {
+define noundef i32 @"cw:NestedLoops:func(bool,bool,bool,bool)i32"(i1 noundef zeroext %outer, i1 noundef zeroext %inner, i1 noundef zeroext %stop, i1 noundef zeroext %finish) {
 entry:
   %.result = alloca i32, align 4
   %outer.addr = alloca i8, align 1

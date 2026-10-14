@@ -8,10 +8,23 @@
 #include <boost/assert.hpp>
 
 #include "ASTVisitor.h"
+#include "NamespaceContext.h"
 
 namespace cw {
 
 namespace {
+
+template <typename Declaration>
+void CollectFlattenedDecls(const std::vector<std::unique_ptr<Decl>>& declarations, std::vector<Declaration*>& result) {
+  for (const auto& declaration : declarations) {
+    if (!declaration) continue;
+    if (declaration->GetKind() == NodeKind::NamespaceDecl) {
+      CollectFlattenedDecls(static_cast<const NamespaceDecl&>(*declaration).Decls, result);
+    } else {
+      result.push_back(declaration.get());
+    }
+  }
+}
 
 const StructType* GetElementStruct(const Type& type) {
   const Type* element = &type;
@@ -274,6 +287,29 @@ void TranslationUnitDecl::Traverse(ASTVisitor& visitor) {
       Decl->Accept(visitor);
     }
   }
+}
+
+std::string NamedDecl::QualifiedName() const {
+  return !owning_namespace || owning_namespace->IsRoot() ? name : owning_namespace->QualifiedName() + "::" + name;
+}
+
+void NamespaceDecl::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+void NamespaceDecl::Traverse(ASTVisitor& visitor) {
+  for (const auto& declaration : Decls) {
+    if (declaration) declaration->Accept(visitor);
+  }
+}
+
+std::vector<Decl*> TranslationUnitDecl::FlattenedDecls() {
+  std::vector<Decl*> result;
+  CollectFlattenedDecls(Decls, result);
+  return result;
+}
+
+std::vector<const Decl*> TranslationUnitDecl::FlattenedDecls() const {
+  std::vector<const Decl*> result;
+  CollectFlattenedDecls(Decls, result);
+  return result;
 }
 
 void VirtualDecl::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }

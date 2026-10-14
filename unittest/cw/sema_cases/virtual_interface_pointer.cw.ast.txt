@@ -1,7 +1,7 @@
 TranslationUnitDecl {{address}}
 |-StructDecl {{address:target}} <virtual_interface_pointer.cw:1:1, line:5:2> VirtualInterfacePointerTarget abstract
 | `-VirtualDecl {{address}} <line:2:3, line:4:4>
-|   `-VirtualFunctionDecl {{address:draw_interface}} <line:3:5, col:81> Draw 'func (&copy VirtualInterfacePointerTarget, i32) i32' abstract definition Function {{address:draw_definition}} 'Draw' 'func (&copy VirtualInterfacePointerTarget, i32) i32'
+|   `-VirtualFunctionDecl {{address:draw_interface}} <line:3:5, col:81> Draw 'func (&copy VirtualInterfacePointerTarget, i32) i32' abstract implementation Function {{address:draw_definition}} 'Draw' 'func (&copy VirtualInterfacePointerTarget, i32) i32'
 |     |-ParmVarDecl {{address}} <col:24, col:64> this '&copy VirtualInterfacePointerTarget'
 |     | `-ReferenceType {{address}} <col:29, col:64> '&copy'
 |     |   `-NamedType {{address}} <col:35, col:64> 'VirtualInterfacePointerTarget'

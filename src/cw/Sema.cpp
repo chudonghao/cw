@@ -24,10 +24,14 @@
 
 #include <fmt/format.h>
 
+#include <llvm/Support/SaveAndRestore.h>
+
 #include "ASTContext.h"
 #include "ASTVisitor.h"
 #include "CFGBuilder.h"
 #include "DefiniteInitialization.h"
+#include "GlobalInitLookup.h"
+#include "NamespaceContext.h"
 #include "SemaConstant.h"
 #include "SemaConversion.h"
 #include "SemaOverload.h"
@@ -63,11 +67,10 @@ using CompletedArguments = std::variant<std::vector<ConversionSequence>, Argumen
 
 CompletedArguments CompleteArguments(const std::vector<ConversionSource>& sources,
                                      const std::vector<const Type*>& parameter_types,
-                                     std::vector<ConversionSequence> conversions, const SymbolTable& symbol_table) {
+                                     std::vector<ConversionSequence> conversions) {
   BOOST_ASSERT(sources.size() == parameter_types.size() && sources.size() == conversions.size());
   for (std::size_t index = 0; index < sources.size(); ++index) {
-    if (auto failure =
-            CompleteConversion(sources[index], QualType(parameter_types[index]), conversions[index], symbol_table)) {
+    if (auto failure = CompleteConversion(sources[index], QualType(parameter_types[index]), conversions[index])) {
       return ArgumentCompletionFailure{index, failure->failure};
     }
   }
@@ -75,8 +78,8 @@ CompletedArguments CompleteArguments(const std::vector<ConversionSource>& source
 }
 
 CompletedArguments CompleteArguments(const std::vector<ConversionSource>& sources, const FunctionDecl& declaration,
-                                     std::vector<ConversionSequence> conversions, const SymbolTable& symbol_table) {
-  return CompleteArguments(sources, FunctionParameterTypes(declaration), std::move(conversions), symbol_table);
+                                     std::vector<ConversionSequence> conversions) {
+  return CompleteArguments(sources, FunctionParameterTypes(declaration), std::move(conversions));
 }
 
 std::vector<std::unique_ptr<Expr>*> ExpressionSlots(std::vector<std::unique_ptr<Expr>>& expressions) {
@@ -100,37 +103,57 @@ const FunctionType* IndirectFunctionType(QualType type) {
   return pointee ? pointee.GetTypePtr()->AsFunctionType() : nullptr;
 }
 
-const char* SymbolDescription(const Symbol& symbol) {
-  switch (symbol.GetKind()) {
-    case SymbolKind::Type:
-      return "type";
-    case SymbolKind::Variable:
-      return "variable";
-    case SymbolKind::Function:
-      return "function";
-  }
-  BOOST_ASSERT(false && "unsupported symbol kind");
+const char* BindingDescription(const LookupResult& result) {
+  if (result.GetNamespace()) return "namespace";
+  if (result.GetType()) return "type";
+  if (result.GetVariable()) return "variable";
+  if (result.GetFunctions()) return "function";
+  BOOST_ASSERT(false && "expected a bound name");
   return "";
 }
 
-TypeSymbol* AsTypeSymbol(Symbol* symbol) {
-  return symbol && symbol->GetKind() == SymbolKind::Type ? static_cast<TypeSymbol*>(symbol) : nullptr;
+template <typename T>
+std::pair<T*, bool> BindUniqueOperation(T*& slot, T* declaration) {
+  BOOST_ASSERT(declaration);
+  if (slot) return {slot, false};
+  slot = declaration;
+  return {slot, true};
 }
 
-const TypeSymbol* AsTypeSymbol(const Symbol* symbol) {
-  return symbol && symbol->GetKind() == SymbolKind::Type ? static_cast<const TypeSymbol*>(symbol) : nullptr;
+/// \brief Returns the first struct, in source order, that \p type uses as a local internal type.
+const StructDecl* FindInternalStruct(const Type* type) {
+  if (!type) {
+    return nullptr;
+  }
+  switch (type->GetKind()) {
+    case TypeKind::Struct: {
+      const StructDecl* structure = static_cast<const StructType*>(type)->GetDeclaration();
+      return structure && structure->modifier == DeclModifier::None ? structure : nullptr;
+    }
+    case TypeKind::Array:
+      return FindInternalStruct(static_cast<const ArrayType*>(type)->GetElementType().GetTypePtr());
+    case TypeKind::Pointer:
+      return FindInternalStruct(static_cast<const PointerType*>(type)->GetPointee().GetTypePtr());
+    case TypeKind::VirtualSlot:
+      return FindInternalStruct(static_cast<const VirtualSlotType*>(type)->GetEntryPointerType());
+    case TypeKind::Function: {
+      const auto* function = static_cast<const FunctionType*>(type);
+      for (const Type* parameter : function->GetParameterTypes()) {
+        if (const StructDecl* structure = FindInternalStruct(parameter)) {
+          return structure;
+        }
+      }
+      return FindInternalStruct(function->GetReturnType());
+    }
+    case TypeKind::Reference:
+      return FindInternalStruct(static_cast<const ReferenceType*>(type)->GetReferentType());
+    default:
+      return nullptr;
+  }
 }
 
-const VariableSymbol* AsVariableSymbol(const Symbol* symbol) {
-  return symbol && symbol->GetKind() == SymbolKind::Variable ? static_cast<const VariableSymbol*>(symbol) : nullptr;
-}
-
-FunctionSymbol* AsFunctionSymbol(Symbol* symbol) {
-  return symbol && symbol->GetKind() == SymbolKind::Function ? static_cast<FunctionSymbol*>(symbol) : nullptr;
-}
-
-const FunctionSymbol* AsFunctionSymbol(const Symbol* symbol) {
-  return symbol && symbol->GetKind() == SymbolKind::Function ? static_cast<const FunctionSymbol*>(symbol) : nullptr;
+std::string NonExportedStructMessage(const StructDecl& structure) {
+  return fmt::format("exported declaration uses non-exported struct '{}'", structure.QualifiedName());
 }
 
 SourceRange NamedDeclarationRange(const NamedDecl& declaration) {
@@ -138,19 +161,17 @@ SourceRange NamedDeclarationRange(const NamedDecl& declaration) {
                                           : SourceRange{declaration.range.begin, declaration.range.begin};
 }
 
-SourceRange SymbolDeclarationRange(const Symbol& symbol) {
-  switch (symbol.GetKind()) {
-    case SymbolKind::Type:
-      return NamedDeclarationRange(*static_cast<const TypeSymbol&>(symbol).GetDeclaration());
-    case SymbolKind::Variable:
-      return NamedDeclarationRange(*static_cast<const VariableSymbol&>(symbol).GetDeclaration());
-    case SymbolKind::Function: {
-      const auto& declarations = static_cast<const FunctionSymbol&>(symbol).Declarations();
-      BOOST_ASSERT(!declarations.empty());
-      return NamedDeclarationRange(*declarations.front());
-    }
+SourceRange BindingDeclarationRange(const LookupResult& result) {
+  if (const auto* scope = result.GetNamespace()) {
+    return scope->GetDeclarations().empty() ? SourceRange{} : NamedDeclarationRange(*scope->GetDeclarations().front());
   }
-  BOOST_ASSERT(false && "unsupported symbol kind");
+  if (const auto* declaration = result.GetType()) return NamedDeclarationRange(*declaration);
+  if (const auto* declaration = result.GetVariable()) return NamedDeclarationRange(*declaration);
+  if (const auto* functions = result.GetFunctions()) {
+    BOOST_ASSERT(!functions->empty());
+    return NamedDeclarationRange(*functions->front());
+  }
+  BOOST_ASSERT(false && "expected a bound name");
   return {};
 }
 
@@ -262,10 +283,11 @@ bool HasValidFunctionInterface(const FunctionDecl& declaration) {
     case NodeKind::VirtualFunctionDecl:
       return !declaration.name.empty();
     case NodeKind::ConstructorDecl:
-      return static_cast<const ConstructorDecl&>(declaration).target_type && declaration.Body;
+      return static_cast<const ConstructorDecl&>(declaration).target_type &&
+             (declaration.Body || declaration.modifier == DeclModifier::Import);
     case NodeKind::DestructorDecl:
-      return static_cast<const DestructorDecl&>(declaration).target_type && declaration.Body &&
-             declaration.ParmVars.empty();
+      return static_cast<const DestructorDecl&>(declaration).target_type &&
+             (declaration.Body || declaration.modifier == DeclModifier::Import) && declaration.ParmVars.empty();
     default:
       return false;
   }
@@ -654,11 +676,11 @@ enum class CallCandidateMode {
   NonVirtual,
 };
 
-std::vector<const FunctionDecl*> CollectFunctionCallCandidates(const FunctionSymbol& symbol, const std::string& name,
-                                                               CallCandidateMode mode) {
+std::vector<const FunctionDecl*> CollectFunctionCallCandidates(const LookupResult::Functions& declarations,
+                                                               const std::string& name, CallCandidateMode mode) {
   std::vector<const FunctionDecl*> result;
   const bool is_operator = IsOperatorFunctionName(name);
-  for (const FunctionDecl* declaration : symbol.Declarations()) {
+  for (const FunctionDecl* declaration : declarations) {
     if (!declaration || declaration->is_invalid || declaration->name != name || !declaration->type ||
         declaration->type.GetTypePtr()->GetKind() != TypeKind::Function) {
       continue;
@@ -684,7 +706,7 @@ std::vector<const FunctionDecl*> CollectFunctionCallCandidates(const FunctionSym
       continue;
     }
 
-    // FunctionSymbol retains the bound ordinary definition. Normal calls use
+    // The name binding retains the ordinary declaration. Normal calls use
     // the associated virtual interface as their static declaration identity.
     const FunctionDecl* call_declaration = declaration;
     if (mode == CallCandidateMode::Regular && declaration->virtual_declaration) {
@@ -697,28 +719,17 @@ std::vector<const FunctionDecl*> CollectFunctionCallCandidates(const FunctionSym
   return result;
 }
 
-bool HasInvalidFunctionDeclaration(const FunctionSymbol& symbol, const std::string& name) {
-  const auto& declarations = symbol.Declarations();
+bool HasInvalidFunctionDeclaration(const LookupResult::Functions& declarations, const std::string& name) {
   return std::any_of(declarations.begin(), declarations.end(), [&](const FunctionDecl* declaration) {
     return declaration && declaration->name == name && declaration->is_invalid;
   });
 }
 
-bool HasInvalidTopLevelOperatorFunctionDeclaration(const TranslationUnitDecl& translation_unit,
-                                                   const std::string& name) {
-  return std::any_of(translation_unit.Decls.begin(), translation_unit.Decls.end(), [&](const auto& declaration) {
-    if (!declaration || declaration->GetKind() != NodeKind::FunctionDecl) {
-      return false;
-    }
-    const auto& function = static_cast<const FunctionDecl&>(*declaration);
-    return function.name == name && function.is_invalid;
-  });
-}
-
-std::vector<const FunctionDecl*> CollectCompleteFunctionCandidates(const FunctionSymbol& symbol,
+template <typename Declaration>
+std::vector<const FunctionDecl*> CollectCompleteFunctionCandidates(const std::vector<Declaration*>& declarations,
                                                                    const std::string& name, NodeKind expected_kind) {
   std::vector<const FunctionDecl*> result;
-  for (const FunctionDecl* declaration : symbol.Declarations()) {
+  for (const FunctionDecl* declaration : declarations) {
     if (!declaration || declaration->is_invalid || declaration->GetKind() != expected_kind ||
         declaration->name != name || !declaration->type ||
         declaration->type.GetTypePtr()->GetKind() != TypeKind::Function) {
@@ -729,10 +740,10 @@ std::vector<const FunctionDecl*> CollectCompleteFunctionCandidates(const Functio
   return result;
 }
 
-std::vector<const FunctionDecl*> CollectOperatorFunctionCandidates(const FunctionSymbol& symbol, const std::string& op,
-                                                                   std::size_t arity) {
+std::vector<const FunctionDecl*> CollectOperatorFunctionCandidates(const LookupResult::Functions& declarations,
+                                                                   const std::string& op, std::size_t arity) {
   std::vector<const FunctionDecl*> result;
-  for (const FunctionDecl* declaration : symbol.Declarations()) {
+  for (const FunctionDecl* declaration : declarations) {
     if (!declaration || declaration->is_invalid || declaration->GetKind() != NodeKind::FunctionDecl ||
         declaration->name != op || !declaration->type ||
         declaration->type.GetTypePtr()->GetKind() != TypeKind::Function) {
@@ -761,7 +772,7 @@ std::string TypeSpelling(const Type& type) {
     case TypeKind::Builtin:
       return to_string(static_cast<const BuiltinType&>(type).GetBuiltinTypeKind());
     case TypeKind::Struct:
-      return static_cast<const StructType&>(type).GetDeclaration()->name;
+      return static_cast<const StructType&>(type).GetDeclaration()->QualifiedName();
     case TypeKind::Array: {
       const auto& array = static_cast<const ArrayType&>(type);
       return fmt::format("[{}] {}", array.GetLength(), TypeSpelling(array.GetElementType()));
@@ -999,7 +1010,7 @@ struct ObjectAssignmentFailure {
 
 using ObjectAssignmentResult = std::variant<ObjectAssignmentPlan, ObjectAssignmentFailure>;
 
-const TypeSymbol* TypeSymbolForObjectType(QualType type, const SymbolTable& symbol_table) {
+const StructDecl* StructForObjectType(QualType type) {
   if (!type || type.GetTypePtr()->GetKind() != TypeKind::Struct) {
     return nullptr;
   }
@@ -1007,8 +1018,7 @@ const TypeSymbol* TypeSymbolForObjectType(QualType type, const SymbolTable& symb
   if (!declaration) {
     return nullptr;
   }
-  const TypeSymbol* symbol = AsTypeSymbol(symbol_table.LookupRoot(declaration->name));
-  return symbol && symbol->GetDeclaration() == declaration ? symbol : nullptr;
+  return declaration;
 }
 
 /// \brief Leaf types and const restrictions for ordinary or array assignment.
@@ -1045,8 +1055,7 @@ std::optional<ObjectOperationTypes> DecomposeObjectOperationTypes(QualType sourc
   return result;
 }
 
-ObjectAssignmentResult ClassifyObjectAssignment(const Expr& destination, const Expr& source,
-                                                const SymbolTable& symbol_table) {
+ObjectAssignmentResult ClassifyObjectAssignment(const Expr& destination, const Expr& source) {
   BOOST_ASSERT(destination.type && source.type);
   BOOST_ASSERT(destination.type.WithoutConst() == source.type.WithoutConst());
   BOOST_ASSERT((destination.type && destination.type.GetTypePtr()->IsObject()));
@@ -1089,13 +1098,13 @@ ObjectAssignmentResult ClassifyObjectAssignment(const Expr& destination, const E
   }
   failure.operation_type = operation_types->target_leaf_type.WithoutConst();
 
-  const TypeSymbol* type_symbol = TypeSymbolForObjectType(failure.operation_type, symbol_table);
+  const StructDecl* structure = StructForObjectType(failure.operation_type);
   const bool prefers_move =
       !operation_types->source_leaf_type.IsConstQualified() &&
       (source.value_category == ValueCategory::MoveLValue || source.value_category == ValueCategory::PureRValue);
-  const FunctionDecl* selected = type_symbol && prefers_move ? type_symbol->GetMoveAssignment() : nullptr;
-  if (!selected && type_symbol) {
-    selected = type_symbol->GetCopyAssignment();
+  const FunctionDecl* selected = structure && prefers_move ? structure->move_assignment : nullptr;
+  if (!selected && structure) {
+    selected = structure->copy_assignment;
   }
   if (!selected) {
     failure.kind = prefers_move ? ObjectAssignmentFailureKind::MoveAndCopyUnavailable
@@ -1324,7 +1333,10 @@ void Sema::SetDiagnosticEngine(DiagnosticEngine* diagnostic_engine) { diagnostic
 void Sema::SetASTContext(ASTContext* ast_context) { ast_context_ = ast_context; }
 
 void Sema::ResetRunState() {
-  symbol_table_ = SymbolTable{};
+  local_symbols_ = nullptr;
+  lookup_context_ = nullptr;
+  namespace_context_ = ast_context_->GetRootNamespace();
+  declarations_.clear();
   global_variables_.clear();
   loop_depth_ = 0;
   current_function_ = nullptr;
@@ -1344,13 +1356,100 @@ void Sema::operator()() {
 
   // Establish type identities and callable interfaces before analyzing any body.
   ResetRunState();
+  EstablishDeclarationEnvironment(*translation_unit);
   ResolveTypeStructures(*translation_unit);
-  InheritedVirtualSlots inherited_virtual_slots = CompleteTypeSemantics(*translation_unit);
-  CompleteCallableInterfaces(*translation_unit, inherited_virtual_slots);
+  {
+    InheritedVirtualSlots inherited_virtual_slots = CompleteTypeSemantics(*translation_unit);
+    CompleteCallableInterfaces(*translation_unit, inherited_virtual_slots);
+  }
   AnalyzeDeclarationBodies(*translation_unit);
 
   // Cross-body and control-flow findings must feed the final subtree error aggregation.
   FinalizeTranslationUnitSemantics(*translation_unit);
+}
+
+void Sema::EstablishDeclarationEnvironment(TranslationUnitDecl& translation_unit) {
+  // Namespace declarations retain source ownership; their contexts are shared independently of block order.
+  const auto collect_namespaces = [&](const auto& self, const auto& declarations, NamespaceContext& parent) -> void {
+    for (const auto& declaration : declarations) {
+      if (!declaration) continue;
+      declaration->owning_namespace = &parent;
+      if (declaration->GetKind() == NodeKind::NamespaceDecl) {
+        auto& ns = static_cast<NamespaceDecl&>(*declaration);
+        if (!ns.left_brace_range.IsValid()) continue;
+        ns.context = ast_context_->GetOrCreateNamespace(parent, ns);
+        self(self, ns.Decls, *ns.context);
+      } else if (declaration->GetKind() == NodeKind::VarGroupDecl) {
+        for (const auto& variable : static_cast<VarGroupDecl&>(*declaration).Vars) {
+          if (variable) variable->owning_namespace = &parent;
+        }
+      } else if (declaration->GetKind() == NodeKind::StructDecl) {
+        const auto& structure = static_cast<StructDecl&>(*declaration);
+        if (structure.VirtualDecl) {
+          structure.VirtualDecl->owning_namespace = &parent;
+          for (const auto& function : structure.VirtualDecl->Functions) {
+            if (function) function->owning_namespace = &parent;
+          }
+        }
+      }
+    }
+  };
+  collect_namespaces(collect_namespaces, translation_unit.Decls, *ast_context_->GetRootNamespace());
+  declarations_ = translation_unit.FlattenedDecls();
+  for (const auto* declaration : declarations_) {
+    if (declaration->GetKind() == NodeKind::FunctionDecl) {
+      declaration->owning_namespace->ReserveName(static_cast<const FunctionDecl&>(*declaration));
+    } else if (declaration->GetKind() == NodeKind::VarGroupDecl) {
+      for (const auto& variable : static_cast<const VarGroupDecl*>(declaration)->Vars) {
+        if (variable) declaration->owning_namespace->ReserveName(*variable);
+      }
+    } else if (declaration->GetKind() == NodeKind::StructDecl) {
+      const auto& structure = static_cast<const StructDecl&>(*declaration);
+      if (structure.VirtualDecl) {
+        for (const auto& function : structure.VirtualDecl->Functions) {
+          if (function) declaration->owning_namespace->ReserveName(*function);
+        }
+      }
+    }
+  }
+  // All namespaces precede type bindings, including those in later source blocks.
+  for (auto* declaration : declarations_) {
+    if (!declaration || declaration->GetKind() != NodeKind::StructDecl) continue;
+    BindTypeName(static_cast<StructDecl&>(*declaration));
+    InheritErrors(translation_unit, declaration);
+  }
+}
+
+LookupResult Sema::ResolveName(Node& owner, const NameSyntax& name, std::string missing_message) {
+  const auto result =
+      lookup_context_ ? cw::LookupName(name, *lookup_context_) : LookupInterfaceName(name, *namespace_context_);
+  if (result) return result;
+  SourceRange range = name.Range();
+  if (!range.IsValid()) range = owner.range;
+  if (!name.empty()) {
+    const auto& segment = name.segments[result.segment];
+    if (segment.range.IsValid()) range = segment.range;
+    switch (result.failure) {
+      case LookupFailure::NotNamespace:
+        missing_message = fmt::format("'{}' does not name a namespace", segment.spelling);
+        break;
+      case LookupFailure::MissingMember:
+        missing_message =
+            fmt::format("no member named '{}' in namespace '{}'", segment.spelling, result.context->QualifiedName());
+        break;
+      case LookupFailure::Unbound:
+        missing_message = fmt::format("name '{}' is declared but not yet bound", segment.spelling);
+        break;
+      case LookupFailure::NotFound:
+        if (name.IsQualified()) missing_message = fmt::format("use of undeclared name '{}'", segment.spelling);
+        break;
+      case LookupFailure::None:
+        BOOST_ASSERT(false);
+        break;
+    }
+  }
+  Diagnose(owner, kErrorDiagnostic, range, std::move(missing_message));
+  return {};
 }
 
 Sema::InheritedVirtualSlots Sema::CompleteTypeSemantics(TranslationUnitDecl& translation_unit) {
@@ -1391,7 +1490,7 @@ void Sema::ValidateInitialLayouts(TranslationUnitDecl& translation_unit) {
   // Type semantics are now stable, including forward-referenced bases and fields.
   // Visit declarations even when no expression ever constructs an object of that type.
   type_layouts_ready_ = true;
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (declaration && declaration->GetKind() == NodeKind::StructDecl) {
       ValidateStructLayout(static_cast<StructDecl&>(*declaration));
     }
@@ -1494,8 +1593,118 @@ void Sema::CompleteCallableInterfaces(TranslationUnitDecl& translation_unit,
                                       const InheritedVirtualSlots& inherited_slots) {
   ResolveCallableInterfaces(translation_unit);
   BindCallableDeclarations(translation_unit);
-  AssociateVirtualDefinitions(translation_unit);
+  AssociateVirtualImplementations(translation_unit);
   ValidateRequiredOverrideDeclarations(translation_unit, inherited_slots);
+  ValidateDeclarationModifiers(translation_unit);
+}
+
+void Sema::ValidateDeclarationModifiers(TranslationUnitDecl& translation_unit) {
+  // Only a struct with exactly one destructor reaches the exported destructor requirement.
+  std::unordered_map<const StructDecl*, std::size_t> destructor_counts;
+  for (auto* declaration : declarations_) {
+    if (declaration && declaration->GetKind() == NodeKind::DestructorDecl) {
+      if (const StructType* target = static_cast<const DestructorDecl&>(*declaration).target_type) {
+        ++destructor_counts[target->GetDeclaration()];
+      }
+    }
+  }
+
+  for (auto* declaration : declarations_) {
+    if (!declaration) {
+      continue;
+    }
+    switch (declaration->GetKind()) {
+      case NodeKind::StructDecl: {
+        auto& structure = static_cast<StructDecl&>(*declaration);
+        if (structure.modifier != DeclModifier::Export) {
+          break;
+        }
+        if (structure.base_type) {
+          if (const StructDecl* hidden = FindInternalStruct(structure.base_type)) {
+            Diagnose(structure, kErrorDiagnostic, structure.base.Range(), NonExportedStructMessage(*hidden));
+          }
+        }
+        if (structure.VirtualDecl) {
+          for (const auto& function : structure.VirtualDecl->Functions) {
+            if (function) {
+              ValidateExportedSignature(*function);
+            }
+          }
+        }
+        for (const auto& field : structure.Fields) {
+          if (field) {
+            ValidateExportedTypeUse(field->Type.get(), field->type);
+          }
+        }
+        break;
+      }
+      case NodeKind::FunctionDecl:
+        if (declaration->modifier == DeclModifier::Export) {
+          ValidateExportedSignature(static_cast<FunctionDecl&>(*declaration));
+        }
+        break;
+      case NodeKind::ConstructorDecl: {
+        auto& constructor = static_cast<ConstructorDecl&>(*declaration);
+        if (constructor.modifier != DeclModifier::Export) {
+          break;
+        }
+        if (constructor.target_type && constructor.target_type->GetDeclaration()->modifier == DeclModifier::None) {
+          Diagnose(constructor, kErrorDiagnostic, NamedDeclarationRange(constructor),
+                   NonExportedStructMessage(*constructor.target_type->GetDeclaration()));
+        }
+        ValidateExportedSignature(constructor);
+        break;
+      }
+      case NodeKind::DestructorDecl: {
+        auto& destructor = static_cast<DestructorDecl&>(*declaration);
+        if (!destructor.target_type) {
+          break;
+        }
+        const StructDecl& target = *destructor.target_type->GetDeclaration();
+        if (destructor.modifier == DeclModifier::Export && target.modifier == DeclModifier::None) {
+          Diagnose(destructor, kErrorDiagnostic, NamedDeclarationRange(destructor), NonExportedStructMessage(target));
+        } else if (destructor.modifier != DeclModifier::Export && target.modifier == DeclModifier::Export &&
+                   target.triviality == TypeTriviality::NonTrivial && destructor_counts[&target] == 1) {
+          Diagnose(destructor, kErrorDiagnostic, NamedDeclarationRange(destructor),
+                   fmt::format("destructor of exported non-trivial struct '{}' must be exported", target.name));
+        }
+        break;
+      }
+      case NodeKind::VarGroupDecl:
+        if (declaration->modifier != DeclModifier::None) {
+          SourceLocation end = declaration->range.begin;
+          end.pos += 6;
+          end.column += 6;
+          Diagnose(*declaration, kErrorDiagnostic, {declaration->range.begin, end},
+                   declaration->modifier == DeclModifier::Export ? "global variables cannot be exported"
+                                                                 : "global variables cannot be imported");
+        }
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+void Sema::ValidateExportedTypeUse(TypeSyntax* type_syntax, QualType type) {
+  // Unresolved or erroneous type uses have already been diagnosed.
+  if (!type_syntax || type_syntax->contains_errors || !type) {
+    return;
+  }
+  if (const StructDecl* hidden = FindInternalStruct(type.GetTypePtr())) {
+    Diagnose(*type_syntax, kErrorDiagnostic, type_syntax->range, NonExportedStructMessage(*hidden));
+  }
+}
+
+void Sema::ValidateExportedSignature(FunctionDecl& declaration) {
+  for (const auto& parameter : declaration.ParmVars) {
+    if (parameter) {
+      ValidateExportedTypeUse(parameter->Type.get(), parameter->type);
+    }
+  }
+  if (declaration.ReturnVar) {
+    ValidateExportedTypeUse(declaration.ReturnVar->Type.get(), declaration.ReturnVar->type);
+  }
 }
 
 void Sema::FinalizeTranslationUnitSemantics(TranslationUnitDecl& translation_unit) {
@@ -1524,7 +1733,7 @@ bool Sema::SelectAssignmentFunctionAddress(std::unique_ptr<Expr>& expression, Qu
   if (!expression->type.GetTypePtr()->AsAddressOfFunctionOverloadSetType()) {
     return true;
   }
-  const auto result = SelectFunctionAddress(MakeConversionSource(*expression), target, *ast_context_, symbol_table_);
+  const auto result = SelectFunctionAddress(MakeConversionSource(*expression), target, *ast_context_, *lookup_context_);
   if (const auto* failure = std::get_if<OverloadSetSelectionFailure>(&result)) {
     expression->contains_errors = true;
     DiagnoseFunctionAddressFailure(owner, expression->range, *failure);
@@ -1547,7 +1756,7 @@ void Sema::DiagnoseConversionRisks(Node& owner, const Expr& source, QualType tar
 bool Sema::ConvertExpression(std::unique_ptr<Expr>& expression, QualType target, Node& owner,
                              const std::string& failure_prefix, ConstructionKind result_kind) {
   const auto source = MakeConversionSource(*expression);
-  auto result = BuildConversion(source, target, *ast_context_, symbol_table_);
+  auto result = BuildConversion(source, target, *ast_context_, *lookup_context_);
   if (const auto* failure = std::get_if<ConversionFailure>(&result)) {
     if (const auto* selection = std::get_if<OverloadSetSelectionFailure>(failure)) {
       expression->contains_errors = true;
@@ -1559,7 +1768,7 @@ bool Sema::ConvertExpression(std::unique_ptr<Expr>& expression, QualType target,
   }
   // Complete deferred object formation before emitting warnings or replacing the source AST.
   auto& conversion = std::get<ConversionSequence>(result);
-  if (const auto failure = CompleteConversion(source, target, conversion, symbol_table_)) {
+  if (const auto failure = CompleteConversion(source, target, conversion)) {
     Diagnose(owner, kErrorDiagnostic, expression->range,
              failure_prefix + FormatObjectFormationFailure(failure->failure));
     return false;
@@ -1585,29 +1794,20 @@ void Sema::CommitArgumentConversions(const std::vector<std::unique_ptr<Expr>*>& 
 }
 
 void Sema::ResolveTypeStructures(TranslationUnitDecl& translation_unit) {
-  // Collect every type name first so fields and bases may refer to later declarations.
-  for (const auto& declaration : translation_unit.Decls) {
-    if (!declaration || declaration->GetKind() != NodeKind::StructDecl) {
-      continue;
-    }
-    BindTypeName(static_cast<StructDecl&>(*declaration));
-    InheritErrors(translation_unit, declaration.get());
-  }
-
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::StructDecl) {
       continue;
     }
     ResolveStructDeclarationTypes(static_cast<StructDecl&>(*declaration));
-    InheritErrors(translation_unit, declaration.get());
+    InheritErrors(translation_unit, declaration);
   }
 
   // Reject cyclic layouts before recursive triviality and virtual-slot analysis.
   ValidateStructInheritance(translation_unit);
   ValidateObjectContainment(translation_unit);
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (declaration && declaration->GetKind() == NodeKind::StructDecl) {
-      InheritErrors(translation_unit, declaration.get());
+      InheritErrors(translation_unit, declaration);
     }
   }
 }
@@ -1617,21 +1817,22 @@ void Sema::BindTypeName(StructDecl& declaration) {
     return;
   }
 
-  if (const Symbol* symbol = symbol_table_.LookupCurrent(declaration.name)) {
-    BOOST_ASSERT(symbol->GetKind() == SymbolKind::Type);
+  if (const auto symbol = LookupDirectName(declaration.name, *declaration.owning_namespace)) {
     DiagnoseConflict(declaration, NamedDeclarationRange(declaration),
-                     fmt::format("redefinition of type '{}'", declaration.name), SymbolDeclarationRange(*symbol),
-                     "previous declaration is here");
+                     symbol.GetType() != nullptr ? fmt::format("redefinition of type '{}'", declaration.name)
+                                                 : fmt::format("declaration of type '{}' conflicts with {} declaration",
+                                                               declaration.name, BindingDescription(symbol)),
+                     BindingDeclarationRange(symbol), "previous declaration is here");
     return;
   }
 
-  symbol_table_.Insert(declaration.name, std::make_unique<TypeSymbol>(&declaration));
+  declaration.owning_namespace->BindType(declaration);
 }
 
 Sema::LifecycleDeclarations Sema::ResolveLifecycleDeclarationInterfaces(TranslationUnitDecl& translation_unit) {
   LifecycleDeclarations lifecycle_declarations;
 
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration) {
       continue;
     }
@@ -1658,10 +1859,10 @@ Sema::LifecycleDeclarations Sema::ResolveLifecycleDeclarationInterfaces(Translat
       default:
         break;
     }
-    InheritErrors(translation_unit, declaration.get());
+    InheritErrors(translation_unit, declaration);
   }
 
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration) {
       continue;
     }
@@ -1688,14 +1889,14 @@ Sema::LifecycleDeclarations Sema::ResolveLifecycleDeclarationInterfaces(Translat
       default:
         break;
     }
-    InheritErrors(translation_unit, declaration.get());
+    InheritErrors(translation_unit, declaration);
   }
 
   return lifecycle_declarations;
 }
 
 void Sema::ResolveCallableInterfaces(TranslationUnitDecl& translation_unit) {
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration) {
       continue;
     }
@@ -1707,10 +1908,10 @@ void Sema::ResolveCallableInterfaces(TranslationUnitDecl& translation_unit) {
       default:
         break;
     }
-    InheritErrors(translation_unit, declaration.get());
+    InheritErrors(translation_unit, declaration);
   }
 
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration) {
       continue;
     }
@@ -1731,12 +1932,12 @@ void Sema::ResolveCallableInterfaces(TranslationUnitDecl& translation_unit) {
       default:
         break;
     }
-    InheritErrors(translation_unit, declaration.get());
+    InheritErrors(translation_unit, declaration);
   }
 }
 
 void Sema::ValidateVirtualDeclarationInterfaces(TranslationUnitDecl& translation_unit) {
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::StructDecl) {
       continue;
     }
@@ -1758,7 +1959,7 @@ void Sema::ValidateVirtualDeclarationInterfaces(TranslationUnitDecl& translation
       InheritErrors(*structure.VirtualDecl, function.get());
     }
     InheritErrors(structure, structure.VirtualDecl.get());
-    InheritErrors(translation_unit, declaration.get());
+    InheritErrors(translation_unit, declaration);
   }
 }
 
@@ -1766,15 +1967,15 @@ Sema::InheritedVirtualSlots Sema::ValidateVirtualHierarchy(TranslationUnitDecl& 
   std::vector<StructDecl*> structures;
   InheritedVirtualSlots inherited_slots;
   std::unordered_map<const StructDecl*, std::vector<VirtualFunctionDecl*>> final_slots;
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::StructDecl) {
       continue;
     }
-    structures.push_back(static_cast<StructDecl*>(declaration.get()));
+    structures.push_back(static_cast<StructDecl*>(declaration));
   }
 
   // First validate facts local to each virtual block. Invalid declarations do
-  // not enter the inherited-slot calculation or consume a definition.
+  // not enter the inherited-slot calculation or associate an implementation.
   for (StructDecl* structure : structures) {
     if (!structure->VirtualDecl) {
       continue;
@@ -1943,7 +2144,7 @@ Sema::InheritedVirtualSlots Sema::ValidateVirtualHierarchy(TranslationUnitDecl& 
 }
 
 void Sema::ValidateTypeDeclarationAbstractUses(TranslationUnitDecl& translation_unit) {
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::StructDecl) {
       continue;
     }
@@ -1969,7 +2170,7 @@ void Sema::ValidateTypeDeclarationAbstractUses(TranslationUnitDecl& translation_
       InheritErrors(*field, field->Type.get());
       InheritErrors(structure, field.get());
     }
-    InheritErrors(translation_unit, declaration.get());
+    InheritErrors(translation_unit, declaration);
   }
 }
 
@@ -1996,7 +2197,7 @@ bool Sema::ValidateAbstractFunctionTypeUses(FunctionDecl& declaration) {
 }
 
 void Sema::BindLifecycleDeclarations(TranslationUnitDecl& translation_unit) {
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration) {
       continue;
     }
@@ -2010,12 +2211,12 @@ void Sema::BindLifecycleDeclarations(TranslationUnitDecl& translation_unit) {
       default:
         break;
     }
-    InheritErrors(translation_unit, declaration.get());
+    InheritErrors(translation_unit, declaration);
   }
 }
 
 void Sema::BindCallableDeclarations(TranslationUnitDecl& translation_unit) {
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration) {
       continue;
     }
@@ -2026,7 +2227,7 @@ void Sema::BindCallableDeclarations(TranslationUnitDecl& translation_unit) {
       default:
         break;
     }
-    InheritErrors(translation_unit, declaration.get());
+    InheritErrors(translation_unit, declaration);
   }
 }
 
@@ -2035,11 +2236,11 @@ void Sema::BindFunctionDeclaration(FunctionDecl& declaration) {
     return;
   }
   if (IsOperatorFunctionName(declaration.name)) {
-    if (declaration.is_invalid) {
-      return;
-    }
-    if (declaration.name == "=" && !RegisterSpecialAssignment(declaration)) {
+    if (declaration.is_invalid || (declaration.name == "=" && !RegisterSpecialAssignment(declaration))) {
+      // Retain invalid operator names in their actual scope for lookup and diagnostic recovery.
       declaration.is_invalid = true;
+      const auto symbol = LookupDirectName(declaration.name, *declaration.owning_namespace);
+      if (!symbol || symbol.GetFunctions()) declaration.owning_namespace->AddFunction(declaration);
       return;
     }
     AddFunctionDeclaration(declaration.name, declaration);
@@ -2048,12 +2249,12 @@ void Sema::BindFunctionDeclaration(FunctionDecl& declaration) {
   AddFunctionDeclaration(declaration.name, declaration);
 }
 
-void Sema::AssociateVirtualDefinitions(TranslationUnitDecl& translation_unit) {
-  for (const auto& declaration_owner : translation_unit.Decls) {
+void Sema::AssociateVirtualImplementations(TranslationUnitDecl& translation_unit) {
+  for (auto* declaration_owner : declarations_) {
     if (!declaration_owner || declaration_owner->GetKind() != NodeKind::StructDecl) {
       continue;
     }
-    auto* structure = static_cast<StructDecl*>(declaration_owner.get());
+    auto* structure = static_cast<StructDecl*>(declaration_owner);
     if (!structure->VirtualDecl) {
       continue;
     }
@@ -2063,74 +2264,79 @@ void Sema::AssociateVirtualDefinitions(TranslationUnitDecl& translation_unit) {
         continue;
       }
 
-      Symbol* symbol = symbol_table_.LookupRoot(function->name);
+      const auto symbol = LookupDirectName(function->name, *function->owning_namespace);
       if (!symbol) {
-        if (!function->is_abstract) {
+        if (!function->is_abstract && structure->modifier != DeclModifier::Import) {
           Diagnose(*function, kErrorDiagnostic, NamedDeclarationRange(*function),
                    fmt::format("virtual function '{}' requires a definition", function->name));
         }
-        symbol_table_.Insert(function->name, std::make_unique<FunctionSymbol>(function));
+        function->owning_namespace->AddFunction(*function);
         continue;
       }
 
-      FunctionSymbol* functions = AsFunctionSymbol(symbol);
+      const LookupResult::Functions* functions = symbol.GetFunctions();
       if (!functions) {
         DiagnoseConflict(*function, NamedDeclarationRange(*function),
                          fmt::format("declaration of function '{}' conflicts with {} declaration", function->name,
-                                     SymbolDescription(*symbol)),
-                         SymbolDeclarationRange(*symbol), "conflicting declaration is here");
+                                     BindingDescription(symbol)),
+                         BindingDeclarationRange(symbol), "conflicting declaration is here");
         function->is_invalid = true;
         continue;
       }
 
-      // Parameter identity finds the definition; return compatibility is checked separately.
-      FunctionDecl* definition = nullptr;
-      for (FunctionDecl* declaration : functions->Declarations()) {
+      // Parameter identity finds the implementation; return compatibility is checked separately.
+      FunctionDecl* implementation = nullptr;
+      for (FunctionDecl* declaration : *functions) {
         if (!declaration || declaration->GetKind() != NodeKind::FunctionDecl || declaration->name != function->name ||
             !HasCompleteParameterSignature(*declaration) || !HasSameParameterSignature(*declaration, *function)) {
           continue;
         }
-        BOOST_ASSERT(!definition);
-        definition = declaration;
+        BOOST_ASSERT(!implementation);
+        implementation = declaration;
       }
 
-      if (!definition) {
-        if (!function->is_abstract) {
+      if (!implementation) {
+        if (!function->is_abstract && structure->modifier != DeclModifier::Import) {
           Diagnose(*function, kErrorDiagnostic, NamedDeclarationRange(*function),
                    fmt::format("virtual function '{}' requires a definition", function->name));
         }
-        functions->AddDeclaration(function);
+        function->owning_namespace->AddFunction(*function);
         continue;
       }
 
-      if (definition->is_invalid) {
+      if (implementation->is_invalid) {
         // The ordinary declaration still reserves this signature, but only the
         // interface remains usable as a recovery call declaration.
-        functions->AddDeclaration(function);
+        function->owning_namespace->AddFunction(*function);
+        continue;
+      }
+
+      if (!ValidateTypeOperationIdentity(*implementation, *structure)) {
+        function->owning_namespace->AddFunction(*function);
         continue;
       }
 
       const Type* interface_return = FunctionReturnType(*function);
-      const Type* definition_return = FunctionReturnType(*definition);
+      const Type* implementation_return = FunctionReturnType(*implementation);
       BOOST_ASSERT(interface_return);
-      BOOST_ASSERT(definition_return);
-      if (definition_return != interface_return) {
-        Diagnose(*definition, kErrorDiagnostic,
-                 definition->ReturnVar ? definition->ReturnVar->range : NamedDeclarationRange(*definition),
-                 fmt::format("return type '{}' of matching function definition does not match return type '{}' of "
+      BOOST_ASSERT(implementation_return);
+      if (implementation_return != interface_return) {
+        Diagnose(*implementation, kErrorDiagnostic,
+                 implementation->ReturnVar ? implementation->ReturnVar->range : NamedDeclarationRange(*implementation),
+                 fmt::format("return type '{}' of matching function declaration does not match return type '{}' of "
                              "virtual function '{}'",
-                             TypeSpelling(QualType(definition_return)), TypeSpelling(QualType(interface_return)),
+                             TypeSpelling(QualType(implementation_return)), TypeSpelling(QualType(interface_return)),
                              function->name));
         EmitDiagnostic(kNoteDiagnostic, NamedDeclarationRange(*function), "virtual function is declared here");
-        definition->is_invalid = true;
-        functions->AddDeclaration(function);
+        implementation->is_invalid = true;
+        function->owning_namespace->AddFunction(*function);
         continue;
       }
 
-      BOOST_ASSERT(!function->definition);
-      BOOST_ASSERT(!definition->virtual_declaration);
-      function->definition = definition;
-      definition->virtual_declaration = function;
+      BOOST_ASSERT(!function->implementation);
+      BOOST_ASSERT(!implementation->virtual_declaration);
+      function->implementation = implementation;
+      implementation->virtual_declaration = function;
     }
   }
 }
@@ -2138,20 +2344,20 @@ void Sema::AssociateVirtualDefinitions(TranslationUnitDecl& translation_unit) {
 void Sema::ValidateRequiredOverrideDeclarations(TranslationUnitDecl& translation_unit,
                                                 const InheritedVirtualSlots& inherited_slots) {
   std::unordered_map<const StructDecl*, std::unordered_set<const VirtualFunctionDecl*>> diagnosed;
-  for (const auto& declaration_owner : translation_unit.Decls) {
+  for (auto* declaration_owner : declarations_) {
     if (!declaration_owner || declaration_owner->GetKind() != NodeKind::FunctionDecl) {
       continue;
     }
 
-    auto* function = static_cast<FunctionDecl*>(declaration_owner.get());
+    auto* function = static_cast<FunctionDecl*>(declaration_owner);
     if (function->is_invalid || function->virtual_declaration || function->name.empty() || function->ParmVars.empty() ||
         !function->ParmVars.front()) {
       continue;
     }
 
-    const FunctionSymbol* functions = AsFunctionSymbol(symbol_table_.LookupRoot(function->name));
-    if (!functions || std::find(functions->Declarations().begin(), functions->Declarations().end(), function) ==
-                          functions->Declarations().end()) {
+    const auto lookup = LookupDirectName(function->name, *function->owning_namespace);
+    const auto* functions = lookup.GetFunctions();
+    if (!functions || std::find(functions->begin(), functions->end(), function) == functions->end()) {
       continue;
     }
 
@@ -2162,6 +2368,8 @@ void Sema::ValidateRequiredOverrideDeclarations(TranslationUnitDecl& translation
     }
     auto* structure =
         const_cast<StructDecl*>(static_cast<const StructType*>(receiver->GetReferentType())->GetDeclaration());
+
+    if (function->owning_namespace != structure->owning_namespace) continue;
 
     const auto inherited = inherited_slots.find(structure);
     if (inherited == inherited_slots.end()) {
@@ -2203,11 +2411,11 @@ void Sema::ValidateRequiredOverrideDeclarations(TranslationUnitDecl& translation
     }
   }
 
-  for (const auto& declaration_owner : translation_unit.Decls) {
+  for (auto* declaration_owner : declarations_) {
     if (!declaration_owner || declaration_owner->GetKind() != NodeKind::StructDecl) {
       continue;
     }
-    auto* structure = static_cast<StructDecl*>(declaration_owner.get());
+    auto* structure = static_cast<StructDecl*>(declaration_owner);
     if (structure->VirtualDecl) {
       InheritErrors(*structure, structure->VirtualDecl.get());
     }
@@ -2314,6 +2522,17 @@ bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
   return true;
 }
 
+bool Sema::ValidateTypeOperationIdentity(FunctionDecl& declaration, const StructDecl& structure) {
+  const bool imported_type = structure.modifier == DeclModifier::Import;
+  if ((declaration.modifier == DeclModifier::Import) == imported_type) return true;
+  Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+           imported_type
+               ? fmt::format("operation for imported struct '{}' must be imported", structure.QualifiedName())
+               : fmt::format("operation for local struct '{}' cannot be imported", structure.QualifiedName()));
+  declaration.is_invalid = true;
+  return false;
+}
+
 bool Sema::RegisterSpecialAssignment(FunctionDecl& declaration) {
   BOOST_ASSERT(declaration.name == "=");
   if (!declaration.type || declaration.type.GetTypePtr()->GetKind() != TypeKind::Function) {
@@ -2344,10 +2563,13 @@ bool Sema::RegisterSpecialAssignment(FunctionDecl& declaration) {
   const auto& target_type = static_cast<const StructType&>(*destination.GetReferentType());
   StructDecl* target_declaration = const_cast<StructDecl*>(target_type.GetDeclaration());
   BOOST_ASSERT(target_declaration);
-  TypeSymbol* type_symbol = AsTypeSymbol(symbol_table_.LookupRoot(target_declaration->name));
-  if (!type_symbol || type_symbol->GetDeclaration() != target_declaration) {
-    return true;
+  if (declaration.owning_namespace != target_declaration->owning_namespace) {
+    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+             "copy or move assignment must be declared in the target type's namespace");
+    return false;
   }
+  StructDecl* structure = target_declaration;
+  if (!ValidateTypeOperationIdentity(declaration, *structure)) return false;
 
   const bool is_copy = source.GetMode() == ReferenceMode::Copy;
   if (target_declaration->triviality == TypeTriviality::Trivial) {
@@ -2360,8 +2582,8 @@ bool Sema::RegisterSpecialAssignment(FunctionDecl& declaration) {
     return false;
   }
 
-  const auto [stored, inserted] =
-      is_copy ? type_symbol->SetCopyAssignment(&declaration) : type_symbol->SetMoveAssignment(&declaration);
+  const auto [stored, inserted] = is_copy ? BindUniqueOperation(structure->copy_assignment, &declaration)
+                                          : BindUniqueOperation(structure->move_assignment, &declaration);
   if (!inserted) {
     BOOST_ASSERT(stored);
     DiagnoseConflict(declaration, NamedDeclarationRange(declaration),
@@ -2377,13 +2599,13 @@ void Sema::ResolveConstructorTarget(ConstructorDecl& declaration) {
     return;
   }
 
-  const TypeSymbol* type_symbol = AsTypeSymbol(symbol_table_.LookupCurrent(declaration.name));
-  if (!type_symbol) {
+  const StructDecl* structure = LookupDirectName(declaration.name, *declaration.owning_namespace).GetType();
+  if (!structure) {
     Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
              fmt::format("unknown constructor target type '{}'", declaration.name));
     return;
   }
-  declaration.target_type = ast_context_->GetStructType(type_symbol->GetDeclaration());
+  declaration.target_type = ast_context_->GetStructType(structure);
 }
 
 void Sema::ResolveDestructorTarget(DestructorDecl& declaration) {
@@ -2391,13 +2613,13 @@ void Sema::ResolveDestructorTarget(DestructorDecl& declaration) {
     return;
   }
 
-  const TypeSymbol* type_symbol = AsTypeSymbol(symbol_table_.LookupCurrent(declaration.name));
-  if (!type_symbol) {
+  const StructDecl* structure = LookupDirectName(declaration.name, *declaration.owning_namespace).GetType();
+  if (!structure) {
     Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
              fmt::format("unknown destructor target type '{}'", declaration.name));
     return;
   }
-  declaration.target_type = ast_context_->GetStructType(type_symbol->GetDeclaration());
+  declaration.target_type = ast_context_->GetStructType(structure);
 }
 
 void Sema::RegisterConstructor(ConstructorDecl& declaration) {
@@ -2405,11 +2627,13 @@ void Sema::RegisterConstructor(ConstructorDecl& declaration) {
     return;
   }
 
-  TypeSymbol* type_symbol = AsTypeSymbol(symbol_table_.LookupCurrent(declaration.name));
-  BOOST_ASSERT(type_symbol);
+  StructDecl* structure = LookupDirectName(declaration.name, *declaration.owning_namespace).GetType();
+  BOOST_ASSERT(structure);
 
-  if (const FunctionSymbol* constructors = type_symbol->GetConstructorSymbol()) {
-    for (const FunctionDecl* candidate : constructors->Declarations()) {
+  if (!ValidateTypeOperationIdentity(declaration, *structure)) return;
+
+  if (const auto& constructors = structure->constructors; !constructors.empty()) {
+    for (const FunctionDecl* candidate : constructors) {
       BOOST_ASSERT(candidate && candidate->GetKind() == NodeKind::ConstructorDecl);
       if (!HasSameParameterSignature(*candidate, declaration)) {
         continue;
@@ -2420,7 +2644,7 @@ void Sema::RegisterConstructor(ConstructorDecl& declaration) {
       return;
     }
   }
-  type_symbol->AddConstructor(&declaration);
+  structure->constructors.push_back(&declaration);
 
   const auto& function_type = static_cast<const FunctionType&>(*declaration.type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
@@ -2434,10 +2658,10 @@ void Sema::RegisterConstructor(ConstructorDecl& declaration) {
   }
 
   if (parameter.GetMode() == ReferenceMode::Copy) {
-    const auto [stored, inserted] = type_symbol->SetCopyConstructor(&declaration);
+    const auto [stored, inserted] = BindUniqueOperation(structure->copy_constructor, &declaration);
     BOOST_ASSERT(inserted && stored == &declaration);
   } else if (parameter.GetMode() == ReferenceMode::Move) {
-    const auto [stored, inserted] = type_symbol->SetMoveConstructor(&declaration);
+    const auto [stored, inserted] = BindUniqueOperation(structure->move_constructor, &declaration);
     BOOST_ASSERT(inserted && stored == &declaration);
   }
 }
@@ -2447,10 +2671,12 @@ void Sema::RegisterDestructor(DestructorDecl& declaration) {
     return;
   }
 
-  TypeSymbol* type_symbol = AsTypeSymbol(symbol_table_.LookupCurrent(declaration.name));
-  BOOST_ASSERT(type_symbol);
+  StructDecl* structure = LookupDirectName(declaration.name, *declaration.owning_namespace).GetType();
+  BOOST_ASSERT(structure);
 
-  const auto [stored, inserted] = type_symbol->SetDestructor(&declaration);
+  if (!ValidateTypeOperationIdentity(declaration, *structure)) return;
+
+  const auto [stored, inserted] = BindUniqueOperation(structure->destructor, &declaration);
   if (!inserted) {
     BOOST_ASSERT(stored);
     DiagnoseConflict(declaration, NamedDeclarationRange(declaration), FunctionRedefinitionMessage(declaration),
@@ -2461,22 +2687,22 @@ void Sema::RegisterDestructor(DestructorDecl& declaration) {
 
 bool Sema::AddFunctionDeclaration(const std::string& name, FunctionDecl& declaration) {
   const bool has_complete_signature = HasCompleteParameterSignature(declaration);
-  Symbol* symbol = symbol_table_.LookupCurrent(name);
+  const auto symbol = LookupDirectName(name, *declaration.owning_namespace);
   if (!symbol) {
     // A complete parameter signature reserves its declaration identity even
     // when another part of the interface has made the declaration invalid.
     if (!has_complete_signature) {
       return false;
     }
-    symbol_table_.Insert(name, std::make_unique<FunctionSymbol>(&declaration));
+    declaration.owning_namespace->AddFunction(declaration);
     return true;
   }
 
-  if (symbol->GetKind() != SymbolKind::Function) {
+  if (!symbol.GetFunctions()) {
     DiagnoseConflict(
         declaration, NamedDeclarationRange(declaration),
-        fmt::format("declaration of function '{}' conflicts with {} declaration", name, SymbolDescription(*symbol)),
-        SymbolDeclarationRange(*symbol), "conflicting declaration is here");
+        fmt::format("declaration of function '{}' conflicts with {} declaration", name, BindingDescription(symbol)),
+        BindingDeclarationRange(symbol), "conflicting declaration is here");
     declaration.is_invalid = true;
     return false;
   }
@@ -2485,9 +2711,10 @@ bool Sema::AddFunctionDeclaration(const std::string& name, FunctionDecl& declara
     return false;
   }
 
-  auto& function_symbol = static_cast<FunctionSymbol&>(*symbol);
-  for (const FunctionDecl* candidate : function_symbol.Declarations()) {
+  const auto& functions = *symbol.GetFunctions();
+  for (const FunctionDecl* candidate : functions) {
     BOOST_ASSERT(candidate);
+    if (IsOperatorFunctionName(name) && candidate->is_invalid) continue;
     if (!HasSameParameterSignature(*candidate, declaration)) {
       continue;
     }
@@ -2498,38 +2725,49 @@ bool Sema::AddFunctionDeclaration(const std::string& name, FunctionDecl& declara
     return false;
   }
 
-  function_symbol.AddDeclaration(&declaration);
+  declaration.owning_namespace->AddFunction(declaration);
   return true;
 }
 
-void Sema::BindGlobalVariables(VarGroupDecl& declaration) {
+void Sema::PrepareGlobalBindings() {
+  std::size_t group_index = 0;
+  for (auto* declaration : declarations_) {
+    if (declaration->GetKind() != NodeKind::VarGroupDecl) continue;
+    const auto& group = static_cast<const VarGroupDecl&>(*declaration);
+    for (const auto& variable : group.Vars) {
+      if (!variable) continue;
+      global_variables_.insert(variable.get());
+      if (!variable->name.empty()) group.owning_namespace->BindGlobal(*variable, group_index);
+    }
+    ++group_index;
+  }
+}
+
+void Sema::DiagnoseGlobalBindingConflicts(VarGroupDecl& declaration) {
   for (const auto& variable : declaration.Vars) {
     if (!variable) {
       continue;
     }
-    global_variables_.insert(variable.get());
     if (variable->name.empty()) {
       continue;
     }
     const std::string& name = variable->name;
 
-    Symbol* symbol = symbol_table_.LookupCurrent(name);
-    if (!symbol) {
-      symbol_table_.Insert(name, std::make_unique<VariableSymbol>(variable.get()));
-      continue;
-    }
+    const auto symbol = LookupDirectName(name, *declaration.owning_namespace);
+    BOOST_ASSERT(symbol);
+    if (symbol.GetVariable() == variable.get()) continue;
 
-    if (symbol->GetKind() == SymbolKind::Variable) {
+    if (symbol.GetVariable() != nullptr) {
       DiagnoseConflict(*variable, NamedDeclarationRange(*variable), fmt::format("redefinition of variable '{}'", name),
-                       SymbolDeclarationRange(*symbol), "previous declaration is here");
+                       BindingDeclarationRange(symbol), "previous declaration is here");
       InheritErrors(declaration, variable.get());
       continue;
     }
 
     DiagnoseConflict(
         *variable, NamedDeclarationRange(*variable),
-        fmt::format("declaration of variable '{}' conflicts with {} declaration", name, SymbolDescription(*symbol)),
-        SymbolDeclarationRange(*symbol), "conflicting declaration is here");
+        fmt::format("declaration of variable '{}' conflicts with {} declaration", name, BindingDescription(symbol)),
+        BindingDeclarationRange(symbol), "conflicting declaration is here");
     InheritErrors(declaration, variable.get());
   }
 }
@@ -2538,7 +2776,7 @@ void Sema::ComputeStructTriviality(TranslationUnitDecl& translation_unit,
                                    const LifecycleDeclarations& lifecycle_declarations) {
   enum class VisitState { Unvisited, Visiting, Complete };
   std::unordered_map<const StructDecl*, VisitState> states;
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::StructDecl) {
       continue;
     }
@@ -2628,7 +2866,7 @@ void Sema::ComputeStructTriviality(TranslationUnitDecl& translation_unit,
     return structure.triviality;
   };
 
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::StructDecl) {
       continue;
     }
@@ -2641,7 +2879,7 @@ void Sema::ComputeStructTriviality(TranslationUnitDecl& translation_unit,
 
 void Sema::ValidateLifecycleRequirements(TranslationUnitDecl& translation_unit,
                                          const LifecycleDeclarations& lifecycle_declarations) {
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::StructDecl) {
       continue;
     }
@@ -2657,7 +2895,7 @@ void Sema::ValidateLifecycleRequirements(TranslationUnitDecl& translation_unit,
       const auto destructors = lifecycle_declarations.destructors.find(&structure);
       const std::size_t destructor_count =
           destructors == lifecycle_declarations.destructors.end() ? 0 : destructors->second.size();
-      if (constructor_count == 0) {
+      if (constructor_count == 0 && structure.modifier != DeclModifier::Import) {
         Diagnose(structure, kErrorDiagnostic, structure.range,
                  fmt::format("non-trivial struct '{}' requires a constructor", structure.name));
       }
@@ -2669,7 +2907,7 @@ void Sema::ValidateLifecycleRequirements(TranslationUnitDecl& translation_unit,
 
     if (structure.base_type && structure.triviality == TypeTriviality::NonTrivial &&
         structure.base_type->GetDeclaration()->triviality == TypeTriviality::Trivial) {
-      Diagnose(structure, kErrorDiagnostic, structure.base_range,
+      Diagnose(structure, kErrorDiagnostic, structure.base.Range(),
                fmt::format("non-trivial struct '{}' cannot inherit trivial struct '{}'", structure.name,
                            structure.base_type->GetDeclaration()->name));
     }
@@ -2677,16 +2915,19 @@ void Sema::ValidateLifecycleRequirements(TranslationUnitDecl& translation_unit,
 }
 
 void Sema::AnalyzeDeclarationBodies(TranslationUnitDecl& translation_unit) {
-  // Finish global type inference before functions look up the global bindings.
-  for (const auto& declaration : translation_unit.Decls) {
-    if (!declaration || declaration->GetKind() != NodeKind::VarGroupDecl) {
-      continue;
+  PrepareGlobalBindings();
+  {
+    GlobalInitLookup global_lookup;
+    llvm::SaveAndRestore<SymbolTable*> local_scope(local_symbols_, &global_lookup.GetLocals());
+    // The entire source-ordered global pass finishes before any function body.
+    for (auto* declaration : declarations_) {
+      if (declaration->GetKind() != NodeKind::VarGroupDecl) continue;
+      AnalyzeVariableGroup(static_cast<VarGroupDecl&>(*declaration), TypeUseKind::GlobalVariable, &global_lookup);
+      InheritErrors(translation_unit, declaration);
     }
-    AnalyzeVariableGroup(static_cast<VarGroupDecl&>(*declaration), TypeUseKind::GlobalVariable);
-    InheritErrors(translation_unit, declaration.get());
   }
 
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration) {
       continue;
     }
@@ -2703,24 +2944,28 @@ void Sema::AnalyzeDeclarationBodies(TranslationUnitDecl& translation_unit) {
       default:
         break;
     }
-    InheritErrors(translation_unit, declaration.get());
+    InheritErrors(translation_unit, declaration);
   }
 }
 
 void Sema::AnalyzeFunction(FunctionDecl& declaration) {
+  SymbolTable locals;
+  const LookupContext lookup_context{declaration.owning_namespace, &locals};
+  llvm::SaveAndRestore<SymbolTable*> local_scope(local_symbols_, &locals);
+  llvm::SaveAndRestore<const LookupContext*> lookup_scope(lookup_context_, &lookup_context);
   BOOST_ASSERT(loop_depth_ == 0);
   BOOST_ASSERT(!current_function_);
   const FunctionResultBlockAnalysisContext result_block_context{declaration};
   current_function_ = &declaration;
 
-  symbol_table_.PushScope();
+  local_symbols_->PushScope();
   const auto bind_variable = [&](VarDecl& variable) {
     if (variable.name.empty()) {
       return;
     }
     // Declaration-internal conflicts were diagnosed by the interface check.
     // Insertion keeps the first binding for recovery without diagnosing again.
-    symbol_table_.Insert(variable.name, std::make_unique<VariableSymbol>(&variable));
+    local_symbols_->InsertLocal(variable);
   };
   for (const auto& parameter : declaration.ParmVars) {
     if (parameter) {
@@ -2749,7 +2994,7 @@ void Sema::AnalyzeFunction(FunctionDecl& declaration) {
                            constructor.name, direct_base->name));
     }
   }
-  symbol_table_.PopScope();
+  local_symbols_->PopScope();
   current_function_ = nullptr;
   BOOST_ASSERT(loop_depth_ == 0);
 }
@@ -2788,7 +3033,7 @@ void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) 
              DefiniteInitializationMessage(finding));
   }
 
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration) {
       continue;
     }
@@ -2841,11 +3086,11 @@ void Sema::ValidateDelegatingConstructorCycles(TranslationUnitDecl& translation_
 
   // Only a successfully resolved leading delegation contributes an edge.
   std::vector<DelegationEdge> edges;
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::ConstructorDecl) {
       continue;
     }
-    auto* constructor = static_cast<ConstructorDecl*>(declaration.get());
+    auto* constructor = static_cast<ConstructorDecl*>(declaration);
     if (!constructor->Body || constructor->Body->Stmts.empty() || !constructor->Body->Stmts.front() ||
         constructor->Body->Stmts.front()->GetKind() != NodeKind::ExprStmt) {
       continue;
@@ -2911,7 +3156,7 @@ void Sema::ValidateDelegatingConstructorCycles(TranslationUnitDecl& translation_
     states[&constructor] = VisitState::Complete;
   };
 
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::ConstructorDecl) {
       continue;
     }
@@ -2925,7 +3170,7 @@ void Sema::ValidateDelegatingConstructorCycles(TranslationUnitDecl& translation_
 void Sema::AnalyzeCompoundStmt(CompoundStmt& statement, bool creates_scope,
                                const ResultBlockAnalysisContext& result_block_context, bool is_result_block) {
   if (creates_scope) {
-    symbol_table_.PushScope();
+    local_symbols_->PushScope();
   }
 
   bool has_result_object = false;
@@ -2975,7 +3220,7 @@ void Sema::AnalyzeCompoundStmt(CompoundStmt& statement, bool creates_scope,
   }
 
   if (creates_scope) {
-    symbol_table_.PopScope();
+    local_symbols_->PopScope();
   }
 }
 
@@ -2997,7 +3242,7 @@ void Sema::AnalyzeStmt(Stmt& statement, const ResultBlockAnalysisContext& result
           BOOST_ASSERT(unwrapped && unwrapped->GetKind() == NodeKind::DeclRefExpr);
           const auto& function_name = static_cast<const DeclRefExpr&>(*unwrapped);
           Diagnose(*expression_statement.Expr, kErrorDiagnostic, function_name.range,
-                   fmt::format("function '{}' cannot be used as an object expression", function_name.name));
+                   fmt::format("function '{}' cannot be used as an object expression", function_name.name.Spelling()));
         } else if (expression_statement.Expr->type.GetTypePtr()->AsAddressOfFunctionOverloadSetType()) {
           ConvertExpression(expression_statement.Expr, QualType{}, expression_statement, "");
         }
@@ -3207,14 +3452,20 @@ bool Sema::AdaptReturnExpression(std::unique_ptr<Expr>& expression, QualType tar
   return ConvertExpression(expression, target_type, diagnostic_owner, "cannot initialize return object: ");
 }
 
-void Sema::AnalyzeVariableGroup(VarGroupDecl& declaration, TypeUseKind use) {
+void Sema::AnalyzeVariableGroup(VarGroupDecl& declaration, TypeUseKind use, GlobalInitLookup* global_lookup) {
+  BOOST_ASSERT((use == TypeUseKind::GlobalVariable) == (global_lookup != nullptr));
+  LookupContext lookup_context =
+      global_lookup ? global_lookup->GetContext(*declaration.owning_namespace) : *lookup_context_;
+  llvm::SaveAndRestore<const LookupContext*> lookup_scope(lookup_context_, &lookup_context);
   BOOST_ASSERT(use == TypeUseKind::LocalVariable || use == TypeUseKind::GlobalVariable);
   CheckVariableGroupDeclaration(declaration, use);
   ResolveVariableGroupTypes(declaration, use);
 
   const auto bind_variables = [&] {
     if (use == TypeUseKind::GlobalVariable) {
-      BindGlobalVariables(declaration);
+      DiagnoseGlobalBindingConflicts(declaration);
+      global_lookup->MakeGroupVisible(*lookup_context.visible_global_groups);
+      lookup_context = global_lookup->GetContext(*declaration.owning_namespace);
     } else {
       for (const auto& variable : declaration.Vars) {
         if (!variable) {
@@ -3227,7 +3478,7 @@ void Sema::AnalyzeVariableGroup(VarGroupDecl& declaration, TypeUseKind use) {
   };
 
   // An initializer block must see its destination variables; ordinary initializers are analyzed
-  // before the new group enters the symbol table.
+  // before the new group's names become visible.
   if (declaration.Body) {
     bind_variables();
 
@@ -3247,6 +3498,142 @@ void Sema::AnalyzeVariableGroup(VarGroupDecl& declaration, TypeUseKind use) {
 
     bind_variables();
   }
+}
+
+std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> expression, ComptimeIntMode mode) {
+  if (!expression) return nullptr;
+
+  const auto analyze_child = [&](std::unique_ptr<Expr>& child,
+                                 ComptimeIntMode child_mode = ComptimeIntMode::Materialize) {
+    child = AnalyzeConstantIntegerExpr(std::move(child), child_mode);
+    InheritErrors(*expression, child.get());
+  };
+  bool supported = false;
+  bool unsupported_operator = false;
+  switch (expression->GetKind()) {
+    case NodeKind::IntegerLiteral:
+    case NodeKind::CharacterLiteral:
+    case NodeKind::FloatLiteral:
+    case NodeKind::BoolLiteral:
+    case NodeKind::NullLiteral:
+    case NodeKind::StringLiteral:
+    case NodeKind::RecoveryExpr:
+      // Ordinary literal typing also lets the evaluator diagnose non-integer lengths.
+      return AnalyzeExpr(std::move(expression), mode);
+    case NodeKind::ParenExpr: {
+      auto& parentheses = static_cast<ParenExpr&>(*expression);
+      analyze_child(parentheses.SubExpr, ComptimeIntMode::Preserve);
+      if (parentheses.SubExpr) {
+        parentheses.type = parentheses.SubExpr->type;
+        parentheses.value_category = parentheses.SubExpr->value_category;
+      } else {
+        parentheses.contains_errors = true;
+      }
+      supported = true;
+      break;
+    }
+    case NodeKind::UnaryOperator: {
+      auto& unary = static_cast<UnaryOperator&>(*expression);
+      supported = unary.op == expr::plus || unary.op == expr::minus;
+      analyze_child(unary.Operand, supported ? ComptimeIntMode::Preserve : ComptimeIntMode::Materialize);
+      if (supported) AnalyzeBuiltinUnaryOperator(unary);
+      unsupported_operator = !supported;
+      break;
+    }
+    case NodeKind::BinaryOperator: {
+      auto& binary = static_cast<BinaryOperator&>(*expression);
+      if (binary.IsSimpleAssignment()) {
+        analyze_child(binary.RHS);
+        analyze_child(binary.LHS);
+      } else {
+        analyze_child(binary.LHS);
+        analyze_child(binary.RHS);
+      }
+      supported = binary.op == expr::plus || binary.op == expr::minus || binary.op == expr::star;
+      if (supported) AnalyzeBuiltinBinaryOperator(binary);
+      unsupported_operator = !supported;
+      break;
+    }
+    case NodeKind::DeclRefExpr:
+      // Name recovery uses the enclosing interface or execution environment, but cannot supply a constant.
+      expression = AnalyzeDeclRefExpr(std::move(expression), DeclRefRole::Object);
+      break;
+    case NodeKind::ThisExpr:
+      AnalyzeThisExpr(static_cast<ThisExpr&>(*expression));
+      break;
+    case NodeKind::CallExpr:
+    case NodeKind::DestructorCallExpr:
+    case NodeKind::ReceiverCallExpr: {
+      auto& call = static_cast<CallExpr&>(*expression);
+      if (call.GetKind() == NodeKind::DestructorCallExpr) {
+        analyze_child(static_cast<DestructorCallExpr&>(call).TargetAddress);
+      } else if (call.GetKind() == NodeKind::ReceiverCallExpr) {
+        analyze_child(static_cast<ReceiverCallExpr&>(call).Receiver);
+      }
+      if (call.Callee && call.Callee->GetKind() == NodeKind::DeclRefExpr) {
+        call.Callee = AnalyzeDeclRefExpr(std::move(call.Callee), DeclRefRole::Callee);
+        InheritErrors(call, call.Callee.get());
+      } else {
+        analyze_child(call.Callee);
+      }
+      for (auto& argument : call.Args) analyze_child(argument);
+      break;
+    }
+    case NodeKind::ConstructionExpr: {
+      auto& construction = static_cast<ConstructionExpr&>(*expression);
+      analyze_child(construction.TargetAddress);
+      for (auto& argument : construction.Args) analyze_child(argument);
+      if (!construction.target_name.empty()) {
+        ResolveName(construction, construction.target_name,
+                    fmt::format("unknown constructor target type '{}'", construction.target_name.Spelling()));
+      }
+      break;
+    }
+    case NodeKind::ArrayValueExpr: {
+      auto& array = static_cast<ArrayValueExpr&>(*expression);
+      if (array.Type) {
+        ResolveType(*array.Type);
+        InheritErrors(array, array.Type.get());
+      }
+      for (auto& element : array.Elements) analyze_child(element);
+      break;
+    }
+    case NodeKind::ConditionalOperator: {
+      auto& conditional = static_cast<ConditionalOperator&>(*expression);
+      analyze_child(conditional.Cond);
+      analyze_child(conditional.Then);
+      analyze_child(conditional.Else);
+      break;
+    }
+    case NodeKind::MemberExpr:
+      analyze_child(static_cast<MemberExpr&>(*expression).Base);
+      break;
+    case NodeKind::SubscriptExpr: {
+      auto& subscript = static_cast<SubscriptExpr&>(*expression);
+      analyze_child(subscript.Base);
+      analyze_child(subscript.Index);
+      break;
+    }
+    case NodeKind::InitializationExpr: {
+      auto& initialization = static_cast<InitializationExpr&>(*expression);
+      analyze_child(initialization.Target);
+      analyze_child(initialization.Source);
+      break;
+    }
+    default:
+      break;
+  }
+
+  if (!supported && !expression->ContainsErrors()) {
+    Diagnose(*expression, kErrorDiagnostic, expression->range,
+             unsupported_operator ? "array length constant expression may use only '+', '-', and '*' arithmetic"
+                                  : "array length is not a constant integer expression");
+  }
+  if (!expression->ContainsErrors() && expression->type && expression->type.GetTypePtr()->AsComptimeIntType() &&
+      mode == ComptimeIntMode::Materialize) {
+    MaterializeComptimeInteger(expression);
+  }
+  return expression;
 }
 
 std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, ComptimeIntMode mode, ExpressionUse use,
@@ -3418,7 +3805,6 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
                   ? construction_context->construction_kind
                   : ConstructionKind::CompleteObject;
           construction->target_name = callee.name;
-          construction->target_name_range = callee.range;
           construction->constructor = constructor;
           construction->Args = std::move(call_expression.Args);
           construction->type = call_expression.type;
@@ -3545,11 +3931,13 @@ std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> ex
 
   const std::string op_spelling(expr::to_string(op));
   std::vector<const FunctionDecl*> function_declarations;
-  if (const FunctionSymbol* symbol = AsFunctionSymbol(symbol_table_.LookupRoot(op_spelling))) {
+  const auto operator_lookup = cw::LookupName(NameSyntax::Identifier(op_spelling), *lookup_context_);
+  if (const auto* symbol = operator_lookup.GetFunctions()) {
     function_declarations = CollectOperatorFunctionCandidates(*symbol, op_spelling, operands.size());
   }
 
-  OverloadResult resolution = ResolveOverload(semantic_arguments, function_declarations, *ast_context_, symbol_table_);
+  OverloadResult resolution =
+      ResolveOverload(semantic_arguments, function_declarations, *ast_context_, *lookup_context_);
   if (const auto* no_viable = std::get_if<NoViableOverload>(&resolution)) {
     if (function_declarations.empty()) {
       if (operands.size() == 1) {
@@ -3593,7 +3981,7 @@ std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> ex
   BOOST_ASSERT(declaration);
   const auto& function_type = static_cast<const FunctionType&>(*declaration->type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
-  auto formation = CompleteArguments(semantic_arguments, *declaration, selected.conversions, symbol_table_);
+  auto formation = CompleteArguments(semantic_arguments, *declaration, selected.conversions);
 
   auto call = std::make_unique<OperatorCallExpr>();
   call->range = expression->range;
@@ -3602,7 +3990,7 @@ std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> ex
 
   auto callee = std::make_unique<DeclRefExpr>();
   callee->range = operator_range;
-  callee->name = op_spelling;
+  callee->name = NameSyntax::Operator(op_spelling, callee->range);
   callee->declaration = declaration;
   callee->type = declaration->type;
   call->Callee = std::move(callee);
@@ -3949,7 +4337,7 @@ void Sema::AnalyzeArrayValueExpr(ArrayValueExpr& expression, QualType contextual
       continue;
     }
     const auto source = MakeConversionSource(*element);
-    auto result = BuildConversion(source, element_type, *ast_context_, symbol_table_);
+    auto result = BuildConversion(source, element_type, *ast_context_, *lookup_context_);
     if (const auto* failure = std::get_if<ConversionFailure>(&result)) {
       Diagnose(expression, kErrorDiagnostic, element->range,
                fmt::format("cannot initialize array element {}: {}", index, FormatConversionFailure(*failure)));
@@ -3957,7 +4345,7 @@ void Sema::AnalyzeArrayValueExpr(ArrayValueExpr& expression, QualType contextual
       continue;
     }
     auto conversion = std::get<ConversionSequence>(std::move(result));
-    if (const auto failure = CompleteConversion(source, element_type, conversion, symbol_table_)) {
+    if (const auto failure = CompleteConversion(source, element_type, conversion)) {
       Diagnose(
           expression, kErrorDiagnostic, element->range,
           fmt::format("cannot initialize array element {}: {}", index, FormatObjectFormationFailure(failure->failure)));
@@ -4040,7 +4428,7 @@ std::unique_ptr<Expr> Sema::AnalyzeSimpleAssignment(std::unique_ptr<Expr> expres
   const QualType source_type = expression.RHS->type;
   const SourceRange source_range = expression.RHS->range;
   if (target_type.WithoutConst() == source_type.WithoutConst()) {
-    auto assignment_result = ClassifyObjectAssignment(*expression.LHS, *expression.RHS, symbol_table_);
+    auto assignment_result = ClassifyObjectAssignment(*expression.LHS, *expression.RHS);
     if (const auto* failure = std::get_if<ObjectAssignmentFailure>(&assignment_result)) {
       const SourceRange range =
           failure->kind == ObjectAssignmentFailureKind::ConstArrayElement ? expression.LHS->range : expression.range;
@@ -4070,7 +4458,7 @@ std::unique_ptr<Expr> Sema::AnalyzeSimpleAssignment(std::unique_ptr<Expr> expres
         call->Args.push_back(std::move(expression.RHS));
         const auto& parameters = FunctionParameterTypes(*assignment_plan.selected_assignment);
         const auto sources = MakeConversionSources(ExpressionPointers(call->Args));
-        auto matched = MatchArguments(sources, parameters, *ast_context_, symbol_table_);
+        auto matched = MatchArguments(sources, parameters, *ast_context_, *lookup_context_);
         auto* conversions = std::get_if<std::vector<ConversionSequence>>(&matched);
         BOOST_ASSERT(conversions);
         if (!conversions) {
@@ -4078,14 +4466,14 @@ std::unique_ptr<Expr> Sema::AnalyzeSimpleAssignment(std::unique_ptr<Expr> expres
           return call;
         }
         // Both fixed-slot operands bind references, so no formation is pending.
-        auto completed = CompleteArguments(sources, parameters, std::move(*conversions), symbol_table_);
+        auto completed = CompleteArguments(sources, parameters, std::move(*conversions));
         BOOST_ASSERT(std::holds_alternative<std::vector<ConversionSequence>>(completed));
         CommitArgumentConversions(ExpressionSlots(call->Args), parameters,
                                   std::get<std::vector<ConversionSequence>>(completed));
 
         auto callee = std::make_unique<DeclRefExpr>();
         callee->range = expression.operator_range;
-        callee->name = "=";
+        callee->name = NameSyntax::Operator("=", callee->range);
         call->Callee = std::move(callee);
         FormDirectCallResult(*call, static_cast<DeclRefExpr&>(*call->Callee), *assignment_plan.selected_assignment);
         return call;
@@ -4398,7 +4786,9 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
       if (call.Callee && call.Callee->GetKind() == NodeKind::DeclRefExpr) {
         const auto& callee = static_cast<const DeclRefExpr&>(*call.Callee);
         const auto& constructor = static_cast<const ConstructorDecl&>(*current_function_);
-        has_direct_delegating_source = callee.name == constructor.name;
+        const StructDecl* target = cw::LookupName(callee.name, *lookup_context_).GetType();
+        has_direct_delegating_source =
+            target && constructor.target_type && target == constructor.target_type->GetDeclaration();
       }
     }
     if (!has_direct_delegating_source) {
@@ -4515,7 +4905,7 @@ void Sema::AnalyzeConditionalOperator(ConditionalOperator& expression,
       if (common_type) {
         const auto build_branch = [&](const Expr& branch, ConversionSequence& conversion, const char* name) {
           const auto source = MakeConversionSource(branch);
-          auto result = BuildConversion(source, common_type, *ast_context_, symbol_table_);
+          auto result = BuildConversion(source, common_type, *ast_context_, *lookup_context_);
           if (const auto* failure = std::get_if<ConversionFailure>(&result)) {
             Diagnose(expression, kErrorDiagnostic, branch.range,
                      fmt::format("cannot form conditional result from {} branch: {}", name,
@@ -4523,7 +4913,7 @@ void Sema::AnalyzeConditionalOperator(ConditionalOperator& expression,
             return false;
           }
           conversion = std::get<ConversionSequence>(std::move(result));
-          if (const auto failure = CompleteConversion(source, common_type, conversion, symbol_table_)) {
+          if (const auto failure = CompleteConversion(source, common_type, conversion)) {
             Diagnose(expression, kErrorDiagnostic, branch.range,
                      fmt::format("cannot form conditional result from {} branch: {}", name,
                                  FormatObjectFormationFailure(failure->failure)));
@@ -4597,7 +4987,7 @@ void Sema::AnalyzeThisExpr(ThisExpr& expression) {
 std::unique_ptr<Expr> Sema::AnalyzeDeclRefExpr(std::unique_ptr<Expr> expression, DeclRefRole role) {
   BOOST_ASSERT(expression && expression->GetKind() == NodeKind::DeclRefExpr);
   auto& declaration_reference = static_cast<DeclRefExpr&>(*expression);
-  if (declaration_reference.name == "this" && current_function_ &&
+  if (declaration_reference.name.IsUnqualified("this") && current_function_ &&
       (current_function_->GetKind() == NodeKind::ConstructorDecl ||
        current_function_->GetKind() == NodeKind::DestructorDecl)) {
     auto this_expression = std::make_unique<ThisExpr>();
@@ -4611,24 +5001,24 @@ std::unique_ptr<Expr> Sema::AnalyzeDeclRefExpr(std::unique_ptr<Expr> expression,
     return expression;
   }
 
-  const bool is_operator = IsOperatorFunctionName(declaration_reference.name);
-  const Symbol* symbol = symbol_table_.Lookup(declaration_reference.name);
+  const bool is_operator = declaration_reference.name.IsOperator();
+  const auto symbol = ResolveName(
+      declaration_reference, declaration_reference.name,
+      is_operator ? fmt::format("use of undeclared operator '{}'", declaration_reference.name.Spelling())
+                  : fmt::format("use of undeclared identifier '{}'", declaration_reference.name.Spelling()));
   if (!symbol) {
-    if (role == DeclRefRole::Callee && is_operator &&
-        HasInvalidTopLevelOperatorFunctionDeclaration(*ast_context_->GetTranslationUnitDecl(),
-                                                      declaration_reference.name)) {
-      declaration_reference.contains_errors = true;
-      return expression;
-    }
+    return expression;
+  }
+
+  if (symbol.GetNamespace()) {
     Diagnose(declaration_reference, kErrorDiagnostic, declaration_reference.range,
-             is_operator ? fmt::format("use of undeclared operator '{}'", declaration_reference.name)
-                         : fmt::format("use of undeclared identifier '{}'", declaration_reference.name));
+             fmt::format("namespace '{}' cannot be used as an expression", declaration_reference.name.Spelling()));
     return expression;
   }
 
   if (!is_operator) {
-    if (const VariableSymbol* variable_symbol = AsVariableSymbol(symbol)) {
-      declaration_reference.declaration = variable_symbol->GetDeclaration();
+    if (const VarDecl* variable = symbol.GetVariable()) {
+      declaration_reference.declaration = variable;
       if (declaration_reference.declaration->ContainsErrors()) {
         declaration_reference.contains_errors = true;
         return expression;
@@ -4651,14 +5041,13 @@ std::unique_ptr<Expr> Sema::AnalyzeDeclRefExpr(std::unique_ptr<Expr> expression,
     }
   }
 
-  if (const FunctionSymbol* function_symbol = AsFunctionSymbol(symbol)) {
+  if (const LookupResult::Functions* function_symbol = symbol.GetFunctions()) {
     declaration_reference.type = QualType(ast_context_->GetFunctionOverloadSetType());
     declaration_reference.value_category = ValueCategory::None;
     const bool has_valid_interface =
-        std::any_of(function_symbol->Declarations().begin(), function_symbol->Declarations().end(),
-                    [](const FunctionDecl* declaration) {
-                      return declaration && !declaration->is_invalid && HasValidFunctionInterface(*declaration);
-                    });
+        std::any_of(function_symbol->begin(), function_symbol->end(), [](const FunctionDecl* declaration) {
+          return declaration && !declaration->is_invalid && HasValidFunctionInterface(*declaration);
+        });
     if (!has_valid_interface) {
       declaration_reference.contains_errors = true;
     }
@@ -4666,12 +5055,12 @@ std::unique_ptr<Expr> Sema::AnalyzeDeclRefExpr(std::unique_ptr<Expr> expression,
   }
 
   if (role == DeclRefRole::Object) {
-    if (AsTypeSymbol(symbol)) {
+    if (symbol.GetType()) {
       Diagnose(declaration_reference, kErrorDiagnostic, declaration_reference.range,
-               fmt::format("type '{}' cannot be used as an object expression", declaration_reference.name));
+               fmt::format("type '{}' cannot be used as an object expression", declaration_reference.name.Spelling()));
     } else {
       Diagnose(declaration_reference, kErrorDiagnostic, declaration_reference.range,
-               fmt::format("'{}' cannot be used as an object expression", declaration_reference.name));
+               fmt::format("'{}' cannot be used as an object expression", declaration_reference.name.Spelling()));
     }
   }
   return expression;
@@ -4853,17 +5242,12 @@ std::unique_ptr<Expr> Sema::AnalyzeCallableObjectCall(std::unique_ptr<Expr> expr
   }
 
   constexpr const char* kCallOperatorName = "()";
-  const bool has_invalid_declaration =
-      HasInvalidTopLevelOperatorFunctionDeclaration(*ast_context_->GetTranslationUnitDecl(), kCallOperatorName);
-  const FunctionSymbol* functions = AsFunctionSymbol(symbol_table_.LookupRoot(kCallOperatorName));
+  const auto lookup = cw::LookupName(NameSyntax::Identifier(kCallOperatorName), *lookup_context_);
+  const auto* functions = lookup.GetFunctions();
+  const bool has_invalid_declaration = functions && HasInvalidFunctionDeclaration(*functions, kCallOperatorName);
   if (!functions) {
-    if (has_invalid_declaration) {
-      expression.contains_errors = true;
-    } else {
-      Diagnose(
-          expression, kErrorDiagnostic, expression.range,
-          fmt::format("{} is not callable", DescribeExpressionType(expression.Callee->type, "expression of type ")));
-    }
+    Diagnose(expression, kErrorDiagnostic, expression.range,
+             fmt::format("{} is not callable", DescribeExpressionType(expression.Callee->type, "expression of type ")));
     return expression_node;
   }
 
@@ -4880,7 +5264,7 @@ std::unique_ptr<Expr> Sema::AnalyzeCallableObjectCall(std::unique_ptr<Expr> expr
     return expression_node;
   }
 
-  OverloadResult resolution = ResolveOverload(semantic_arguments, complete_candidates, *ast_context_, symbol_table_);
+  OverloadResult resolution = ResolveOverload(semantic_arguments, complete_candidates, *ast_context_, *lookup_context_);
   if (const auto* no_viable = std::get_if<NoViableOverload>(&resolution)) {
     Diagnose(
         expression, kErrorDiagnostic, expression.range,
@@ -4929,7 +5313,7 @@ std::unique_ptr<Expr> Sema::AnalyzeCallableObjectCall(std::unique_ptr<Expr> expr
   BOOST_ASSERT(declaration);
   const auto& function_type = static_cast<const FunctionType&>(*declaration->type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
-  auto formation = CompleteArguments(semantic_arguments, *declaration, selected.conversions, symbol_table_);
+  auto formation = CompleteArguments(semantic_arguments, *declaration, selected.conversions);
   if (const auto* failure = std::get_if<ArgumentCompletionFailure>(&formation)) {
     BOOST_ASSERT(failure->index < arguments.size());
     Diagnose(expression, kErrorDiagnostic, arguments[failure->index]->range,
@@ -4949,7 +5333,7 @@ std::unique_ptr<Expr> Sema::AnalyzeCallableObjectCall(std::unique_ptr<Expr> expr
 
   auto callee = std::make_unique<DeclRefExpr>();
   callee->range = {call->Args.front()->range.end, call->Args.front()->range.end};
-  callee->name = kCallOperatorName;
+  callee->name = NameSyntax::Operator(kCallOperatorName, callee->range);
   callee->declaration = declaration;
   callee->type = declaration->type;
   call->Callee = std::move(callee);
@@ -5001,7 +5385,7 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
         const auto& function_name = static_cast<const DeclRefExpr&>(*unwrapped);
         if (!function_name.name.empty()) {
           Diagnose(*expression.Callee, kErrorDiagnostic, function_name.range,
-                   fmt::format("function '{}' cannot be used as an object expression", function_name.name));
+                   fmt::format("function '{}' cannot be used as an object expression", function_name.name.Spelling()));
           expression.contains_errors = true;
         }
       }
@@ -5016,27 +5400,27 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
   if (callee.declaration) {
     return;
   }
-  const bool is_operator = IsOperatorFunctionName(callee.name);
+  const bool is_operator = callee.name.IsOperator();
 
-  const Symbol* symbol = symbol_table_.Lookup(callee.name);
+  const auto symbol = cw::LookupName(callee.name, *lookup_context_);
   if (!symbol) {
     return;
   }
 
-  if (const FunctionSymbol* functions = AsFunctionSymbol(symbol)) {
+  if (const LookupResult::Functions* functions = symbol.GetFunctions()) {
     const CallCandidateMode mode =
         expression.is_nonvirtual ? CallCandidateMode::NonVirtual : CallCandidateMode::Regular;
     const std::vector<const FunctionDecl*> complete_candidates =
-        CollectFunctionCallCandidates(*functions, callee.name, mode);
+        CollectFunctionCallCandidates(*functions, callee.name.Unqualified(), mode);
     if (complete_candidates.empty()) {
       callee.contains_errors = true;
       expression.contains_errors = true;
-      if (is_operator && !HasInvalidFunctionDeclaration(*functions, callee.name)) {
+      if (is_operator && !HasInvalidFunctionDeclaration(*functions, callee.name.Unqualified())) {
         Diagnose(expression, kErrorDiagnostic, expression.range,
-                 fmt::format("no matching function for call to operator '{}'", callee.name));
-      } else if (expression.is_nonvirtual && !HasInvalidFunctionDeclaration(*functions, callee.name)) {
+                 fmt::format("no matching function for call to operator '{}'", callee.name.Spelling()));
+      } else if (expression.is_nonvirtual && !HasInvalidFunctionDeclaration(*functions, callee.name.Unqualified())) {
         Diagnose(expression, kErrorDiagnostic, expression.range,
-                 fmt::format("no matching function for nonvirtual call to '{}'", callee.name));
+                 fmt::format("no matching function for nonvirtual call to '{}'", callee.name.Spelling()));
       }
       return;
     }
@@ -5044,12 +5428,14 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
     // Rank conversion matches before forming parameter objects or rewriting any arguments.
     const auto arguments = ExpressionPointers(expression.Args);
     const auto semantic_arguments = MakeConversionSources(arguments);
-    OverloadResult resolution = ResolveOverload(semantic_arguments, complete_candidates, *ast_context_, symbol_table_);
+    OverloadResult resolution =
+        ResolveOverload(semantic_arguments, complete_candidates, *ast_context_, *lookup_context_);
     if (const auto* no_viable = std::get_if<NoViableOverload>(&resolution)) {
       Diagnose(expression, kErrorDiagnostic, expression.range,
-               is_operator                ? fmt::format("no matching function for call to operator '{}'", callee.name)
-               : expression.is_nonvirtual ? fmt::format("no matching function for nonvirtual call to '{}'", callee.name)
-                                          : fmt::format("no matching function for call to '{}'", callee.name));
+               is_operator ? fmt::format("no matching function for call to operator '{}'", callee.name.Spelling())
+               : expression.is_nonvirtual
+                   ? fmt::format("no matching function for nonvirtual call to '{}'", callee.name.Spelling())
+                   : fmt::format("no matching function for call to '{}'", callee.name.Spelling()));
       callee.contains_errors = true;
       for (const auto& candidate : no_viable->candidates) {
         BOOST_ASSERT(candidate.target);
@@ -5069,8 +5455,8 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
     }
     if (const auto* ambiguous = std::get_if<AmbiguousOverload>(&resolution)) {
       Diagnose(expression, kErrorDiagnostic, expression.range,
-               is_operator ? fmt::format("call to operator '{}' is ambiguous", callee.name)
-                           : fmt::format("call to '{}' is ambiguous", callee.name));
+               is_operator ? fmt::format("call to operator '{}' is ambiguous", callee.name.Spelling())
+                           : fmt::format("call to '{}' is ambiguous", callee.name.Spelling()));
       callee.contains_errors = true;
       for (const FunctionDecl* declaration : ambiguous->candidates) {
         EmitDiagnostic(kNoteDiagnostic, {declaration->range.begin, declaration->range.begin}, "candidate function");
@@ -5085,12 +5471,12 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
     BOOST_ASSERT(declaration);
     const auto& function_type = static_cast<const FunctionType&>(*declaration->type.GetTypePtr());
     const auto& parameter_types = function_type.GetParameterTypes();
-    auto formation = CompleteArguments(semantic_arguments, *declaration, selected.conversions, symbol_table_);
+    auto formation = CompleteArguments(semantic_arguments, *declaration, selected.conversions);
     callee.declaration = declaration;
     callee.type = declaration->type;
     if (const auto* failure = std::get_if<ArgumentCompletionFailure>(&formation)) {
-      const std::string callee_spelling =
-          is_operator ? fmt::format("operator '{}'", callee.name) : fmt::format("function '{}'", callee.name);
+      const std::string callee_spelling = is_operator ? fmt::format("operator '{}'", callee.name.Spelling())
+                                                      : fmt::format("function '{}'", callee.name.Spelling());
       Diagnose(expression, kErrorDiagnostic, expression.Args[failure->index]->range,
                fmt::format("cannot initialize parameter {} of {}: {}", failure->index + 1, callee_spelling,
                            FormatObjectFormationFailure(failure->failure)));
@@ -5108,8 +5494,8 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
   }
 
   // Calling a type name performs construction, including trivial default formation.
-  const TypeSymbol* type_symbol = AsTypeSymbol(symbol);
-  if (!type_symbol) {
+  const StructDecl* structure = symbol.GetType();
+  if (!structure) {
     return;
   }
   if (expression.is_nonvirtual) {
@@ -5118,7 +5504,7 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
     return;
   }
 
-  const StructType* target_type = ast_context_->GetStructType(type_symbol->GetDeclaration());
+  const StructType* target_type = ast_context_->GetStructType(structure);
   if (target_type->GetDeclaration()->triviality == TypeTriviality::Invalid) {
     expression.contains_errors = true;
     return;
@@ -5136,20 +5522,20 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
     callee.contains_errors = true;
     expression.contains_errors = true;
     Diagnose(expression, kErrorDiagnostic, callee.range,
-             fmt::format("cannot construct an object of abstract type '{}'", callee.name));
+             fmt::format("cannot construct an object of abstract type '{}'", callee.name.Spelling()));
     return;
   }
-  const FunctionSymbol* constructors = type_symbol->GetConstructorSymbol();
-  if (!constructors) {
+  const auto& constructors = structure->constructors;
+  if (constructors.empty()) {
     callee.contains_errors = true;
     expression.contains_errors = true;
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("no constructor declared for type '{}'", callee.name));
+             fmt::format("no constructor declared for type '{}'", callee.name.Spelling()));
     return;
   }
 
   const std::vector<const FunctionDecl*> complete_candidates =
-      CollectCompleteFunctionCandidates(*constructors, callee.name, NodeKind::ConstructorDecl);
+      CollectCompleteFunctionCandidates(constructors, callee.name.Unqualified(), NodeKind::ConstructorDecl);
   if (complete_candidates.empty()) {
     callee.contains_errors = true;
     expression.contains_errors = true;
@@ -5159,10 +5545,10 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
   // Constructor candidates use the same match, rank, and deferred-formation sequence as functions.
   const auto arguments = ExpressionPointers(expression.Args);
   const auto semantic_arguments = MakeConversionSources(arguments);
-  OverloadResult resolution = ResolveOverload(semantic_arguments, complete_candidates, *ast_context_, symbol_table_);
+  OverloadResult resolution = ResolveOverload(semantic_arguments, complete_candidates, *ast_context_, *lookup_context_);
   if (const auto* no_viable = std::get_if<NoViableOverload>(&resolution)) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("no matching constructor for type '{}'", callee.name));
+             fmt::format("no matching constructor for type '{}'", callee.name.Spelling()));
     callee.contains_errors = true;
     for (const auto& candidate : no_viable->candidates) {
       BOOST_ASSERT(candidate.target);
@@ -5182,7 +5568,7 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
   }
   if (const auto* ambiguous = std::get_if<AmbiguousOverload>(&resolution)) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("construction of '{}' is ambiguous", callee.name));
+             fmt::format("construction of '{}' is ambiguous", callee.name.Spelling()));
     callee.contains_errors = true;
     for (const FunctionDecl* declaration : ambiguous->candidates) {
       EmitDiagnostic(kNoteDiagnostic, {declaration->range.begin, declaration->range.begin}, "candidate constructor");
@@ -5196,13 +5582,13 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
   const auto& declaration = static_cast<const ConstructorDecl&>(*selected.target);
   const auto& function_type = static_cast<const FunctionType&>(*declaration.type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
-  auto formation = CompleteArguments(semantic_arguments, declaration, selected.conversions, symbol_table_);
+  auto formation = CompleteArguments(semantic_arguments, declaration, selected.conversions);
   callee.declaration = &declaration;
   callee.type = declaration.type;
   if (const auto* failure = std::get_if<ArgumentCompletionFailure>(&formation)) {
     Diagnose(expression, kErrorDiagnostic, expression.Args[failure->index]->range,
-             fmt::format("cannot initialize parameter {} of constructor '{}': {}", failure->index + 1, callee.name,
-                         FormatObjectFormationFailure(failure->failure)));
+             fmt::format("cannot initialize parameter {} of constructor '{}': {}", failure->index + 1,
+                         callee.name.Spelling(), FormatObjectFormationFailure(failure->failure)));
     return;
   }
   const auto& plans = std::get<std::vector<ConversionSequence>>(formation);
@@ -5231,7 +5617,8 @@ void Sema::AnalyzeIndirectCallExpr(CallExpr& expression, const FunctionType& fun
     }
   }
   const auto semantic_arguments = MakeConversionSources(arguments);
-  MatchArgumentsResult evaluation = MatchArguments(semantic_arguments, parameter_types, *ast_context_, symbol_table_);
+  MatchArgumentsResult evaluation =
+      MatchArguments(semantic_arguments, parameter_types, *ast_context_, *lookup_context_);
   if (const auto* failure = std::get_if<CandidateFailure>(&evaluation)) {
     const auto* argument = std::get_if<CandidateArgumentFailure>(failure);
     BOOST_ASSERT(argument);
@@ -5247,7 +5634,7 @@ void Sema::AnalyzeIndirectCallExpr(CallExpr& expression, const FunctionType& fun
 
   // The signature is fixed, but all parameter formations must still succeed before AST conversion.
   const auto& match_plans = std::get<std::vector<ConversionSequence>>(evaluation);
-  auto formation = CompleteArguments(semantic_arguments, parameter_types, match_plans, symbol_table_);
+  auto formation = CompleteArguments(semantic_arguments, parameter_types, match_plans);
   if (const auto* failure = std::get_if<ArgumentCompletionFailure>(&formation)) {
     Diagnose(expression, kErrorDiagnostic, expression.Args[failure->index]->range,
              fmt::format("cannot initialize parameter {} of indirect function call: {}", failure->index + 1,
@@ -5272,25 +5659,25 @@ void Sema::AnalyzeConstructionExpr(ConstructionExpr& expression) {
     return;
   }
 
-  const Symbol* symbol = symbol_table_.Lookup(expression.target_name);
+  const auto symbol =
+      ResolveName(expression, expression.target_name,
+                  fmt::format("unknown constructor target type '{}'", expression.target_name.Spelling()));
   if (!symbol) {
-    Diagnose(expression, kErrorDiagnostic, expression.target_name_range,
-             fmt::format("unknown constructor target type '{}'", expression.target_name));
     return;
   }
-  const TypeSymbol* type_symbol = AsTypeSymbol(symbol);
-  if (!type_symbol) {
-    Diagnose(expression, kErrorDiagnostic, expression.target_name_range,
-             fmt::format("'{}' does not name a struct type", expression.target_name));
+  const StructDecl* structure = symbol.GetType();
+  if (!structure) {
+    Diagnose(expression, kErrorDiagnostic, expression.target_name.Range(),
+             fmt::format("'{}' does not name a struct type", expression.target_name.Spelling()));
     return;
   }
-  const StructType* target_type = ast_context_->GetStructType(type_symbol->GetDeclaration());
+  const StructType* target_type = ast_context_->GetStructType(structure);
 
   // Explicit-address construction requires writable storage of the exact target type.
   bool target_is_valid = false;
   if (target_type->GetDeclaration()->is_abstract) {
-    Diagnose(expression, kErrorDiagnostic, expression.target_name_range,
-             fmt::format("cannot construct an object of abstract type '{}'", expression.target_name));
+    Diagnose(expression, kErrorDiagnostic, expression.target_name.Range(),
+             fmt::format("cannot construct an object of abstract type '{}'", expression.target_name.Spelling()));
     return;
   }
   if (!expression.TargetAddress) {
@@ -5326,16 +5713,16 @@ void Sema::AnalyzeConstructionExpr(ConstructionExpr& expression) {
     return;
   }
 
-  const FunctionSymbol* constructors = type_symbol->GetConstructorSymbol();
-  if (!constructors) {
+  const auto& constructors = structure->constructors;
+  if (constructors.empty()) {
     expression.contains_errors = true;
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("no constructor declared for type '{}'", expression.target_name));
+             fmt::format("no constructor declared for type '{}'", expression.target_name.Spelling()));
     return;
   }
 
   const std::vector<const FunctionDecl*> complete_candidates =
-      CollectCompleteFunctionCandidates(*constructors, expression.target_name, NodeKind::ConstructorDecl);
+      CollectCompleteFunctionCandidates(constructors, expression.target_name.Unqualified(), NodeKind::ConstructorDecl);
   if (complete_candidates.empty()) {
     expression.contains_errors = true;
     return;
@@ -5343,10 +5730,10 @@ void Sema::AnalyzeConstructionExpr(ConstructionExpr& expression) {
 
   const auto arguments = ExpressionPointers(expression.Args);
   const auto semantic_arguments = MakeConversionSources(arguments);
-  OverloadResult resolution = ResolveOverload(semantic_arguments, complete_candidates, *ast_context_, symbol_table_);
+  OverloadResult resolution = ResolveOverload(semantic_arguments, complete_candidates, *ast_context_, *lookup_context_);
   if (const auto* no_viable = std::get_if<NoViableOverload>(&resolution)) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("no matching constructor for type '{}'", expression.target_name));
+             fmt::format("no matching constructor for type '{}'", expression.target_name.Spelling()));
     for (const auto& candidate : no_viable->candidates) {
       BOOST_ASSERT(candidate.target);
       const SourceRange candidate_range{candidate.target->range.begin, candidate.target->range.begin};
@@ -5365,7 +5752,7 @@ void Sema::AnalyzeConstructionExpr(ConstructionExpr& expression) {
   }
   if (const auto* ambiguous = std::get_if<AmbiguousOverload>(&resolution)) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("construction of '{}' is ambiguous", expression.target_name));
+             fmt::format("construction of '{}' is ambiguous", expression.target_name.Spelling()));
     for (const FunctionDecl* declaration : ambiguous->candidates) {
       EmitDiagnostic(kNoteDiagnostic, {declaration->range.begin, declaration->range.begin}, "candidate constructor");
     }
@@ -5378,12 +5765,12 @@ void Sema::AnalyzeConstructionExpr(ConstructionExpr& expression) {
   BOOST_ASSERT(selected);
   const auto& function_type = static_cast<const FunctionType&>(*selected->type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
-  auto formation = CompleteArguments(semantic_arguments, *selected, selected_overload.conversions, symbol_table_);
+  auto formation = CompleteArguments(semantic_arguments, *selected, selected_overload.conversions);
   expression.constructor = selected;
   if (const auto* failure = std::get_if<ArgumentCompletionFailure>(&formation)) {
     Diagnose(expression, kErrorDiagnostic, expression.Args[failure->index]->range,
              fmt::format("cannot initialize parameter {} of constructor '{}': {}", failure->index + 1,
-                         expression.target_name, FormatObjectFormationFailure(failure->failure)));
+                         expression.target_name.Spelling(), FormatObjectFormationFailure(failure->failure)));
     return;
   }
   const auto& plans = std::get<std::vector<ConversionSequence>>(formation);
@@ -5407,20 +5794,20 @@ void Sema::AnalyzeDestructorCallExpr(DestructorCallExpr& expression) {
     return;
   }
 
-  const Symbol* symbol = symbol_table_.Lookup(callee.name);
+  const auto symbol =
+      ResolveName(expression, callee.name, fmt::format("unknown destructor target type '{}'", callee.name.Spelling()));
   if (!symbol) {
+    callee.contains_errors = true;
+    return;
+  }
+  const StructDecl* structure = symbol.GetType();
+  if (!structure) {
     Diagnose(expression, kErrorDiagnostic, callee.range,
-             fmt::format("unknown destructor target type '{}'", callee.name));
+             fmt::format("'{}' does not name a struct type", callee.name.Spelling()));
     callee.contains_errors = true;
     return;
   }
-  const TypeSymbol* type_symbol = AsTypeSymbol(symbol);
-  if (!type_symbol) {
-    Diagnose(expression, kErrorDiagnostic, callee.range, fmt::format("'{}' does not name a struct type", callee.name));
-    callee.contains_errors = true;
-    return;
-  }
-  const StructType* target_type = ast_context_->GetStructType(type_symbol->GetDeclaration());
+  const StructType* target_type = ast_context_->GetStructType(structure);
 
   bool address_is_valid = false;
   if (expression.TargetAddress && !expression.TargetAddress->ContainsErrors()) {
@@ -5454,12 +5841,12 @@ void Sema::AnalyzeDestructorCallExpr(DestructorCallExpr& expression) {
     return;
   }
 
-  const DestructorDecl* declaration = type_symbol->GetDestructor();
+  const DestructorDecl* declaration = structure->destructor;
   if (!declaration) {
     callee.contains_errors = true;
     expression.contains_errors = true;
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("no destructor declared for type '{}'", callee.name));
+             fmt::format("no destructor declared for type '{}'", callee.name.Spelling()));
     return;
   }
   BOOST_ASSERT(declaration->target_type == target_type);
@@ -5519,24 +5906,25 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
   }
 
   DeclRefExpr* callee = nullptr;
-  const FunctionSymbol* function_symbol = nullptr;
+  LookupResult callee_lookup;
+  const LookupResult::Functions* function_symbol = nullptr;
   bool callee_is_valid = false;
   if (expression.Callee && !expression.Callee->ContainsErrors() &&
       expression.Callee->GetKind() == NodeKind::DeclRefExpr) {
     callee = static_cast<DeclRefExpr*>(expression.Callee.get());
-    if (!callee->name.empty() && !IsOperatorFunctionName(callee->name) && !callee->declaration && callee->type &&
+    if (!callee->name.empty() && !callee->name.IsOperator() && !callee->declaration && callee->type &&
         callee->type.GetTypePtr()->GetKind() == TypeKind::FunctionOverloadSet) {
-      const Symbol* symbol = symbol_table_.Lookup(callee->name);
-      function_symbol = AsFunctionSymbol(symbol);
+      callee_lookup = cw::LookupName(callee->name, *lookup_context_);
+      function_symbol = callee_lookup.GetFunctions();
       if (function_symbol) {
         callee_is_valid = true;
-      } else if (symbol) {
+      } else if (callee_lookup) {
         Diagnose(expression, kErrorDiagnostic, callee->range,
-                 fmt::format("'{}' does not name an ordinary function", callee->name));
+                 fmt::format("'{}' does not name an ordinary function", callee->name.Spelling()));
       }
     } else if (callee->declaration) {
       Diagnose(expression, kErrorDiagnostic, callee->range,
-               fmt::format("'{}' does not name an ordinary function", callee->name));
+               fmt::format("'{}' does not name an ordinary function", callee->name.Spelling()));
     }
   }
 
@@ -5553,14 +5941,14 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
   BOOST_ASSERT(callee);
   BOOST_ASSERT(function_symbol);
   const std::vector<const FunctionDecl*> complete_candidates = CollectFunctionCallCandidates(
-      *function_symbol, callee->name,
+      *function_symbol, callee->name.Unqualified(),
       expression.is_nonvirtual ? CallCandidateMode::NonVirtual : CallCandidateMode::Regular);
   if (complete_candidates.empty()) {
     callee->contains_errors = true;
     expression.contains_errors = true;
-    if (expression.is_nonvirtual && !HasInvalidFunctionDeclaration(*function_symbol, callee->name)) {
+    if (expression.is_nonvirtual && !HasInvalidFunctionDeclaration(*function_symbol, callee->name.Unqualified())) {
       Diagnose(expression, kErrorDiagnostic, expression.range,
-               fmt::format("no matching receiver function for nonvirtual call to '{}'", callee->name));
+               fmt::format("no matching receiver function for nonvirtual call to '{}'", callee->name.Spelling()));
     }
     return;
   }
@@ -5572,12 +5960,12 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
   semantic_arguments.push_back(MakeConversionSource(*expression.Receiver));
   for (const auto& argument : expression.Args) semantic_arguments.push_back(MakeConversionSource(*argument));
 
-  OverloadResult resolution = ResolveOverload(semantic_arguments, complete_candidates, *ast_context_, symbol_table_);
+  OverloadResult resolution = ResolveOverload(semantic_arguments, complete_candidates, *ast_context_, *lookup_context_);
   if (const auto* no_viable = std::get_if<NoViableOverload>(&resolution)) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
              expression.is_nonvirtual
-                 ? fmt::format("no matching receiver function for nonvirtual call to '{}'", callee->name)
-                 : fmt::format("no matching receiver function for call to '{}'", callee->name));
+                 ? fmt::format("no matching receiver function for nonvirtual call to '{}'", callee->name.Spelling())
+                 : fmt::format("no matching receiver function for call to '{}'", callee->name.Spelling()));
     callee->contains_errors = true;
 
     for (const auto& candidate : no_viable->candidates) {
@@ -5618,7 +6006,8 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
   }
 
   if (const auto* ambiguous = std::get_if<AmbiguousOverload>(&resolution)) {
-    Diagnose(expression, kErrorDiagnostic, expression.range, fmt::format("call to '{}' is ambiguous", callee->name));
+    Diagnose(expression, kErrorDiagnostic, expression.range,
+             fmt::format("call to '{}' is ambiguous", callee->name.Spelling()));
     callee->contains_errors = true;
     for (const FunctionDecl* declaration : ambiguous->candidates) {
       EmitDiagnostic(kNoteDiagnostic, {declaration->range.begin, declaration->range.begin}, "candidate function");
@@ -5631,21 +6020,21 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
   const FunctionDecl& declaration = *selected.target;
   const auto& function_type = static_cast<const FunctionType&>(*declaration.type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
-  auto formation = CompleteArguments(semantic_arguments, declaration, selected.conversions, symbol_table_);
+  auto formation = CompleteArguments(semantic_arguments, declaration, selected.conversions);
 
   callee->declaration = &declaration;
   callee->type = declaration.type;
   if (const auto* failure = std::get_if<ArgumentCompletionFailure>(&formation)) {
     if (failure->index == 0) {
       Diagnose(expression, kErrorDiagnostic, expression.Receiver->range,
-               fmt::format("cannot initialize receiver of function '{}': {}", callee->name,
+               fmt::format("cannot initialize receiver of function '{}': {}", callee->name.Spelling(),
                            FormatObjectFormationFailure(failure->failure)));
     } else {
       const std::size_t explicit_index = failure->index - 1;
       BOOST_ASSERT(explicit_index < expression.Args.size());
       Diagnose(expression, kErrorDiagnostic, expression.Args[explicit_index]->range,
                fmt::format("cannot initialize parameter {} of receiver function '{}': {}", explicit_index + 1,
-                           callee->name, FormatObjectFormationFailure(failure->failure)));
+                           callee->name.Spelling(), FormatObjectFormationFailure(failure->failure)));
     }
     return;
   }
@@ -5816,16 +6205,15 @@ void Sema::AddLocalVariable(VarDecl& declaration) {
     return;
   }
 
-  auto [symbol, inserted] = symbol_table_.Insert(declaration.name, std::make_unique<VariableSymbol>(&declaration));
+  auto [symbol, inserted] = local_symbols_->InsertLocal(declaration);
   if (inserted) {
     return;
   }
 
   BOOST_ASSERT(symbol);
-  BOOST_ASSERT(symbol->GetKind() == SymbolKind::Variable);
   Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
            fmt::format("redefinition of variable '{}'", declaration.name));
-  EmitDiagnostic(kNoteDiagnostic, SymbolDeclarationRange(*symbol), "previous declaration is here");
+  EmitDiagnostic(kNoteDiagnostic, NamedDeclarationRange(*symbol), "previous declaration is here");
 }
 
 void Sema::CheckFunctionOperatorAndReturnDeclaration(FunctionDecl& declaration) {
@@ -5977,19 +6365,24 @@ void Sema::CheckVariableAttributes(VarDecl& declaration) {
 }
 
 void Sema::ResolveStructDeclarationTypes(StructDecl& declaration) {
+  llvm::SaveAndRestore<const NamespaceContext*> namespace_scope(namespace_context_, declaration.owning_namespace);
   if (!declaration.base.empty()) {
-    const TypeSymbol* type_symbol = AsTypeSymbol(symbol_table_.Lookup(declaration.base));
-    if (!type_symbol) {
-      Diagnose(declaration, kErrorDiagnostic, declaration.base_range,
-               fmt::format("unknown type '{}'", declaration.base));
+    const auto symbol =
+        ResolveName(declaration, declaration.base, fmt::format("unknown type '{}'", declaration.base.Spelling()));
+    const StructDecl* structure = symbol.GetType();
+    if (!structure) {
+      if (symbol)
+        Diagnose(declaration, kErrorDiagnostic, declaration.base.Range(),
+                 fmt::format("unknown type '{}'", declaration.base.Spelling()));
     } else {
-      declaration.base_type = ast_context_->GetStructType(type_symbol->GetDeclaration());
+      declaration.base_type = ast_context_->GetStructType(structure);
     }
   }
 
   if (declaration.VirtualDecl) {
     for (const auto& function : declaration.VirtualDecl->Functions) {
       if (function) {
+        function->owning_namespace = declaration.owning_namespace;
         ResolveFunctionDeclarationTypes(*function);
         InheritErrors(*declaration.VirtualDecl, function.get());
       }
@@ -6024,9 +6417,9 @@ void Sema::ValidateStructInheritance(TranslationUnitDecl& translation_unit) {
   };
 
   std::unordered_map<const StructDecl*, State> states;
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (declaration && declaration->GetKind() == NodeKind::StructDecl) {
-      states.emplace(static_cast<const StructDecl*>(declaration.get()), State::Unvisited);
+      states.emplace(static_cast<const StructDecl*>(declaration), State::Unvisited);
     }
   }
 
@@ -6046,7 +6439,7 @@ void Sema::ValidateStructInheritance(TranslationUnitDecl& translation_unit) {
       BOOST_ASSERT(base);
       const State base_state = states[base];
       if (base_state == State::Visiting) {
-        Diagnose(declaration, kErrorDiagnostic, declaration.base_range,
+        Diagnose(declaration, kErrorDiagnostic, declaration.base.Range(),
                  fmt::format("inheritance cycle involving struct '{}'", base->name));
         state = State::Invalid;
         return false;
@@ -6063,7 +6456,7 @@ void Sema::ValidateStructInheritance(TranslationUnitDecl& translation_unit) {
         }
         DiagnoseConflict(*field, NamedDeclarationRange(*field),
                          fmt::format("field '{}' conflicts with direct base '{}'", field->name, base->name),
-                         declaration.base_range, "direct base is specified here");
+                         declaration.base.Range(), "direct base is specified here");
         break;
       }
     }
@@ -6072,7 +6465,7 @@ void Sema::ValidateStructInheritance(TranslationUnitDecl& translation_unit) {
     return true;
   };
 
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::StructDecl) {
       continue;
     }
@@ -6104,17 +6497,17 @@ void Sema::ValidateObjectContainment(TranslationUnitDecl& translation_unit) {
 
   std::vector<StructDecl*> structures;
   std::unordered_map<StructDecl*, std::vector<Edge>> graph;
-  for (const auto& declaration : translation_unit.Decls) {
+  for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::StructDecl) {
       continue;
     }
-    auto* structure = static_cast<StructDecl*>(declaration.get());
+    auto* structure = static_cast<StructDecl*>(declaration);
     structures.push_back(structure);
 
     auto& outgoing = graph[structure];
     if (structure->base_type) {
       outgoing.push_back(Edge{const_cast<StructDecl*>(structure->base_type->GetDeclaration()), structure,
-                              structure->base_range, false});
+                              structure->base.Range(), false});
     }
     for (const auto& field : structure->Fields) {
       if (!field || !field->type) {
@@ -6198,6 +6591,7 @@ void Sema::ValidateObjectContainment(TranslationUnitDecl& translation_unit) {
 }
 
 void Sema::ResolveFunctionDeclarationTypes(FunctionDecl& declaration) {
+  llvm::SaveAndRestore<const NamespaceContext*> namespace_scope(namespace_context_, declaration.owning_namespace);
   std::vector<const Type*> parameter_types;
   parameter_types.reserve(declaration.ParmVars.size());
   bool complete = true;
@@ -6231,7 +6625,7 @@ void Sema::ResolveFunctionDeclarationTypes(FunctionDecl& declaration) {
   }
 
   if ((declaration.GetKind() == NodeKind::ConstructorDecl || declaration.GetKind() == NodeKind::DestructorDecl) &&
-      !declaration.Body) {
+      !declaration.Body && declaration.modifier != DeclModifier::Import) {
     return;
   }
 
@@ -6291,13 +6685,16 @@ QualType Sema::ResolveTypeImpl(TypeSyntax& type_syntax) {
       return QualType(ast_context_->GetBuiltinType(static_cast<BuiltinTypeSyntax&>(type_syntax).kind));
     case NodeKind::NamedTypeSyntax: {
       auto& named_type_syntax = static_cast<NamedTypeSyntax&>(type_syntax);
-      const TypeSymbol* type_symbol = AsTypeSymbol(symbol_table_.Lookup(named_type_syntax.name));
-      if (!type_symbol) {
-        Diagnose(named_type_syntax, kErrorDiagnostic, named_type_syntax.range,
-                 fmt::format("unknown type '{}'", named_type_syntax.name));
+      const auto symbol = ResolveName(named_type_syntax, named_type_syntax.name,
+                                      fmt::format("unknown type '{}'", named_type_syntax.name.Spelling()));
+      const StructDecl* structure = symbol.GetType();
+      if (!structure) {
+        if (symbol)
+          Diagnose(named_type_syntax, kErrorDiagnostic, named_type_syntax.range,
+                   fmt::format("unknown type '{}'", named_type_syntax.name.Spelling()));
         return QualType{};
       }
-      return QualType(ast_context_->GetStructType(type_symbol->GetDeclaration()));
+      return QualType(ast_context_->GetStructType(structure));
     }
     case NodeKind::PointerTypeSyntax: {
       auto& pointer_type_syntax = static_cast<PointerTypeSyntax&>(type_syntax);
@@ -6443,7 +6840,7 @@ QualType Sema::ResolveTypeImpl(TypeSyntax& type_syntax) {
         return QualType{};
       }
 
-      array_syntax.Length = AnalyzeExpr(std::move(array_syntax.Length), ComptimeIntMode::Preserve);
+      array_syntax.Length = AnalyzeConstantIntegerExpr(std::move(array_syntax.Length));
       InheritErrors(array_syntax, array_syntax.Length.get());
       if (!array_syntax.Length || array_syntax.Length->ContainsErrors()) {
         return QualType{};

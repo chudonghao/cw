@@ -1,4 +1,4 @@
-define noundef nonnull align 4 dereferenceable(4) ptr @Forward(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:Forward:func(&mut i32)&mut i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -9,13 +9,13 @@ entry:
   ret ptr %1
 }
 
-define noundef i32 @ReferenceBinding() {
+define noundef i32 @"cw:ReferenceBinding:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %value = alloca i32, align 4
   %link = alloca ptr, align 8
   store i32 3, ptr %value, align 4
-  %call = call noundef nonnull align 4 dereferenceable(4) ptr @Forward(ptr noundef nonnull align 4 dereferenceable(4) %value)
+  %call = call noundef nonnull align 4 dereferenceable(4) ptr @"cw:Forward:func(&mut i32)&mut i32"(ptr noundef nonnull align 4 dereferenceable(4) %value)
   store ptr %call, ptr %link, align 8
   %0 = load ptr, ptr %link, align 8
   store i32 19, ptr %0, align 4

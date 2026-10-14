@@ -3,7 +3,7 @@
 %struct.Pointer = type { ptr }
 %struct.Pointers = type { [2 x ptr] }
 
-define %struct.Floats @FloatIdentity([2 x float] %value.coerce) {
+define %struct.Floats @"cw:FloatIdentity:func(Floats)Floats"([2 x float] %value.coerce) {
 entry:
   %.result = alloca %struct.Floats, align 4
   %value = alloca %struct.Floats, align 4
@@ -13,7 +13,7 @@ entry:
   ret %struct.Floats %0
 }
 
-define i32 @ZeroIdentity(i64 %value.coerce) {
+define i32 @"cw:ZeroIdentity:func(WithZero)WithZero"(i64 %value.coerce) {
 entry:
   %.result = alloca %struct.WithZero, align 4
   %value = alloca %struct.WithZero, align 4
@@ -24,7 +24,7 @@ entry:
   ret i32 %0
 }
 
-define i64 @PointerIdentity(i64 %value.coerce) {
+define i64 @"cw:PointerIdentity:func(Pointer)Pointer"(i64 %value.coerce) {
 entry:
   %.result = alloca %struct.Pointer, align 8
   %value = alloca %struct.Pointer, align 8
@@ -34,7 +34,7 @@ entry:
   ret i64 %0
 }
 
-define [2 x i64] @PointersIdentity([2 x ptr] %value.coerce) {
+define [2 x i64] @"cw:PointersIdentity:func(Pointers)Pointers"([2 x ptr] %value.coerce) {
 entry:
   %.result = alloca %struct.Pointers, align 8
   %value = alloca %struct.Pointers, align 8
@@ -44,7 +44,7 @@ entry:
   ret [2 x i64] %0
 }
 
-define noundef [2 x i64] @ArrayIdentity([2 x ptr] noundef %value) {
+define noundef [2 x i64] @"cw:ArrayIdentity:func([2]*i32)[2]*i32"([2 x ptr] noundef %value) {
 entry:
   %.result = alloca [2 x ptr], align 8
   %value.addr = alloca [2 x ptr], align 8

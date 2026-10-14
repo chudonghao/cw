@@ -1,4 +1,4 @@
-define noundef i32 @Bump(ptr noundef nonnull align 1 dereferenceable(1) %value) {
+define noundef i32 @"cw:Bump:func(&mut i8)u32"(ptr noundef nonnull align 1 dereferenceable(1) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -18,7 +18,7 @@ entry:
   ret i32 %5
 }
 
-define noundef i32 @ReadBeforeBump(ptr noundef nonnull align 1 dereferenceable(1) %value) {
+define noundef i32 @"cw:ReadBeforeBump:func(&mut i8)u32"(ptr noundef nonnull align 1 dereferenceable(1) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -27,14 +27,14 @@ entry:
   %1 = load i8, ptr %0, align 1
   %conv = sext i8 %1 to i32
   %2 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @Bump(ptr noundef nonnull align 1 dereferenceable(1) %2)
+  %call = call noundef i32 @"cw:Bump:func(&mut i8)u32"(ptr noundef nonnull align 1 dereferenceable(1) %2)
   %add = add i32 %conv, %call
   store i32 %add, ptr %.result, align 4
   %3 = load i32, ptr %.result, align 4
   ret i32 %3
 }
 
-define noundef nonnull align 2 dereferenceable(2) ptr @Locate(ptr noundef nonnull align 2 dereferenceable(2) %value) {
+define noundef nonnull align 2 dereferenceable(2) ptr @"cw:Locate:func(&mut u16)&mut u16"(ptr noundef nonnull align 2 dereferenceable(2) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -45,7 +45,7 @@ entry:
   ret ptr %1
 }
 
-define void @AssignConverted(ptr noundef nonnull align 2 dereferenceable(2) %value, i64 noundef %source) {
+define void @"cw:AssignConverted:func(&mut u16,i64)void"(ptr noundef nonnull align 2 dereferenceable(2) %value, i64 noundef %source) {
 entry:
   %value.addr = alloca ptr, align 8
   %source.addr = alloca i64, align 8
@@ -54,12 +54,12 @@ entry:
   %0 = load i64, ptr %source.addr, align 8
   %conv = trunc i64 %0 to i16
   %1 = load ptr, ptr %value.addr, align 8
-  %call = call noundef nonnull align 2 dereferenceable(2) ptr @Locate(ptr noundef nonnull align 2 dereferenceable(2) %1)
+  %call = call noundef nonnull align 2 dereferenceable(2) ptr @"cw:Locate:func(&mut u16)&mut u16"(ptr noundef nonnull align 2 dereferenceable(2) %1)
   store i16 %conv, ptr %call, align 2
   ret void
 }
 
-define noundef i64 @ReadWide(ptr noundef nonnull align 8 dereferenceable(8) %value) {
+define noundef i64 @"cw:ReadWide:func(&copy u64)u64"(ptr noundef nonnull align 8 dereferenceable(8) %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca ptr, align 8
@@ -71,18 +71,18 @@ entry:
   ret i64 %2
 }
 
-define noundef i64 @TemporaryWide() {
+define noundef i64 @"cw:TemporaryWide:func()u64"() {
 entry:
   %.result = alloca i64, align 8
   %temporary = alloca i64, align 8
   store i64 -1, ptr %temporary, align 8
-  %call = call noundef i64 @ReadWide(ptr noundef nonnull align 8 dereferenceable(8) %temporary)
+  %call = call noundef i64 @"cw:ReadWide:func(&copy u64)u64"(ptr noundef nonnull align 8 dereferenceable(8) %temporary)
   store i64 %call, ptr %.result, align 8
   %0 = load i64, ptr %.result, align 8
   ret i64 %0
 }
 
-define noundef signext i16 @Choose(i1 noundef zeroext %flag, i8 noundef zeroext %left, i16 noundef signext %right) {
+define noundef signext i16 @"cw:Choose:func(bool,u8,i16)i16"(i1 noundef zeroext %flag, i8 noundef zeroext %left, i16 noundef signext %right) {
 entry:
   %.result = alloca i16, align 2
   %flag.addr = alloca i8, align 1
@@ -112,7 +112,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret i16 %3
 }
 
-define noundef zeroext i16 @IntegerLoop(i8 noundef zeroext %limit) {
+define noundef zeroext i16 @"cw:IntegerLoop:func(u8)u16"(i8 noundef zeroext %limit) {
 entry:
   %.result = alloca i16, align 2
   %limit.addr = alloca i8, align 1

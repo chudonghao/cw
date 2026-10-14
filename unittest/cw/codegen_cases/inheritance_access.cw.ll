@@ -3,7 +3,7 @@
 %struct.Middle.base = type <{ %struct.Root, i16 }>
 %struct.Middle = type { %struct.Root, i16 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @Select(ptr noundef nonnull align 4 dereferenceable(7) %value) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:Select:func(&mut Leaf)&mut Root"(ptr noundef nonnull align 4 dereferenceable(7) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -14,7 +14,7 @@ entry:
   ret ptr %1
 }
 
-define noundef ptr @Pointer(ptr noundef %value) {
+define noundef ptr @"cw:Pointer:func(*Leaf)*const Root"(ptr noundef %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -25,7 +25,7 @@ entry:
   ret ptr %1
 }
 
-define noundef ptr @Null() {
+define noundef ptr @"cw:Null:func()*Root"() {
 entry:
   %.result = alloca ptr, align 8
   %value = alloca ptr, align 8
@@ -36,7 +36,7 @@ entry:
   ret ptr %1
 }
 
-define noundef i32 @Explicit(ptr noundef %value) {
+define noundef i32 @"cw:Explicit:func(*Leaf)i32"(ptr noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -49,7 +49,7 @@ entry:
   ret i32 %2
 }
 
-define noundef signext i8 @Hidden(ptr noundef nonnull align 4 dereferenceable(7) %value) {
+define noundef signext i8 @"cw:Hidden:func(&copy Leaf)i8"(ptr noundef nonnull align 4 dereferenceable(7) %value) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca ptr, align 8
@@ -62,7 +62,7 @@ entry:
   ret i8 %2
 }
 
-define noundef signext i16 @Nearest(ptr noundef nonnull align 4 dereferenceable(7) %value) {
+define noundef signext i16 @"cw:Nearest:func(&copy Leaf)i16"(ptr noundef nonnull align 4 dereferenceable(7) %value) {
 entry:
   %.result = alloca i16, align 2
   %value.addr = alloca ptr, align 8

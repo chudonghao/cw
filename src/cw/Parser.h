@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "ExprParser.h"
@@ -60,13 +61,18 @@ class Parser {
 
  private:
   // Decl parsing
+  /// \brief Parses one declaration at translation-unit or namespace scope, including its modifier.
+  ParseResult<Decl> Decl_();
+  /// \brief Parses one namespace layer beginning at 'namespace' or a nested '::'.
+  /// Qualified namespace headers produce one node per name.
+  ParseResult<NamespaceDecl> NamespaceDecl_();
   ParseResult<StructDecl> StructDecl_();
   ParseResult<VirtualDecl> VirtualDecl_();
   ParseResult<FieldDecl> FieldDecl_();
   /// \brief Parses an ordinary function declaration.
-  ParseResult<FunctionDecl> FunctionDecl_();
-  ParseResult<ConstructorDecl> ConstructorDecl_();
-  ParseResult<DestructorDecl> DestructorDecl_();
+  ParseResult<FunctionDecl> FunctionDecl_(DeclModifier modifier);
+  ParseResult<ConstructorDecl> ConstructorDecl_(DeclModifier modifier);
+  ParseResult<DestructorDecl> DestructorDecl_(DeclModifier modifier);
   ParseResult<VarGroupDecl> VarGroupDecl_();
   ParseResult<ParmVarDecl> ParmVarDecl_();
   ParseResult<ReturnVarDecl> ReturnVarDecl_();
@@ -85,7 +91,12 @@ class Parser {
   ParseResult<Expr> Expr_();
   std::vector<ParseResult<Expr>> Exprs_(ParseResult<Expr> first);
 
+  // Type and name parsing
   ParseResult<TypeSyntax> Type_();
+  /// \brief Parses [ "::" ] Identifier { "::" Identifier } into an empty name.
+  /// Returns false after diagnosing an incomplete name, retaining the parsed prefix.
+  bool QualifiedName_(NameSyntax& name);
+
   void Attributes_(AttributeList& attributes);
 
   // Utilities
@@ -109,13 +120,13 @@ class Parser {
   ///
   /// Balances (), [] and {} delimiters while skipping so that separators nested
   /// inside them do not trigger a false sync. A current match with
-  /// kStopBeforeMatch, a semicolon with kStopAtSemi, or end of sources is
+  /// kStopBeforeMatch, a semicolon with kStopAtSemi, or end of file/sources is
   /// left unconsumed; callers must handle these boundaries before retrying.
   ///
   /// \param toks Sync tokens to stop at (do not include ';'; use kStopAtSemi).
   /// \param flags Behavior flags; see SkipUntilFlags.
   /// \return true if one of \p toks was matched; false if stopped at ';'
-  ///         (kStopAtSemi) or end of sources.
+  ///         (kStopAtSemi) or end of file/sources.
   bool SkipUntil(std::vector<tok::TokenType> toks, SkipUntilFlags flags = SkipUntilFlags::kNone);
   bool SkipUntil(tok::TokenType t, SkipUntilFlags flags = SkipUntilFlags::kNone);
   bool SkipUntil(tok::TokenType t1, tok::TokenType t2, SkipUntilFlags flags = SkipUntilFlags::kNone);

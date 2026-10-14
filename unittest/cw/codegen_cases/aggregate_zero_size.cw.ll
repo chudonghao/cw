@@ -1,7 +1,7 @@
 %struct.Empty = type { i8 }
 %struct.Aligned = type { [0 x i64] }
 
-define void @Make(ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:Make:func(&mut i32)Empty"(ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %result = alloca %struct.Empty, align 1
   %counter.addr = alloca ptr, align 8
@@ -14,7 +14,7 @@ entry:
   ret void
 }
 
-define noundef signext i8 @Take(i8 noundef signext %number) {
+define noundef signext i8 @"cw:Take:func(Empty,i8)i8"(i8 noundef signext %number) {
 entry:
   %.result = alloca i8, align 1
   %value = alloca %struct.Empty, align 1
@@ -26,7 +26,7 @@ entry:
   ret i8 %1
 }
 
-define noundef signext i8 @Use(ptr noundef nonnull align 4 dereferenceable(4) %counter, i8 noundef signext %number) {
+define noundef signext i8 @"cw:Use:func(&mut i32,i8)i8"(ptr noundef nonnull align 4 dereferenceable(4) %counter, i8 noundef signext %number) {
 entry:
   %.result = alloca i8, align 1
   %counter.addr = alloca ptr, align 8
@@ -34,32 +34,32 @@ entry:
   store ptr %counter, ptr %counter.addr, align 8
   store i8 %number, ptr %number.addr, align 1
   %0 = load ptr, ptr %counter.addr, align 8
-  call void @Make(ptr noundef nonnull align 4 dereferenceable(4) %0)
+  call void @"cw:Make:func(&mut i32)Empty"(ptr noundef nonnull align 4 dereferenceable(4) %0)
   %1 = load i8, ptr %number.addr, align 1
-  %call = call noundef signext i8 @Take(i8 noundef signext %1)
+  %call = call noundef signext i8 @"cw:Take:func(Empty,i8)i8"(i8 noundef signext %1)
   store i8 %call, ptr %.result, align 1
   %2 = load i8, ptr %.result, align 1
   ret i8 %2
 }
 
-define void @Identity() {
+define void @"cw:Identity:func(Aligned)Aligned"() {
 entry:
   %.result = alloca %struct.Aligned, align 8
   %value = alloca %struct.Aligned, align 8
   ret void
 }
 
-define void @Form(ptr noundef nonnull align 8 %value) {
+define void @"cw:Form:func(&copy Aligned)void"(ptr noundef nonnull align 8 %value) {
 entry:
   %value.addr = alloca ptr, align 8
   %result = alloca %struct.Aligned, align 8
   store ptr %value, ptr %value.addr, align 8
   %0 = load ptr, ptr %value.addr, align 8
-  call void @Identity()
+  call void @"cw:Identity:func(Aligned)Aligned"()
   ret void
 }
 
-define void @Mixed(ptr sret([3 x i64]) align 8 %.result, i1 noundef zeroext %flag, ptr noundef %value, i8 noundef signext %number) {
+define void @"cw:Mixed:func(Empty,bool,[3]i64,i8)[3]i64"(ptr sret([3 x i64]) align 8 %.result, i1 noundef zeroext %flag, ptr noundef %value, i8 noundef signext %number) {
 entry:
   %empty = alloca %struct.Empty, align 1
   %flag.addr = alloca i8, align 1
@@ -71,7 +71,7 @@ entry:
   ret void
 }
 
-define void @Combine(ptr sret([3 x i64]) align 8 %.result, ptr noundef nonnull align 8 dereferenceable(24) %value, i1 noundef zeroext %flag, i8 noundef signext %number) {
+define void @"cw:Combine:func(&copy [3]i64,bool,i8)[3]i64"(ptr sret([3 x i64]) align 8 %.result, ptr noundef nonnull align 8 dereferenceable(24) %value, i1 noundef zeroext %flag, i8 noundef signext %number) {
 entry:
   %value.addr = alloca ptr, align 8
   %flag.addr = alloca i8, align 1
@@ -86,7 +86,7 @@ entry:
   %1 = load ptr, ptr %value.addr, align 8
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %argument, ptr align 8 %1, i64 24, i1 false)
   %2 = load i8, ptr %number.addr, align 1
-  call void @Mixed(ptr sret([3 x i64]) align 8 %.result, i1 noundef zeroext %loadedv, ptr noundef %argument, i8 noundef signext %2)
+  call void @"cw:Mixed:func(Empty,bool,[3]i64,i8)[3]i64"(ptr sret([3 x i64]) align 8 %.result, i1 noundef zeroext %loadedv, ptr noundef %argument, i8 noundef signext %2)
   ret void
 }
 

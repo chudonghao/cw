@@ -1,4 +1,4 @@
-define noundef signext i8 @Signed(ptr noundef %callback, i8 noundef signext %value) {
+define noundef signext i8 @"cw:Signed:func(*func(i8)i8,i8)i8"(ptr noundef %callback, i8 noundef signext %value) {
 entry:
   %.result = alloca i8, align 1
   %callback.addr = alloca ptr, align 8
@@ -13,7 +13,7 @@ entry:
   ret i8 %2
 }
 
-define noundef zeroext i16 @Unsigned(ptr noundef %callback, i16 noundef zeroext %value) {
+define noundef zeroext i16 @"cw:Unsigned:func(*func(u16)u16,u16)u16"(ptr noundef %callback, i16 noundef zeroext %value) {
 entry:
   %.result = alloca i16, align 2
   %callback.addr = alloca ptr, align 8
@@ -28,7 +28,7 @@ entry:
   ret i16 %2
 }
 
-define noundef zeroext i1 @Boolean(ptr noundef %callback, i1 noundef zeroext %value) {
+define noundef zeroext i1 @"cw:Boolean:func(*func(bool)bool,bool)bool"(ptr noundef %callback, i1 noundef zeroext %value) {
 entry:
   %.result = alloca i8, align 1
   %callback.addr = alloca ptr, align 8
@@ -47,7 +47,7 @@ entry:
   ret i1 %loadedv2
 }
 
-define noundef double @Floating(ptr noundef %callback, i32 noundef %value) {
+define noundef double @"cw:Floating:func(*func(f32)f64,i32)f64"(ptr noundef %callback, i32 noundef %value) {
 entry:
   %.result = alloca double, align 8
   %callback.addr = alloca ptr, align 8
@@ -63,7 +63,7 @@ entry:
   ret double %2
 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @Reference(ptr noundef %callback, ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:Reference:func(*func(&mut i32)&mut i32,&mut i32)&mut i32"(ptr noundef %callback, ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca ptr, align 8
   %callback.addr = alloca ptr, align 8
@@ -78,7 +78,7 @@ entry:
   ret ptr %2
 }
 
-define noundef i32 @ReadReference(ptr noundef %callback, ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef i32 @"cw:ReadReference:func(*func(&copy i32)&copy i32,&copy i32)i32"(ptr noundef %callback, ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i32, align 4
   %callback.addr = alloca ptr, align 8
@@ -94,7 +94,7 @@ entry:
   ret i32 %3
 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @MoveReference(ptr noundef %callback, ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:MoveReference:func(*func(&move i32)&move i32,&move i32)&move i32"(ptr noundef %callback, ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca ptr, align 8
   %callback.addr = alloca ptr, align 8
@@ -109,7 +109,7 @@ entry:
   ret ptr %2
 }
 
-define void @Void(ptr noundef %callback, ptr noundef %pointer) {
+define void @"cw:Void:func(*func(*i32)void,*i32)void"(ptr noundef %callback, ptr noundef %pointer) {
 entry:
   %callback.addr = alloca ptr, align 8
   %pointer.addr = alloca ptr, align 8
@@ -121,7 +121,7 @@ entry:
   ret void
 }
 
-define noundef i32 @Chained(ptr noundef %factory, i32 noundef %value) {
+define noundef i32 @"cw:Chained:func(*func()*func(i32)i32,i32)i32"(ptr noundef %factory, i32 noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %factory.addr = alloca ptr, align 8

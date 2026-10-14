@@ -1,4 +1,4 @@
-define noundef signext i8 @ByteQuotient(i8 noundef signext %dividend, i8 noundef signext %divisor) {
+define noundef signext i8 @"cw:ByteQuotient:func(i8,i8)i8"(i8 noundef signext %dividend, i8 noundef signext %divisor) {
 entry:
   %.result = alloca i8, align 1
   %dividend.addr = alloca i8, align 1
@@ -25,7 +25,7 @@ div.end:                                          ; preds = %div.normal, %div.ne
   ret i8 %3
 }
 
-define noundef signext i8 @ByteRemainder(i8 noundef signext %dividend, i8 noundef signext %divisor) {
+define noundef signext i8 @"cw:ByteRemainder:func(i8,i8)i8"(i8 noundef signext %dividend, i8 noundef signext %divisor) {
 entry:
   %.result = alloca i8, align 1
   %dividend.addr = alloca i8, align 1
@@ -51,7 +51,7 @@ rem.end:                                          ; preds = %rem.normal, %rem.ne
   ret i8 %3
 }
 
-define noundef signext i16 @WordQuotient(i16 noundef signext %dividend, i16 noundef signext %divisor) {
+define noundef signext i16 @"cw:WordQuotient:func(i16,i16)i16"(i16 noundef signext %dividend, i16 noundef signext %divisor) {
 entry:
   %.result = alloca i16, align 2
   %dividend.addr = alloca i16, align 2
@@ -78,7 +78,7 @@ div.end:                                          ; preds = %div.normal, %div.ne
   ret i16 %3
 }
 
-define noundef i64 @WideRemainder(i64 noundef %dividend, i64 noundef %divisor) {
+define noundef i64 @"cw:WideRemainder:func(i64,i64)i64"(i64 noundef %dividend, i64 noundef %divisor) {
 entry:
   %.result = alloca i64, align 8
   %dividend.addr = alloca i64, align 8
@@ -104,7 +104,7 @@ rem.end:                                          ; preds = %rem.normal, %rem.ne
   ret i64 %3
 }
 
-define noundef i64 @SizeQuotient(i64 noundef %dividend, i64 noundef %divisor) {
+define noundef i64 @"cw:SizeQuotient:func(isize,isize)isize"(i64 noundef %dividend, i64 noundef %divisor) {
 entry:
   %.result = alloca i64, align 8
   %dividend.addr = alloca i64, align 8
@@ -131,7 +131,7 @@ div.end:                                          ; preds = %div.normal, %div.ne
   ret i64 %3
 }
 
-define noundef zeroext i8 @UnsignedByteQuotient(i8 noundef zeroext %dividend, i8 noundef zeroext %divisor) {
+define noundef zeroext i8 @"cw:UnsignedByteQuotient:func(u8,u8)u8"(i8 noundef zeroext %dividend, i8 noundef zeroext %divisor) {
 entry:
   %.result = alloca i8, align 1
   %dividend.addr = alloca i8, align 1
@@ -146,7 +146,7 @@ entry:
   ret i8 %2
 }
 
-define noundef zeroext i16 @UnsignedWordRemainder(i16 noundef zeroext %dividend, i16 noundef zeroext %divisor) {
+define noundef zeroext i16 @"cw:UnsignedWordRemainder:func(u16,u16)u16"(i16 noundef zeroext %dividend, i16 noundef zeroext %divisor) {
 entry:
   %.result = alloca i16, align 2
   %dividend.addr = alloca i16, align 2
@@ -161,7 +161,7 @@ entry:
   ret i16 %2
 }
 
-define noundef i32 @Unsigned32Quotient(i32 noundef %dividend, i32 noundef %divisor) {
+define noundef i32 @"cw:Unsigned32Quotient:func(u32,u32)u32"(i32 noundef %dividend, i32 noundef %divisor) {
 entry:
   %.result = alloca i32, align 4
   %dividend.addr = alloca i32, align 4
@@ -176,7 +176,7 @@ entry:
   ret i32 %2
 }
 
-define noundef i64 @UnsignedWideRemainder(i64 noundef %dividend, i64 noundef %divisor) {
+define noundef i64 @"cw:UnsignedWideRemainder:func(u64,u64)u64"(i64 noundef %dividend, i64 noundef %divisor) {
 entry:
   %.result = alloca i64, align 8
   %dividend.addr = alloca i64, align 8
@@ -191,7 +191,7 @@ entry:
   ret i64 %2
 }
 
-define noundef i64 @UnsignedSizeQuotient(i64 noundef %dividend, i64 noundef %divisor) {
+define noundef i64 @"cw:UnsignedSizeQuotient:func(usize,usize)usize"(i64 noundef %dividend, i64 noundef %divisor) {
 entry:
   %.result = alloca i64, align 8
   %dividend.addr = alloca i64, align 8
@@ -206,7 +206,7 @@ entry:
   ret i64 %2
 }
 
-define noundef i64 @UnsignedMaximumQuotient(i64 noundef %value) {
+define noundef i64 @"cw:UnsignedMaximumQuotient:func(u64)u64"(i64 noundef %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca i64, align 8
@@ -218,7 +218,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i64 @UnsignedMaximumRemainder(i64 noundef %value) {
+define noundef i64 @"cw:UnsignedMaximumRemainder:func(u64)u64"(i64 noundef %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca i64, align 8
@@ -230,7 +230,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i64 @MinimumQuotient() {
+define noundef i64 @"cw:MinimumQuotient:func()i64"() {
 entry:
   %.result = alloca i64, align 8
   store i64 -9223372036854775808, ptr %.result, align 8
@@ -238,7 +238,7 @@ entry:
   ret i64 %0
 }
 
-define noundef i64 @MinimumRemainder() {
+define noundef i64 @"cw:MinimumRemainder:func()i64"() {
 entry:
   %.result = alloca i64, align 8
   store i64 0, ptr %.result, align 8

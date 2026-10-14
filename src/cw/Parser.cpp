@@ -5,6 +5,10 @@
 
 #include "Parser.h"
 
+#include <string_view>
+#include <utility>
+#include <vector>
+
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
@@ -35,10 +39,20 @@ bool IsKeywordStmtStart(tok::TokenType type) {
 /// \brief Returns true when \p type starts a compound statement (block).
 bool IsCompoundStmtStart(tok::TokenType type) { return type == tok::l_brace; }
 
+/// \brief Declaration keywords in diagnostic order; modifiers are parsed separately.
+const std::vector<tok::TokenType> kDeclarationKeywords = {tok::namespace_, tok::trivial_, tok::struct_, tok::func,
+                                                          tok::ctor,       tok::dtor,     tok::var};
+
+/// \brief Declaration starts and the enclosing namespace boundary used for error recovery.
+const std::vector<tok::TokenType> kDeclarationRecoveryTokens = {
+    tok::namespace_, tok::export_, tok::import_, tok::trivial_, tok::struct_,
+    tok::func,       tok::ctor,    tok::dtor,    tok::var,      tok::r_brace};
+
 /// \brief Returns true when \p type starts source-level type syntax.
 bool IsTypeStart(tok::TokenType type) {
   return type == tok::l_square || type == tok::virtual_ || type == tok::const_ || type == tok::amp ||
-         type == tok::star || type == tok::func || type == tok::builtin_type || type == tok::identifier;
+         type == tok::star || type == tok::func || type == tok::builtin_type || type == tok::identifier ||
+         type == tok::coloncolon;
 }
 
 /// \brief Returns a user-facing spelling for an expected token kind.
@@ -134,39 +148,144 @@ void Parser::operator()() {
 
   TranslationUnitDecl* translation_unit = ast_context_->GetTranslationUnitDecl();
   BOOST_ASSERT(translation_unit);
-  for (;;) {
-    auto& token = lexer_->Token();
 
-    ParseResult<Decl> Decl;
+  auto& token = lexer_->Token();
+  // Each source file contains { Decl }; only this loop advances past its EOF.
+  while (token.type != tok::eos) {
+    if (token.type == tok::eof) {
+      AdvanceLexer();
+      continue;
+    }
 
-    if (token.type == tok::struct_ || token.type == tok::trivial_) {
-      Decl = StructDecl_();
-    } else if (token.type == tok::func) {
-      Decl = FunctionDecl_();
-    } else if (token.type == tok::ctor) {
-      Decl = ConstructorDecl_();
-    } else if (token.type == tok::dtor) {
-      Decl = DestructorDecl_();
-    } else if (token.type == tok::var) {
-      Decl = VarGroupDecl_();
-    } else if (token.type == tok::eos) {
-      return;
+    ParseResult<Decl> declaration;
+    if (token.type == tok::r_brace) {
+      // A stray root closing brace has no enclosing parser to consume it.
+      HandleExpect(kDeclarationKeywords);
+      AdvanceLexer();
+      declaration.Invalidate();
     } else {
-      HandleExpect({tok::trivial_, tok::struct_, tok::func, tok::ctor, tok::dtor, tok::var});
-      Decl.Invalidate();
+      declaration = Decl_();
     }
 
-    translation_unit->contains_errors |= Decl.ContainsErrors();
-    if (Decl.Get()) {
-      translation_unit->Decls.push_back(Decl.Take());
+    translation_unit->contains_errors |= declaration.ContainsErrors();
+    ExtendRange(*translation_unit, declaration.Get());
+    if (declaration.Get()) {
+      translation_unit->Decls.push_back(declaration.Take());
     }
-    if (Decl.Incomplete()) {
-      // Sync to the start of the next top-level declaration. CW top-level
-      // declarations start with a keyword and do not rely on ';'.
-      SkipUntil({tok::trivial_, tok::struct_, tok::func, tok::ctor, tok::dtor, tok::var},
-                SkipUntilFlags::kStopBeforeMatch);
+    if (declaration.Incomplete()) {
+      SkipUntil(kDeclarationRecoveryTokens, SkipUntilFlags::kStopBeforeMatch);
     }
   }
+}
+
+ParseResult<Decl> Parser::Decl_() {
+  auto& token = lexer_->Token();
+  if (token.type == tok::namespace_) {
+    return NamespaceDecl_();
+  }
+
+  const SourceLocation begin = token.range.begin;
+  DeclModifier modifier = DeclModifier::None;
+  bool invalid_modifier = false;
+  if (token.type == tok::export_ || token.type == tok::import_) {
+    modifier = token.type == tok::export_ ? DeclModifier::Export : DeclModifier::Import;
+    AdvanceLexer();
+    while (token.type == tok::export_ || token.type == tok::import_) {
+      ReportCurrentTokenError("declaration modifiers 'import' and 'export' cannot be repeated or combined");
+      invalid_modifier = true;
+      AdvanceLexer();
+    }
+  }
+
+  ParseResult<Decl> declaration;
+  switch (token.type) {
+    case tok::trivial_:
+    case tok::struct_:
+      declaration = StructDecl_();
+      break;
+    case tok::func:
+      declaration = FunctionDecl_(modifier);
+      break;
+    case tok::ctor:
+      declaration = ConstructorDecl_(modifier);
+      break;
+    case tok::dtor:
+      declaration = DestructorDecl_(modifier);
+      break;
+    case tok::var:
+      declaration = VarGroupDecl_();
+      break;
+    default: {
+      auto expected = kDeclarationKeywords;
+      if (modifier != DeclModifier::None) expected.erase(expected.begin());  // A namespace cannot have a modifier.
+      HandleExpect(std::move(expected));
+      return declaration.Invalidate();
+    }
+  }
+
+  if (declaration.Get()) {
+    declaration->modifier = modifier;
+    if (modifier != DeclModifier::None) declaration->range.begin = begin;
+    declaration->contains_errors |= invalid_modifier;
+  }
+  return declaration;
+}
+
+ParseResult<NamespaceDecl> Parser::NamespaceDecl_() {
+  auto declaration = MakeNode<NamespaceDecl>();
+  auto& token = lexer_->Token();
+  BOOST_ASSERT(token.type == tok::namespace_ || token.type == tok::coloncolon);
+  BeginRange(*declaration, token, parsed_location_);
+  declaration->is_nested = token.type == tok::coloncolon;
+  AdvanceLexer();
+  if (token.type != tok::identifier) {
+    HandleExpect({tok::identifier});
+    return declaration.Invalidate();
+  }
+  declaration->name = token.get<IdentifierProperty>().name;
+  declaration->name_range = token.range;
+  ExtendRange(*declaration, token);
+  AdvanceLexer();
+
+  if (token.type == tok::coloncolon) {
+    auto nested = NamespaceDecl_();
+    // All layers become usable together once the complete header reaches its actual opening brace.
+    declaration->left_brace_range = nested->left_brace_range;
+    declaration->contains_errors |= nested.ContainsErrors();
+    ExtendRange(*declaration, nested.Get());
+    declaration->Decls.push_back(nested.Take());
+    if (nested.Incomplete()) return declaration.Invalidate();
+    return declaration;
+  }
+
+  ExtendRange(*declaration, token);
+  if (token.type != tok::l_brace) {
+    HandleExpect({tok::l_brace});
+    return declaration.Invalidate();
+  }
+  declaration->left_brace_range = token.range;
+  AdvanceLexer();
+
+  // { Decl } "}"
+  while (token.type != tok::r_brace && token.type != tok::eof && token.type != tok::eos) {
+    auto member = Decl_();
+    declaration->contains_errors |= member.ContainsErrors();
+    ExtendRange(*declaration, member.Get());
+    if (member.Get()) {
+      declaration->Decls.push_back(member.Take());
+    }
+    if (member.Incomplete()) {
+      SkipUntil(kDeclarationRecoveryTokens, SkipUntilFlags::kStopBeforeMatch);
+    }
+  }
+
+  if (token.type != tok::r_brace) {
+    HandleExpect({tok::r_brace});
+    return declaration.Invalidate();
+  }
+  ExtendRange(*declaration, token);
+  AdvanceLexer();
+  return declaration;
 }
 
 ParseResult<StructDecl> Parser::StructDecl_() {
@@ -194,18 +313,11 @@ ParseResult<StructDecl> Parser::StructDecl_() {
   ExtendRange(*sd, token);
   AdvanceLexer();
 
-  // [ ":" Identifier ] - inheritance
+  // Optional qualified base type name.
   if (token.type == tok::colon) {
-    ExtendRange(*sd, token);
     AdvanceLexer();
-    if (token.type != tok::identifier) {
-      HandleExpect({tok::identifier});
-      return sd.Invalidate();
-    }
-    sd->base = token.get<IdentifierProperty>().name;
-    sd->base_range = token.range;
-    ExtendRange(*sd, token);
-    AdvanceLexer();
+    if (!QualifiedName_(sd->base)) return sd.Invalidate();
+    sd->range.end = sd->base.Range().end;
   }
 
   if (token.type != tok::l_brace) {
@@ -422,7 +534,7 @@ ParseResult<FieldDecl> Parser::FieldDecl_() {
   return fd;
 }
 
-ParseResult<FunctionDecl> Parser::FunctionDecl_() {
+ParseResult<FunctionDecl> Parser::FunctionDecl_(DeclModifier modifier) {
   auto& token = lexer_->Token();
   auto fd = MakeNode<FunctionDecl>();
   BeginRange(*fd, token, parsed_location_);
@@ -438,7 +550,7 @@ ParseResult<FunctionDecl> Parser::FunctionDecl_() {
     fd->name_range = token.range;
     ExtendRange(*fd, token);
     AdvanceLexer();
-    if (token.type == tok::invalid || token.type == tok::eos) {
+    if (token.type == tok::invalid || token.type == tok::eos || token.type == tok::eof) {
       HandleExpect({tok::l_paren});
       return fd.Invalidate();
     }
@@ -514,7 +626,7 @@ ParseResult<FunctionDecl> Parser::FunctionDecl_() {
   AdvanceLexer();
 
   // ReturnDecl (optional)
-  if (token.type != tok::l_brace) {
+  if (token.type != tok::l_brace && !(modifier == DeclModifier::Import && token.type == tok::semi)) {
     auto rr = ReturnVarDecl_();
     fd->contains_errors |= rr.ContainsErrors();
     ExtendRange(*fd, rr.Get());
@@ -522,6 +634,16 @@ ParseResult<FunctionDecl> Parser::FunctionDecl_() {
     if (rr.Incomplete() && token.type != tok::l_brace) {
       return fd.Invalidate();
     }
+  }
+
+  if (modifier == DeclModifier::Import) {
+    if (token.type != tok::semi) {
+      HandleExpect({tok::semi});
+      return fd.Invalidate();
+    }
+    ExtendRange(*fd, token);
+    AdvanceLexer();
+    return fd;
   }
 
   // CompoundStmt
@@ -539,7 +661,7 @@ ParseResult<FunctionDecl> Parser::FunctionDecl_() {
   return fd;
 }
 
-ParseResult<ConstructorDecl> Parser::ConstructorDecl_() {
+ParseResult<ConstructorDecl> Parser::ConstructorDecl_(DeclModifier modifier) {
   auto declaration = MakeNode<ConstructorDecl>();
   auto& token = lexer_->Token();
   BeginRange(*declaration, token, parsed_location_);
@@ -595,6 +717,16 @@ ParseResult<ConstructorDecl> Parser::ConstructorDecl_() {
   ExtendRange(*declaration, token);
   AdvanceLexer();
 
+  if (modifier == DeclModifier::Import) {
+    if (token.type != tok::semi) {
+      HandleExpect({tok::semi});
+      return declaration.Invalidate();
+    }
+    ExtendRange(*declaration, token);
+    AdvanceLexer();
+    return declaration;
+  }
+
   // CompoundStmt
   if (token.type != tok::l_brace) {
     HandleExpect({tok::l_brace});
@@ -614,7 +746,7 @@ ParseResult<ConstructorDecl> Parser::ConstructorDecl_() {
   return declaration;
 }
 
-ParseResult<DestructorDecl> Parser::DestructorDecl_() {
+ParseResult<DestructorDecl> Parser::DestructorDecl_(DeclModifier modifier) {
   auto declaration = MakeNode<DestructorDecl>();
   auto& token = lexer_->Token();
   BeginRange(*declaration, token, parsed_location_);
@@ -648,6 +780,16 @@ ParseResult<DestructorDecl> Parser::DestructorDecl_() {
   }
   ExtendRange(*declaration, token);
   AdvanceLexer();
+
+  if (modifier == DeclModifier::Import) {
+    if (token.type != tok::semi) {
+      HandleExpect({tok::semi});
+      return declaration.Invalidate();
+    }
+    ExtendRange(*declaration, token);
+    AdvanceLexer();
+    return declaration;
+  }
 
   // CompoundStmt
   if (token.type != tok::l_brace) {
@@ -897,7 +1039,7 @@ ParseResult<CompoundStmt> Parser::CompoundStmt_() {
   AdvanceLexer();
 
   // { Stmt } [ Exprs ] "}"
-  while (token.type != tok::r_brace && token.type != tok::eos) {
+  while (token.type != tok::r_brace && token.type != tok::eos && token.type != tok::eof) {
     if (IsKeywordStmtStart(token.type) || IsCompoundStmtStart(token.type)) {
       // Statement dispatched by its leading token.
       auto stmt = Stmt_();
@@ -1387,18 +1529,38 @@ ParseResult<TypeSyntax> Parser::Type_() {
     return builtin_type;
   }
 
-  if (token.type == tok::identifier) {
+  if (token.type == tok::identifier || token.type == tok::coloncolon) {
     auto named_type = MakeNode<NamedTypeSyntax>();
-    named_type->range = token.range;
-    named_type->name = token.get<IdentifierProperty>().name;
-    AdvanceLexer();
+    const bool complete = QualifiedName_(named_type->name);
+    named_type->range = named_type->name.Range();
+    if (!complete) return named_type.Invalidate();
     return named_type;
   }
 
-  HandleExpect(
-      {tok::l_square, tok::virtual_, tok::const_, tok::amp, tok::star, tok::func, tok::builtin_type, tok::identifier});
+  HandleExpect({tok::l_square, tok::virtual_, tok::const_, tok::amp, tok::star, tok::func, tok::builtin_type,
+                tok::identifier, tok::coloncolon});
   ParseResult<TypeSyntax> type;
   return type.Invalidate();
+}
+
+bool Parser::QualifiedName_(NameSyntax& name) {
+  BOOST_ASSERT(name.empty() && !name.absolute);
+  if (lexer_->Token().type == tok::coloncolon) {
+    name.absolute = true;
+    name.global_range = lexer_->Token().range;
+    AdvanceLexer();
+  }
+  for (;;) {
+    const auto& token = lexer_->Token();
+    if (token.type != tok::identifier) {
+      HandleExpect({tok::identifier});
+      return false;
+    }
+    name.segments.push_back({token.get<IdentifierProperty>().name, token.range});
+    AdvanceLexer();
+    if (token.type != tok::coloncolon) return true;
+    AdvanceLexer();
+  }
 }
 
 void Parser::Attributes_(AttributeList& attributes) {
@@ -1410,7 +1572,7 @@ void Parser::Attributes_(AttributeList& attributes) {
   // lists while retaining every source-level attribute name that can be
   // identified. Sema decides whether names, duplicates, and placement are
   // valid.
-  while (token.type != tok::r_paren && token.type != tok::eos) {
+  while (token.type != tok::r_paren && token.type != tok::eos && token.type != tok::eof) {
     if (token.type == tok::identifier) {
       attributes.push_back({token.get<IdentifierProperty>().name, token.range});
     }
@@ -1425,12 +1587,13 @@ void Parser::Attributes_(AttributeList& attributes) {
 void Parser::InitializeLexer() {
   parsed_location_ = SourceLocation{};
   // skip blank and comment in the beginning
-  lexer_->SkipBlankComment();
+  while (lexer_->Token().type != tok::eof && tok::IsBlankOrComment(lexer_->Token().type)) lexer_->Advance(false);
 }
 
 void Parser::AdvanceLexer() {
   parsed_location_ = lexer_->Token().range.end;
-  lexer_->Advance();
+  lexer_->Advance(false);
+  while (lexer_->Token().type != tok::eof && tok::IsBlankOrComment(lexer_->Token().type)) lexer_->Advance(false);
 }
 
 void Parser::HandleExpect(std::vector<tok::TokenType> expected) {
@@ -1439,7 +1602,7 @@ void Parser::HandleExpect(std::vector<tok::TokenType> expected) {
 
 void Parser::ReportCurrentTokenError(std::string message) {
   auto& token = lexer_->Token();
-  if (token.type != tok::invalid && token.type != tok::eos) {
+  if (token.type != tok::invalid && token.type != tok::eos && token.type != tok::eof) {
     diagnostic_engine_->Add(kErrorDiagnostic, token.range.begin, std::move(message), token.source_view.size());
   } else {
     diagnostic_engine_->Add(kErrorDiagnostic, parsed_location_, std::move(message));
@@ -1475,6 +1638,7 @@ bool Parser::SkipUntil(std::vector<tok::TokenType> toks, SkipUntilFlags flags) {
     }
 
     switch (token.type) {
+      case tok::eof:
       case tok::eos:
         return false;
 

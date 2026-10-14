@@ -44,6 +44,7 @@ class ASTVisitor {
 
   // Concrete Decl
   virtual void Visit(TranslationUnitDecl& n);
+  virtual void Visit(NamespaceDecl& n);
   virtual void Visit(VirtualDecl& n);
   virtual void Visit(VarGroupDecl& n);
   virtual void Visit(VarDecl& n);

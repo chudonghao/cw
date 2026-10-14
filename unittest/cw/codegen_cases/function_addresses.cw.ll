@@ -1,4 +1,4 @@
-define noundef i32 @Select(i32 noundef %value) {
+define noundef i32 @"cw:Select:func(i32)i32"(i32 noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca i32, align 4
@@ -9,7 +9,7 @@ entry:
   ret i32 %1
 }
 
-define noundef double @Select.1(double noundef %value) {
+define noundef double @"cw:Select:func(f64)f64"(double noundef %value) {
 entry:
   %.result = alloca double, align 8
   %value.addr = alloca double, align 8
@@ -20,21 +20,21 @@ entry:
   ret double %1
 }
 
-define noundef ptr @Get() {
+define noundef ptr @"cw:Get:func()*func(f64)f64"() {
 entry:
   %.result = alloca ptr, align 8
-  store ptr @Select.1, ptr %.result, align 8
+  store ptr @"cw:Select:func(f64)f64", ptr %.result, align 8
   %0 = load ptr, ptr %.result, align 8
   ret ptr %0
 }
 
-define noundef double @Invoke(double noundef %value) {
+define noundef double @"cw:Invoke:func(f64)f64"(double noundef %value) {
 entry:
   %.result = alloca double, align 8
   %value.addr = alloca double, align 8
   %callback = alloca ptr, align 8
   store double %value, ptr %value.addr, align 8
-  store ptr @Select.1, ptr %callback, align 8
+  store ptr @"cw:Select:func(f64)f64", ptr %callback, align 8
   %0 = load ptr, ptr %callback, align 8
   %1 = load double, ptr %value.addr, align 8
   %call = call noundef double %0(double noundef %1)
@@ -43,7 +43,7 @@ entry:
   ret double %2
 }
 
-define noundef double @Apply(ptr noundef %callback, double noundef %value) {
+define noundef double @"cw:Apply:func(*func(f64)f64,f64)f64"(ptr noundef %callback, double noundef %value) {
 entry:
   %.result = alloca double, align 8
   %callback.addr = alloca ptr, align 8
@@ -58,24 +58,24 @@ entry:
   ret double %2
 }
 
-define noundef double @Pass() {
+define noundef double @"cw:Pass:func()f64"() {
 entry:
   %.result = alloca double, align 8
-  %call = call noundef double @Apply(ptr noundef @Select.1, double noundef 2.500000e+00)
+  %call = call noundef double @"cw:Apply:func(*func(f64)f64,f64)f64"(ptr noundef @"cw:Select:func(f64)f64", double noundef 2.500000e+00)
   store double %call, ptr %.result, align 8
   %0 = load double, ptr %.result, align 8
   ret double %0
 }
 
-define noundef ptr @Forward() {
+define noundef ptr @"cw:Forward:func()*func(i32)i32"() {
 entry:
   %.result = alloca ptr, align 8
-  store ptr @Later, ptr %.result, align 8
+  store ptr @"cw:Later:func(i32)i32", ptr %.result, align 8
   %0 = load ptr, ptr %.result, align 8
   ret ptr %0
 }
 
-define noundef i32 @Later(i32 noundef %value) {
+define noundef i32 @"cw:Later:func(i32)i32"(i32 noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca i32, align 4

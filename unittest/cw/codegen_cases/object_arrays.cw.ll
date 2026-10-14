@@ -2,7 +2,7 @@
 %struct.Empty = type { i8 }
 %struct.Holder = type { [0 x %struct.Item] }
 
-define noundef ptr @Item.ctor(ptr noundef returned %this, i32 noundef %value) {
+define noundef ptr @"cw:Item:ctor(i32):complete"(ptr noundef returned %this, i32 noundef %value) {
 entry:
   %value.addr = alloca i32, align 4
   store i32 %value, ptr %value.addr, align 4
@@ -12,7 +12,17 @@ entry:
   ret ptr %this
 }
 
-define noundef ptr @Item.ctor.1(ptr noundef returned %this, ptr noundef nonnull align 4 dereferenceable(4) %other) {
+define noundef ptr @"cw:Item:ctor(i32):base"(ptr noundef returned %this, i32 noundef %value) {
+entry:
+  %value.addr = alloca i32, align 4
+  store i32 %value, ptr %value.addr, align 4
+  %value1 = getelementptr inbounds nuw %struct.Item, ptr %this, i32 0, i32 0
+  %0 = load i32, ptr %value.addr, align 4
+  store i32 %0, ptr %value1, align 4
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Item:ctor(&copy Item):complete"(ptr noundef returned %this, ptr noundef nonnull align 4 dereferenceable(4) %other) {
 entry:
   %other.addr = alloca ptr, align 8
   store ptr %other, ptr %other.addr, align 8
@@ -24,7 +34,7 @@ entry:
   ret ptr %this
 }
 
-define noundef ptr @Item.ctor.2(ptr noundef returned %this, ptr noundef nonnull align 4 dereferenceable(4) %other) {
+define noundef ptr @"cw:Item:ctor(&copy Item):base"(ptr noundef returned %this, ptr noundef nonnull align 4 dereferenceable(4) %other) {
 entry:
   %other.addr = alloca ptr, align 8
   store ptr %other, ptr %other.addr, align 8
@@ -36,12 +46,41 @@ entry:
   ret ptr %this
 }
 
-define noundef ptr @Item.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Item:ctor(&move Item):complete"(ptr noundef returned %this, ptr noundef nonnull align 4 dereferenceable(4) %other) {
+entry:
+  %other.addr = alloca ptr, align 8
+  store ptr %other, ptr %other.addr, align 8
+  %value = getelementptr inbounds nuw %struct.Item, ptr %this, i32 0, i32 0
+  %0 = load ptr, ptr %other.addr, align 8
+  %value1 = getelementptr inbounds nuw %struct.Item, ptr %0, i32 0, i32 0
+  %1 = load i32, ptr %value1, align 4
+  store i32 %1, ptr %value, align 4
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Item:ctor(&move Item):base"(ptr noundef returned %this, ptr noundef nonnull align 4 dereferenceable(4) %other) {
+entry:
+  %other.addr = alloca ptr, align 8
+  store ptr %other, ptr %other.addr, align 8
+  %value = getelementptr inbounds nuw %struct.Item, ptr %this, i32 0, i32 0
+  %0 = load ptr, ptr %other.addr, align 8
+  %value1 = getelementptr inbounds nuw %struct.Item, ptr %0, i32 0, i32 0
+  %1 = load i32, ptr %value1, align 4
+  store i32 %1, ptr %value, align 4
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Item:dtor():complete"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define void @Copy(ptr noundef nonnull align 4 dereferenceable(8) %source) {
+define noundef ptr @"cw:Item:dtor():base"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define void @"cw:Copy:func(&copy [2]Item)void"(ptr noundef nonnull align 4 dereferenceable(8) %source) {
 entry:
   %source.addr = alloca ptr, align 8
   %value = alloca [2 x %struct.Item], align 4
@@ -53,7 +92,7 @@ array.construct:                                  ; preds = %array.construct, %e
   %array.index = phi i64 [ 0, %entry ], [ %array.next, %array.construct ]
   %element = getelementptr inbounds nuw [2 x %struct.Item], ptr %value, i64 0, i64 %array.index
   %element1 = getelementptr inbounds nuw [2 x %struct.Item], ptr %0, i64 0, i64 %array.index
-  %call = call noundef ptr @Item.ctor.1(ptr noundef returned %element, ptr noundef nonnull align 4 dereferenceable(4) %element1)
+  %call = call noundef ptr @"cw:Item:ctor(&copy Item):complete"(ptr noundef returned %element, ptr noundef nonnull align 4 dereferenceable(4) %element1)
   %array.next = add i64 %array.index, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end, label %array.construct
@@ -65,7 +104,7 @@ array.destroy:                                    ; preds = %array.destroy, %arr
   %array.index3 = phi i64 [ 2, %array.end ], [ %array.previous, %array.destroy ]
   %array.previous = sub i64 %array.index3, 1
   %element4 = getelementptr inbounds nuw [2 x %struct.Item], ptr %value, i64 0, i64 %array.previous
-  %call5 = call noundef ptr @Item.dtor(ptr noundef returned %element4)
+  %call5 = call noundef ptr @"cw:Item:dtor():complete"(ptr noundef returned %element4)
   %array.finished6 = icmp eq i64 %array.previous, 0
   br i1 %array.finished6, label %array.end2, label %array.destroy
 
@@ -73,7 +112,7 @@ array.end2:                                       ; preds = %array.destroy
   ret void
 }
 
-define void @Move(ptr noundef nonnull align 4 dereferenceable(8) %source) {
+define void @"cw:Move:func(&move [2]Item)void"(ptr noundef nonnull align 4 dereferenceable(8) %source) {
 entry:
   %source.addr = alloca ptr, align 8
   %value = alloca [2 x %struct.Item], align 4
@@ -85,7 +124,7 @@ array.construct:                                  ; preds = %array.construct, %e
   %array.index = phi i64 [ 0, %entry ], [ %array.next, %array.construct ]
   %element = getelementptr inbounds nuw [2 x %struct.Item], ptr %value, i64 0, i64 %array.index
   %element1 = getelementptr inbounds nuw [2 x %struct.Item], ptr %0, i64 0, i64 %array.index
-  %call = call noundef ptr @Item.ctor.2(ptr noundef returned %element, ptr noundef nonnull align 4 dereferenceable(4) %element1)
+  %call = call noundef ptr @"cw:Item:ctor(&move Item):complete"(ptr noundef returned %element, ptr noundef nonnull align 4 dereferenceable(4) %element1)
   %array.next = add i64 %array.index, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end, label %array.construct
@@ -97,7 +136,7 @@ array.destroy:                                    ; preds = %array.destroy, %arr
   %array.index3 = phi i64 [ 2, %array.end ], [ %array.previous, %array.destroy ]
   %array.previous = sub i64 %array.index3, 1
   %element4 = getelementptr inbounds nuw [2 x %struct.Item], ptr %value, i64 0, i64 %array.previous
-  %call5 = call noundef ptr @Item.dtor(ptr noundef returned %element4)
+  %call5 = call noundef ptr @"cw:Item:dtor():complete"(ptr noundef returned %element4)
   %array.finished6 = icmp eq i64 %array.previous, 0
   br i1 %array.finished6, label %array.end2, label %array.destroy
 
@@ -105,7 +144,7 @@ array.end2:                                       ; preds = %array.destroy
   ret void
 }
 
-define void @Nested(ptr noundef nonnull align 4 dereferenceable(8) %source) {
+define void @"cw:Nested:func(&copy [1][2]Item)void"(ptr noundef nonnull align 4 dereferenceable(8) %source) {
 entry:
   %source.addr = alloca ptr, align 8
   %value = alloca [1 x [2 x %struct.Item]], align 4
@@ -123,7 +162,7 @@ array.construct2:                                 ; preds = %array.construct2, %
   %array.index4 = phi i64 [ 0, %array.construct ], [ %array.next, %array.construct2 ]
   %element5 = getelementptr inbounds nuw [2 x %struct.Item], ptr %element, i64 0, i64 %array.index4
   %element6 = getelementptr inbounds nuw [2 x %struct.Item], ptr %element1, i64 0, i64 %array.index4
-  %call = call noundef ptr @Item.ctor.1(ptr noundef returned %element5, ptr noundef nonnull align 4 dereferenceable(4) %element6)
+  %call = call noundef ptr @"cw:Item:ctor(&copy Item):complete"(ptr noundef returned %element5, ptr noundef nonnull align 4 dereferenceable(4) %element6)
   %array.next = add i64 %array.index4, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end3, label %array.construct2
@@ -146,7 +185,7 @@ array.destroy12:                                  ; preds = %array.destroy12, %a
   %array.index14 = phi i64 [ 2, %array.destroy ], [ %array.previous15, %array.destroy12 ]
   %array.previous15 = sub i64 %array.index14, 1
   %element16 = getelementptr inbounds nuw [2 x %struct.Item], ptr %element11, i64 0, i64 %array.previous15
-  %call17 = call noundef ptr @Item.dtor(ptr noundef returned %element16)
+  %call17 = call noundef ptr @"cw:Item:dtor():complete"(ptr noundef returned %element16)
   %array.finished18 = icmp eq i64 %array.previous15, 0
   br i1 %array.finished18, label %array.end13, label %array.destroy12
 
@@ -158,7 +197,7 @@ array.end9:                                       ; preds = %array.end13
   ret void
 }
 
-define void @Zero(ptr noundef nonnull align 4 %source) {
+define void @"cw:Zero:func(&copy [0]Item)void"(ptr noundef nonnull align 4 %source) {
 entry:
   %source.addr = alloca ptr, align 8
   %value = alloca [0 x %struct.Item], align 4
@@ -167,7 +206,7 @@ entry:
   ret void
 }
 
-define noundef nonnull align 4 ptr @ZeroSource(ptr noundef nonnull align 4 %source, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define noundef nonnull align 4 ptr @"cw:ZeroSource:func(&copy [3][0]Item,&mut i32)&copy [3][0]Item"(ptr noundef nonnull align 4 %source, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
@@ -185,7 +224,7 @@ entry:
   ret ptr %4
 }
 
-define void @NestedZero(ptr noundef nonnull align 4 %source, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:NestedZero:func(&copy [3][0]Item,&mut i32)void"(ptr noundef nonnull align 4 %source, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %source.addr = alloca ptr, align 8
   %counter.addr = alloca ptr, align 8
@@ -194,41 +233,58 @@ entry:
   store ptr %counter, ptr %counter.addr, align 8
   %0 = load ptr, ptr %source.addr, align 8
   %1 = load ptr, ptr %counter.addr, align 8
-  %call = call noundef nonnull align 4 ptr @ZeroSource(ptr noundef nonnull align 4 %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call = call noundef nonnull align 4 ptr @"cw:ZeroSource:func(&copy [3][0]Item,&mut i32)&copy [3][0]Item"(ptr noundef nonnull align 4 %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
   ret void
 }
 
-define noundef ptr @Empty.ctor(ptr noundef returned %this) {
+define noundef ptr @"cw:Empty:ctor():complete"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define noundef ptr @Empty.ctor.3(ptr noundef returned %this, ptr noundef nonnull align 1 dereferenceable(1) %other) {
+define noundef ptr @"cw:Empty:ctor():base"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Empty:ctor(&copy Empty):complete"(ptr noundef returned %this, ptr noundef nonnull align 1 dereferenceable(1) %other) {
 entry:
   %other.addr = alloca ptr, align 8
   store ptr %other, ptr %other.addr, align 8
   ret ptr %this
 }
 
-define noundef ptr @Empty.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Empty:ctor(&copy Empty):base"(ptr noundef returned %this, ptr noundef nonnull align 1 dereferenceable(1) %other) {
+entry:
+  %other.addr = alloca ptr, align 8
+  store ptr %other, ptr %other.addr, align 8
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Empty:dtor():complete"(ptr noundef returned %this) {
 entry:
   ret ptr %this
 }
 
-define void @EmptyElements() {
+define noundef ptr @"cw:Empty:dtor():base"(ptr noundef returned %this) {
+entry:
+  ret ptr %this
+}
+
+define void @"cw:EmptyElements:func()void"() {
 entry:
   %value = alloca [2 x %struct.Empty], align 1
   %element = getelementptr inbounds nuw [2 x %struct.Empty], ptr %value, i64 0, i64 0
-  %call = call noundef ptr @Empty.ctor(ptr noundef returned %element)
+  %call = call noundef ptr @"cw:Empty:ctor():complete"(ptr noundef returned %element)
   %element1 = getelementptr inbounds nuw [2 x %struct.Empty], ptr %value, i64 0, i64 1
-  %call2 = call noundef ptr @Empty.ctor(ptr noundef returned %element1)
+  %call2 = call noundef ptr @"cw:Empty:ctor():complete"(ptr noundef returned %element1)
   br label %array.destroy
 
 array.destroy:                                    ; preds = %array.destroy, %entry
   %array.index = phi i64 [ 2, %entry ], [ %array.previous, %array.destroy ]
   %array.previous = sub i64 %array.index, 1
   %element3 = getelementptr inbounds nuw [2 x %struct.Empty], ptr %value, i64 0, i64 %array.previous
-  %call4 = call noundef ptr @Empty.dtor(ptr noundef returned %element3)
+  %call4 = call noundef ptr @"cw:Empty:dtor():complete"(ptr noundef returned %element3)
   %array.finished = icmp eq i64 %array.previous, 0
   br i1 %array.finished, label %array.end, label %array.destroy
 
@@ -236,7 +292,7 @@ array.end:                                        ; preds = %array.destroy
   ret void
 }
 
-define void @CopyEmpty(ptr noundef nonnull align 1 dereferenceable(2) %source) {
+define void @"cw:CopyEmpty:func(&copy [2]Empty)void"(ptr noundef nonnull align 1 dereferenceable(2) %source) {
 entry:
   %source.addr = alloca ptr, align 8
   %value = alloca [2 x %struct.Empty], align 1
@@ -248,7 +304,7 @@ array.construct:                                  ; preds = %array.construct, %e
   %array.index = phi i64 [ 0, %entry ], [ %array.next, %array.construct ]
   %element = getelementptr inbounds nuw [2 x %struct.Empty], ptr %value, i64 0, i64 %array.index
   %element1 = getelementptr inbounds nuw [2 x %struct.Empty], ptr %0, i64 0, i64 %array.index
-  %call = call noundef ptr @Empty.ctor.3(ptr noundef returned %element, ptr noundef nonnull align 1 dereferenceable(1) %element1)
+  %call = call noundef ptr @"cw:Empty:ctor(&copy Empty):complete"(ptr noundef returned %element, ptr noundef nonnull align 1 dereferenceable(1) %element1)
   %array.next = add i64 %array.index, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end, label %array.construct
@@ -260,7 +316,7 @@ array.destroy:                                    ; preds = %array.destroy, %arr
   %array.index3 = phi i64 [ 2, %array.end ], [ %array.previous, %array.destroy ]
   %array.previous = sub i64 %array.index3, 1
   %element4 = getelementptr inbounds nuw [2 x %struct.Empty], ptr %value, i64 0, i64 %array.previous
-  %call5 = call noundef ptr @Empty.dtor(ptr noundef returned %element4)
+  %call5 = call noundef ptr @"cw:Empty:dtor():complete"(ptr noundef returned %element4)
   %array.finished6 = icmp eq i64 %array.previous, 0
   br i1 %array.finished6, label %array.end2, label %array.destroy
 
@@ -268,24 +324,24 @@ array.end2:                                       ; preds = %array.destroy
   ret void
 }
 
-define void @EmptyValue(ptr sret(%struct.Empty) align 1 %.result, ptr noundef %value) {
+define void @"cw:EmptyValue:func(Empty)Empty"(ptr sret(%struct.Empty) align 1 %.result, ptr noundef %value) {
 entry:
-  %call = call noundef ptr @Empty.ctor(ptr noundef returned %.result)
+  %call = call noundef ptr @"cw:Empty:ctor():complete"(ptr noundef returned %.result)
   ret void
 }
 
-define void @Discard() {
+define void @"cw:Discard:func()void"() {
 entry:
   %temporary = alloca %struct.Empty, align 1
   %argument = alloca %struct.Empty, align 1
-  %call = call noundef ptr @Empty.ctor(ptr noundef returned %argument)
-  call void @EmptyValue(ptr sret(%struct.Empty) align 1 %temporary, ptr noundef %argument)
-  %call1 = call noundef ptr @Empty.dtor(ptr noundef returned %temporary)
-  %call2 = call noundef ptr @Empty.dtor(ptr noundef returned %argument)
+  %call = call noundef ptr @"cw:Empty:ctor():complete"(ptr noundef returned %argument)
+  call void @"cw:EmptyValue:func(Empty)Empty"(ptr sret(%struct.Empty) align 1 %temporary, ptr noundef %argument)
+  %call1 = call noundef ptr @"cw:Empty:dtor():complete"(ptr noundef returned %temporary)
+  %call2 = call noundef ptr @"cw:Empty:dtor():complete"(ptr noundef returned %argument)
   ret void
 }
 
-define noundef ptr @Holder.ctor(ptr noundef returned %this, ptr noundef nonnull align 4 %source) {
+define noundef ptr @"cw:Holder:ctor(&copy Holder):complete"(ptr noundef returned %this, ptr noundef nonnull align 4 %source) {
 entry:
   %source.addr = alloca ptr, align 8
   store ptr %source, ptr %source.addr, align 8
@@ -295,13 +351,29 @@ entry:
   ret ptr %this
 }
 
-define noundef ptr @Holder.dtor(ptr noundef returned %this) {
+define noundef ptr @"cw:Holder:ctor(&copy Holder):base"(ptr noundef returned %this, ptr noundef nonnull align 4 %source) {
+entry:
+  %source.addr = alloca ptr, align 8
+  store ptr %source, ptr %source.addr, align 8
+  %items = getelementptr inbounds nuw %struct.Holder, ptr %this, i32 0, i32 0
+  %0 = load ptr, ptr %source.addr, align 8
+  %items1 = getelementptr inbounds nuw %struct.Holder, ptr %0, i32 0, i32 0
+  ret ptr %this
+}
+
+define noundef ptr @"cw:Holder:dtor():complete"(ptr noundef returned %this) {
 entry:
   %items = getelementptr inbounds nuw %struct.Holder, ptr %this, i32 0, i32 0
   ret ptr %this
 }
 
-define void @Holders(ptr noundef nonnull align 4 %source) {
+define noundef ptr @"cw:Holder:dtor():base"(ptr noundef returned %this) {
+entry:
+  %items = getelementptr inbounds nuw %struct.Holder, ptr %this, i32 0, i32 0
+  ret ptr %this
+}
+
+define void @"cw:Holders:func(&copy [2]Holder)void"(ptr noundef nonnull align 4 %source) {
 entry:
   %source.addr = alloca ptr, align 8
   %value = alloca [2 x %struct.Holder], align 4
@@ -313,7 +385,7 @@ array.construct:                                  ; preds = %array.construct, %e
   %array.index = phi i64 [ 0, %entry ], [ %array.next, %array.construct ]
   %element = getelementptr inbounds nuw [2 x %struct.Holder], ptr %value, i64 0, i64 %array.index
   %element1 = getelementptr inbounds nuw [2 x %struct.Holder], ptr %0, i64 0, i64 %array.index
-  %call = call noundef ptr @Holder.ctor(ptr noundef returned %element, ptr noundef nonnull align 4 %element1)
+  %call = call noundef ptr @"cw:Holder:ctor(&copy Holder):complete"(ptr noundef returned %element, ptr noundef nonnull align 4 %element1)
   %array.next = add i64 %array.index, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end, label %array.construct
@@ -325,7 +397,7 @@ array.destroy:                                    ; preds = %array.destroy, %arr
   %array.index3 = phi i64 [ 2, %array.end ], [ %array.previous, %array.destroy ]
   %array.previous = sub i64 %array.index3, 1
   %element4 = getelementptr inbounds nuw [2 x %struct.Holder], ptr %value, i64 0, i64 %array.previous
-  %call5 = call noundef ptr @Holder.dtor(ptr noundef returned %element4)
+  %call5 = call noundef ptr @"cw:Holder:dtor():complete"(ptr noundef returned %element4)
   %array.finished6 = icmp eq i64 %array.previous, 0
   br i1 %array.finished6, label %array.end2, label %array.destroy
 

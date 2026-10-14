@@ -1,4 +1,4 @@
-define noundef double @Bump(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef double @"cw:Bump:func(&mut f32)f64"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca double, align 8
   %value.addr = alloca ptr, align 8
@@ -16,7 +16,7 @@ entry:
   ret double %5
 }
 
-define noundef double @ReadBeforeBump(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef double @"cw:ReadBeforeBump:func(&mut f32)f64"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca double, align 8
   %value.addr = alloca ptr, align 8
@@ -25,14 +25,14 @@ entry:
   %1 = load float, ptr %0, align 4
   %conv = fpext float %1 to double
   %2 = load ptr, ptr %value.addr, align 8
-  %call = call noundef double @Bump(ptr noundef nonnull align 4 dereferenceable(4) %2)
+  %call = call noundef double @"cw:Bump:func(&mut f32)f64"(ptr noundef nonnull align 4 dereferenceable(4) %2)
   %add = fadd double %conv, %call
   store double %add, ptr %.result, align 8
   %3 = load double, ptr %.result, align 8
   ret double %3
 }
 
-define noundef double @Pair(double noundef %first, double noundef %second) {
+define noundef double @"cw:Pair:func(f64,f64)f64"(double noundef %first, double noundef %second) {
 entry:
   %.result = alloca double, align 8
   %first.addr = alloca double, align 8
@@ -47,7 +47,7 @@ entry:
   ret double %2
 }
 
-define noundef double @ArgumentOrder(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef double @"cw:ArgumentOrder:func(&mut f32)f64"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca double, align 8
   %value.addr = alloca ptr, align 8
@@ -56,14 +56,14 @@ entry:
   %1 = load float, ptr %0, align 4
   %conv = fpext float %1 to double
   %2 = load ptr, ptr %value.addr, align 8
-  %call = call noundef double @Bump(ptr noundef nonnull align 4 dereferenceable(4) %2)
-  %call1 = call noundef double @Pair(double noundef %conv, double noundef %call)
+  %call = call noundef double @"cw:Bump:func(&mut f32)f64"(ptr noundef nonnull align 4 dereferenceable(4) %2)
+  %call1 = call noundef double @"cw:Pair:func(f64,f64)f64"(double noundef %conv, double noundef %call)
   store double %call1, ptr %.result, align 8
   %3 = load double, ptr %.result, align 8
   ret double %3
 }
 
-define noundef double @Choose(i1 noundef zeroext %flag, float noundef %left, double noundef %right) {
+define noundef double @"cw:Choose:func(bool,f32,f64)f64"(i1 noundef zeroext %flag, float noundef %left, double noundef %right) {
 entry:
   %.result = alloca double, align 8
   %flag.addr = alloca i8, align 1
@@ -93,7 +93,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret double %3
 }
 
-define noundef double @Sum(i32 noundef %limit) {
+define noundef double @"cw:Sum:func(i32)f64"(i32 noundef %limit) {
 entry:
   %.result = alloca double, align 8
   %limit.addr = alloca i32, align 4
@@ -128,7 +128,7 @@ while.end:                                        ; preds = %while.cond
   ret double %6
 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @Select(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %left, ptr noundef nonnull align 4 dereferenceable(4) %right) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:Select:func(bool,&mut f32,&mut f32)&mut f32"(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %left, ptr noundef nonnull align 4 dereferenceable(4) %right) {
 entry:
   %.result = alloca ptr, align 8
   %flag.addr = alloca i8, align 1
@@ -157,7 +157,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret ptr %3
 }
 
-define void @WriteChosen(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %left, ptr noundef nonnull align 4 dereferenceable(4) %right, double noundef %value) {
+define void @"cw:WriteChosen:func(bool,&mut f32,&mut f32,f64)void"(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %left, ptr noundef nonnull align 4 dereferenceable(4) %right, double noundef %value) {
 entry:
   %flag.addr = alloca i8, align 1
   %left.addr = alloca ptr, align 8
@@ -174,7 +174,7 @@ entry:
   %loadedv = icmp ne i8 %1, 0
   %2 = load ptr, ptr %left.addr, align 8
   %3 = load ptr, ptr %right.addr, align 8
-  %call = call noundef nonnull align 4 dereferenceable(4) ptr @Select(i1 noundef zeroext %loadedv, ptr noundef nonnull align 4 dereferenceable(4) %2, ptr noundef nonnull align 4 dereferenceable(4) %3)
+  %call = call noundef nonnull align 4 dereferenceable(4) ptr @"cw:Select:func(bool,&mut f32,&mut f32)&mut f32"(i1 noundef zeroext %loadedv, ptr noundef nonnull align 4 dereferenceable(4) %2, ptr noundef nonnull align 4 dereferenceable(4) %3)
   store float %conv, ptr %call, align 4
   ret void
 }

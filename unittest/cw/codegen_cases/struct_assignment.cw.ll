@@ -1,6 +1,6 @@
 %struct.Value = type { i32 }
 
-define noundef i32 @CopyAndMove(ptr noundef nonnull align 4 dereferenceable(4) %source) {
+define noundef i32 @"cw:CopyAndMove:func(&copy Value)i32"(ptr noundef nonnull align 4 dereferenceable(4) %source) {
 entry:
   %.result = alloca i32, align 4
   %source.addr = alloca ptr, align 8
@@ -20,7 +20,7 @@ entry:
   ret i32 %3
 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @Assign(ptr noundef nonnull align 4 dereferenceable(4) %target, ptr noundef nonnull align 4 dereferenceable(4) %middle, ptr noundef nonnull align 4 dereferenceable(4) %source) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:Assign:func(&mut Value,&mut Value,&copy Value)&mut Value"(ptr noundef nonnull align 4 dereferenceable(4) %target, ptr noundef nonnull align 4 dereferenceable(4) %middle, ptr noundef nonnull align 4 dereferenceable(4) %source) {
 entry:
   %.result = alloca ptr, align 8
   %target.addr = alloca ptr, align 8

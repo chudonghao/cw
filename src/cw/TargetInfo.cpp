@@ -5,6 +5,7 @@
 
 #include "TargetInfo.h"
 
+#include <string>
 #include <utility>
 
 #include <boost/assert.hpp>
@@ -20,9 +21,17 @@ std::uint64_t TargetInfo::GetScalarAlignment(unsigned storage_bits) const {
   return storage_bits / 8;
 }
 
-std::optional<TargetInfo> TargetInfo::CreateNative() {
-  llvm::Triple triple(llvm::sys::getDefaultTargetTriple());
-  if (triple.getArch() != llvm::Triple::aarch64 || !triple.isMacOSX()) {
+std::optional<TargetInfo> TargetInfo::CreateNative() { return Create(llvm::sys::getDefaultTargetTriple()); }
+
+std::optional<TargetInfo> TargetInfo::Create(std::string_view triple_text) {
+  if (triple_text.empty()) {
+    return std::nullopt;
+  }
+  llvm::Triple triple(llvm::Triple::normalize(std::string(triple_text)));
+  const bool macos_arm64 = triple.getArch() == llvm::Triple::aarch64 && triple.isMacOSX() &&
+                           triple.getVendor() == llvm::Triple::Apple && triple.getEnvironmentName().empty();
+  const bool wasm32 = triple.str() == "wasm32-unknown-unknown";
+  if (!macos_arm64 && !wasm32) {
     return std::nullopt;
   }
   return TargetInfo(std::move(triple));

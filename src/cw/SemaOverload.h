@@ -55,11 +55,11 @@ using OverloadResult = std::variant<SelectedOverload, NoViableOverload, Ambiguou
 /// \brief Matches a known signature without completing conversions, mutating AST, or issuing diagnostics.
 MatchArgumentsResult MatchArguments(const std::vector<ConversionSource>& arguments,
                                     const std::vector<const Type*>& parameter_types, ASTContext& ast_context,
-                                    const SymbolTable& symbol_table);
+                                    const LookupContext& lookup_context);
 
 /// \brief Matches and orders caller-selected valid function declarations without committing a call.
 OverloadResult ResolveOverload(const std::vector<ConversionSource>& arguments,
                                const std::vector<const FunctionDecl*>& functions, ASTContext& ast_context,
-                               const SymbolTable& symbol_table);
+                               const LookupContext& lookup_context);
 
 }  // namespace cw::sema_detail

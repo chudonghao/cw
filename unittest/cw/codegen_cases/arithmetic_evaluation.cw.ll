@@ -1,4 +1,4 @@
-define noundef i32 @Bump(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef i32 @"cw:Bump:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -15,7 +15,7 @@ entry:
   ret i32 %5
 }
 
-define noundef i32 @ReadBeforeCall(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef i32 @"cw:ReadBeforeCall:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -23,14 +23,14 @@ entry:
   %0 = load ptr, ptr %value.addr, align 8
   %1 = load i32, ptr %0, align 4
   %2 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @Bump(ptr noundef nonnull align 4 dereferenceable(4) %2)
+  %call = call noundef i32 @"cw:Bump:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %2)
   %add = add i32 %1, %call
   store i32 %add, ptr %.result, align 4
   %3 = load i32, ptr %.result, align 4
   ret i32 %3
 }
 
-define noundef zeroext i1 @CompareBeforeCall(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef zeroext i1 @"cw:CompareBeforeCall:func(&mut i32)bool"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca ptr, align 8
@@ -38,7 +38,7 @@ entry:
   %0 = load ptr, ptr %value.addr, align 8
   %1 = load i32, ptr %0, align 4
   %2 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @Bump(ptr noundef nonnull align 4 dereferenceable(4) %2)
+  %call = call noundef i32 @"cw:Bump:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %2)
   %cmp = icmp eq i32 %1, %call
   %storedv = zext i1 %cmp to i8
   store i8 %storedv, ptr %.result, align 1
@@ -47,15 +47,15 @@ entry:
   ret i1 %loadedv
 }
 
-define noundef i32 @DivideOnce(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef i32 @"cw:DivideOnce:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
   store ptr %value, ptr %value.addr, align 8
   %0 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @Bump(ptr noundef nonnull align 4 dereferenceable(4) %0)
+  %call = call noundef i32 @"cw:Bump:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %0)
   %1 = load ptr, ptr %value.addr, align 8
-  %call1 = call noundef i32 @Bump(ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call1 = call noundef i32 @"cw:Bump:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %1)
   %2 = icmp eq i32 %call1, -1
   br i1 %2, label %div.negone, label %div.normal
 
@@ -74,19 +74,19 @@ div.end:                                          ; preds = %div.normal, %div.ne
   ret i32 %3
 }
 
-define noundef i32 @RemainderSideEffect(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef i32 @"cw:RemainderSideEffect:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
   store ptr %value, ptr %value.addr, align 8
   %0 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @Bump(ptr noundef nonnull align 4 dereferenceable(4) %0)
+  %call = call noundef i32 @"cw:Bump:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %0)
   store i32 0, ptr %.result, align 4
   %1 = load i32, ptr %.result, align 4
   ret i32 %1
 }
 
-define noundef i32 @ConditionalDivisor(ptr noundef nonnull align 4 dereferenceable(4) %value, i1 noundef zeroext %flag) {
+define noundef i32 @"cw:ConditionalDivisor:func(&mut i32,bool)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value, i1 noundef zeroext %flag) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
@@ -100,7 +100,7 @@ entry:
 
 cond.true:                                        ; preds = %entry
   %1 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @Bump(ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call = call noundef i32 @"cw:Bump:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %1)
   br label %cond.end
 
 cond.false:                                       ; preds = %entry
@@ -119,7 +119,7 @@ cond.true1:                                       ; preds = %cond.end
 
 cond.false2:                                      ; preds = %cond.end
   %5 = load ptr, ptr %value.addr, align 8
-  %call5 = call noundef i32 @Bump(ptr noundef nonnull align 4 dereferenceable(4) %5)
+  %call5 = call noundef i32 @"cw:Bump:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %5)
   br label %cond.end3
 
 cond.end3:                                        ; preds = %cond.false2, %cond.true1
@@ -142,7 +142,7 @@ div.end:                                          ; preds = %div.normal, %div.ne
   ret i32 %7
 }
 
-define noundef zeroext i1 @ShortCircuitDivision(i1 noundef zeroext %flag, i32 noundef %left, i32 noundef %right) {
+define noundef zeroext i1 @"cw:ShortCircuitDivision:func(bool,i32,i32)bool"(i1 noundef zeroext %flag, i32 noundef %left, i32 noundef %right) {
 entry:
   %.result = alloca i8, align 1
   %flag.addr = alloca i8, align 1
@@ -184,24 +184,24 @@ land.end:                                         ; preds = %div.end, %entry
   ret i1 %loadedv3
 }
 
-define noundef i32 @DiscardAndPass(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef i32 @"cw:DiscardAndPass:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca ptr, align 8
   store ptr %value, ptr %value.addr, align 8
   %0 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i32 @Bump(ptr noundef nonnull align 4 dereferenceable(4) %0)
+  %call = call noundef i32 @"cw:Bump:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %0)
   %add = add i32 %call, 1
   %1 = load ptr, ptr %value.addr, align 8
-  %call1 = call noundef i32 @Bump(ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call1 = call noundef i32 @"cw:Bump:func(&mut i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %1)
   %mul = mul i32 %call1, 2
-  %call2 = call noundef i32 @Consume(i32 noundef %mul)
+  %call2 = call noundef i32 @"cw:Consume:func(i32)i32"(i32 noundef %mul)
   store i32 %call2, ptr %.result, align 4
   %2 = load i32, ptr %.result, align 4
   ret i32 %2
 }
 
-define noundef i32 @Consume(i32 noundef %value) {
+define noundef i32 @"cw:Consume:func(i32)i32"(i32 noundef %value) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca i32, align 4

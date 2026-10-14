@@ -44,6 +44,7 @@ class ASTDumper : public ASTVisitor {
 
   // Decl
   void Visit(TranslationUnitDecl& n) override;
+  void Visit(NamespaceDecl& n) override;
   void Visit(VirtualDecl& n) override;
   void Visit(VarGroupDecl& n) override;
   void Visit(VarDecl& n) override;
@@ -117,6 +118,9 @@ class ASTDumper : public ASTVisitor {
   void PrintSpecialFunctionTarget(const StructType* target_type);
   void PrintBaseType(const StructType& type, bool is_last);
   bool IsPrintable(const SourceLocation& location) const;
+
+  /// \brief Prints the " exported" marker when \p n carries the source-level `export` modifier.
+  void PrintDeclModifier(const Decl& n);
 
   /// \brief Prints the " contains-errors" marker when \p n carries a fatal front-end error.
   void PrintErrorMark(const Node& n);

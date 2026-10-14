@@ -1,0 +1,17 @@
+import trivial struct Item {
+}
+namespace alpha {
+  import trivial struct Item {
+  }
+  import func Read(value &copy ::Item);
+}
+namespace outer {
+  namespace inner {
+    import trivial struct Item {
+    }
+    import func Read(value &copy ::outer::inner::Item);
+  }
+}
+namespace alpha {
+  import func Identity(value *::alpha::Item) *::alpha::Item;
+}

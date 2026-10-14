@@ -1,7 +1,7 @@
-@.str = private constant [3 x i8] c"yes", align 1
-@.str.1 = private constant [3 x i8] c"no!", align 1
+@"cw:str" = private constant [3 x i8] c"yes", align 1
+@"cw:str.1" = private constant [3 x i8] c"no!", align 1
 
-define noundef nonnull align 1 dereferenceable(3) ptr @Choose(i1 noundef zeroext %flag) {
+define noundef nonnull align 1 dereferenceable(3) ptr @"cw:Choose:func(bool)&copy [3]u8"(i1 noundef zeroext %flag) {
 entry:
   %.result = alloca ptr, align 8
   %flag.addr = alloca i8, align 1
@@ -18,13 +18,13 @@ cond.false:                                       ; preds = %entry
   br label %cond.end
 
 cond.end:                                         ; preds = %cond.false, %cond.true
-  %cond = phi ptr [ @.str, %cond.true ], [ @.str.1, %cond.false ]
+  %cond = phi ptr [ @"cw:str", %cond.true ], [ @"cw:str.1", %cond.false ]
   store ptr %cond, ptr %.result, align 8
   %1 = load ptr, ptr %.result, align 8
   ret ptr %1
 }
 
-define noundef zeroext i8 @ReadChoice(i1 noundef zeroext %flag, i64 noundef %index) {
+define noundef zeroext i8 @"cw:ReadChoice:func(bool,usize)u8"(i1 noundef zeroext %flag, i64 noundef %index) {
 entry:
   %.result = alloca i8, align 1
   %flag.addr = alloca i8, align 1
@@ -44,7 +44,7 @@ cond.false:                                       ; preds = %entry
   br label %cond.end
 
 cond.end:                                         ; preds = %cond.false, %cond.true
-  %cond = phi ptr [ @.str, %cond.true ], [ @.str.1, %cond.false ]
+  %cond = phi ptr [ @"cw:str", %cond.true ], [ @"cw:str.1", %cond.false ]
   call void @llvm.memcpy.p0.p0.i64(ptr align 1 %text, ptr align 1 %cond, i64 3, i1 false)
   %1 = load i64, ptr %index.addr, align 8
   %element = getelementptr [3 x i8], ptr %text, i64 0, i64 %1
@@ -54,7 +54,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret i8 %3
 }
 
-define noundef zeroext i8 @WithValue(i1 noundef zeroext %flag, i64 noundef %index) {
+define noundef zeroext i8 @"cw:WithValue:func(bool,usize)u8"(i1 noundef zeroext %flag, i64 noundef %index) {
 entry:
   %.result = alloca i8, align 1
   %flag.addr = alloca i8, align 1
@@ -68,7 +68,7 @@ entry:
   br i1 %loadedv, label %cond.true, label %cond.false
 
 cond.true:                                        ; preds = %entry
-  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %text, ptr align 1 @.str, i64 3, i1 false)
+  call void @llvm.memcpy.p0.p0.i64(ptr align 1 %text, ptr align 1 @"cw:str", i64 3, i1 false)
   br label %cond.end
 
 cond.false:                                       ; preds = %entry
@@ -89,7 +89,7 @@ cond.end:                                         ; preds = %cond.false, %cond.t
   ret i8 %3
 }
 
-define noundef nonnull align 1 dereferenceable(3) ptr @Touch(ptr noundef nonnull align 4 dereferenceable(4) %count) {
+define noundef nonnull align 1 dereferenceable(3) ptr @"cw:Touch:func(&mut u32)&copy [3]u8"(ptr noundef nonnull align 4 dereferenceable(4) %count) {
 entry:
   %.result = alloca ptr, align 8
   %count.addr = alloca ptr, align 8
@@ -99,12 +99,12 @@ entry:
   %add = add i32 %1, 1
   %2 = load ptr, ptr %count.addr, align 8
   store i32 %add, ptr %2, align 4
-  store ptr @.str.1, ptr %.result, align 8
+  store ptr @"cw:str.1", ptr %.result, align 8
   %3 = load ptr, ptr %.result, align 8
   ret ptr %3
 }
 
-define void @Discard(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %count) {
+define void @"cw:Discard:func(bool,&mut u32)void"(i1 noundef zeroext %flag, ptr noundef nonnull align 4 dereferenceable(4) %count) {
 entry:
   %flag.addr = alloca i8, align 1
   %count.addr = alloca ptr, align 8
@@ -120,7 +120,7 @@ cond.true:                                        ; preds = %entry
 
 cond.false:                                       ; preds = %entry
   %1 = load ptr, ptr %count.addr, align 8
-  %call = call noundef nonnull align 1 dereferenceable(3) ptr @Touch(ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call = call noundef nonnull align 1 dereferenceable(3) ptr @"cw:Touch:func(&mut u32)&copy [3]u8"(ptr noundef nonnull align 4 dereferenceable(4) %1)
   br label %cond.end
 
 cond.end:                                         ; preds = %cond.false, %cond.true

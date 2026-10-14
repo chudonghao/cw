@@ -1,4 +1,4 @@
-define noundef nonnull align 4 dereferenceable(4) ptr @ForwardMutable(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:ForwardMutable:func(&mut i32)&mut i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -9,7 +9,7 @@ entry:
   ret ptr %1
 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @ForwardCopy(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:ForwardCopy:func(&copy i32)&copy i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -20,7 +20,7 @@ entry:
   ret ptr %1
 }
 
-define noundef nonnull align 4 dereferenceable(4) ptr @ForwardMove(ptr noundef nonnull align 4 dereferenceable(4) %value) {
+define noundef nonnull align 4 dereferenceable(4) ptr @"cw:ForwardMove:func(&move i32)&move i32"(ptr noundef nonnull align 4 dereferenceable(4) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -31,7 +31,7 @@ entry:
   ret ptr %1
 }
 
-define noundef i32 @ReplaceThenRead(ptr noundef nonnull align 4 dereferenceable(4) %first, ptr noundef nonnull align 4 dereferenceable(4) %second) {
+define noundef i32 @"cw:ReplaceThenRead:func(&mut i32,&copy i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %first, ptr noundef nonnull align 4 dereferenceable(4) %second) {
 entry:
   %.result = alloca i32, align 4
   %first.addr = alloca ptr, align 8
@@ -47,12 +47,12 @@ entry:
   ret i32 %3
 }
 
-define noundef i32 @AliasedArguments() {
+define noundef i32 @"cw:AliasedArguments:func()i32"() {
 entry:
   %.result = alloca i32, align 4
   %value = alloca i32, align 4
   store i32 1, ptr %value, align 4
-  %call = call noundef i32 @ReplaceThenRead(ptr noundef nonnull align 4 dereferenceable(4) %value, ptr noundef nonnull align 4 dereferenceable(4) %value)
+  %call = call noundef i32 @"cw:ReplaceThenRead:func(&mut i32,&copy i32)i32"(ptr noundef nonnull align 4 dereferenceable(4) %value, ptr noundef nonnull align 4 dereferenceable(4) %value)
   store i32 %call, ptr %.result, align 4
   %0 = load i32, ptr %.result, align 4
   ret i32 %0

@@ -3,7 +3,7 @@
 %struct.Aligned = type { [0 x i64] }
 %struct.Mixed = type { i8, %struct.Aligned, i8, %struct.Empty }
 
-define void @Zero(i64 noundef %index) {
+define void @"cw:Zero:func(usize)void"(i64 noundef %index) {
 entry:
   %index.addr = alloca i64, align 8
   %object = alloca %struct.Wrapper, align 8
@@ -22,7 +22,7 @@ entry:
   ret void
 }
 
-define void @Store(ptr noundef nonnull align 8 dereferenceable(16) %value) {
+define void @"cw:Store:func(&mut Mixed)void"(ptr noundef nonnull align 8 dereferenceable(16) %value) {
 entry:
   %value.addr = alloca ptr, align 8
   store ptr %value, ptr %value.addr, align 8
@@ -32,7 +32,7 @@ entry:
   ret void
 }
 
-define noundef nonnull align 8 ptr @Forward(ptr noundef nonnull align 8 %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define noundef nonnull align 8 ptr @"cw:Forward:func(&mut Aligned,&mut i32)&mut Aligned"(ptr noundef nonnull align 8 %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -50,7 +50,7 @@ entry:
   ret ptr %4
 }
 
-define void @Assign(ptr noundef nonnull align 8 %source, ptr noundef nonnull align 8 %target, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:Assign:func(&mut Aligned,&mut Aligned,&mut i32)void"(ptr noundef nonnull align 8 %source, ptr noundef nonnull align 8 %target, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %source.addr = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -60,14 +60,14 @@ entry:
   store ptr %counter, ptr %counter.addr, align 8
   %0 = load ptr, ptr %source.addr, align 8
   %1 = load ptr, ptr %counter.addr, align 8
-  %call = call noundef nonnull align 8 ptr @Forward(ptr noundef nonnull align 8 %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
+  %call = call noundef nonnull align 8 ptr @"cw:Forward:func(&mut Aligned,&mut i32)&mut Aligned"(ptr noundef nonnull align 8 %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
   %2 = load ptr, ptr %target.addr, align 8
   %3 = load ptr, ptr %counter.addr, align 8
-  %call1 = call noundef nonnull align 8 ptr @Forward(ptr noundef nonnull align 8 %2, ptr noundef nonnull align 4 dereferenceable(4) %3)
+  %call1 = call noundef nonnull align 8 ptr @"cw:Forward:func(&mut Aligned,&mut i32)&mut Aligned"(ptr noundef nonnull align 8 %2, ptr noundef nonnull align 4 dereferenceable(4) %3)
   ret void
 }
 
-define void @Large(ptr noundef nonnull align 8 %source) {
+define void @"cw:Large:func(&copy [18446744073709551615]Aligned)void"(ptr noundef nonnull align 8 %source) {
 entry:
   %source.addr = alloca ptr, align 8
   %copied = alloca [18446744073709551615 x %struct.Aligned], align 8

@@ -1,4 +1,4 @@
-define noundef i32 @Integers(i32 noundef %value, i64 noundef %index) {
+define noundef i32 @"cw:Integers:func(i32,usize)i32"(i32 noundef %value, i64 noundef %index) {
 entry:
   %.result = alloca i32, align 4
   %value.addr = alloca i32, align 4
@@ -19,7 +19,7 @@ entry:
   ret i32 %3
 }
 
-define noundef signext i16 @Nested(i16 noundef signext %value, i64 noundef %outer, i64 noundef %inner) {
+define noundef signext i16 @"cw:Nested:func(i16,usize,usize)i16"(i16 noundef signext %value, i64 noundef %outer, i64 noundef %inner) {
 entry:
   %.result = alloca i16, align 2
   %value.addr = alloca i16, align 2
@@ -46,7 +46,7 @@ entry:
   ret i16 %4
 }
 
-define noundef zeroext i1 @Booleans(i1 noundef zeroext %value, i64 noundef %index) {
+define noundef zeroext i1 @"cw:Booleans:func(bool,usize)bool"(i1 noundef zeroext %value, i64 noundef %index) {
 entry:
   %.result = alloca i8, align 1
   %value.addr = alloca i8, align 1
@@ -73,7 +73,7 @@ entry:
   ret i1 %loadedv6
 }
 
-define noundef double @Floating(double noundef %value, i64 noundef %index) {
+define noundef double @"cw:Floating:func(f64,usize)f64"(double noundef %value, i64 noundef %index) {
 entry:
   %.result = alloca double, align 8
   %value.addr = alloca double, align 8
@@ -94,7 +94,7 @@ entry:
   ret double %3
 }
 
-define noundef ptr @Pointers(ptr noundef %value, i64 noundef %index) {
+define noundef ptr @"cw:Pointers:func(*i32,usize)*i32"(ptr noundef %value, i64 noundef %index) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8

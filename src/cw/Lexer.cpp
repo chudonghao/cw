@@ -142,7 +142,7 @@ struct MultiSourceLexer : lex::lexer<lex::lexertl::lexer<lex::lexertl::token<Cha
     const auto& rules = this->self;
 
     // Line comments.
-    rules.add(R"(\/\/[^\r\n]*)", tok::comment);
+    rules.add(R"(\/\/[^\r\n\0]*)", tok::comment);
 
     // Literal spellings; decoding is deferred until a token is selected.
     rules.add(R"(true|false)", tok::bool_literal);
@@ -150,10 +150,10 @@ struct MultiSourceLexer : lex::lexer<lex::lexertl::lexer<lex::lexertl::token<Cha
     rules.add(R"(0[oO][0-7]+)", tok::integer_literal);        // Octal: 0o755
     rules.add(R"(0[xX][0-9a-fA-F]+)", tok::integer_literal);  // Hex: 0xFF
     rules.add(R"([0-9]+)", tok::integer_literal);             // Decimal: 123
-    rules.add(R"(\'([^'\\]|\\.+?)\')", tok::character_literal);
+    rules.add(R"(\'([^'\\\0]|\\[^\n\0]+?)\')", tok::character_literal);
     rules.add(R"((([0-9]*\.[0-9]+|[0-9]+\.[0-9]*)([eE][+\-]?[0-9]+)?|[0-9]+[eE][+\-]?[0-9]+)[fF]?)",
               tok::float_literal);
-    rules.add(R"(\"([^"\\]|\\.)*\")", tok::string_literal);
+    rules.add(R"(\"([^"\\\0]|\\[^\n\0])*\")", tok::string_literal);
 
     // Keywords precede identifiers so equal-length matches retain their keyword kind.
     rules.add(R"(null)", tok::null_literal);
@@ -185,6 +185,9 @@ struct MultiSourceLexer : lex::lexer<lex::lexertl::lexer<lex::lexertl::token<Cha
     rules.add(R"(func)", tok::func);
     rules.add(R"(var)", tok::var);
     rules.add(R"(alias)", tok::alias);
+    rules.add(R"(namespace)", tok::namespace_);
+    rules.add(R"(export)", tok::export_);
+    rules.add(R"(import)", tok::import_);
     rules.add(R"(ctor)", tok::ctor);
     rules.add(R"(dtor)", tok::dtor);
     rules.add(R"(operator)", tok::operator_);
@@ -217,6 +220,7 @@ struct MultiSourceLexer : lex::lexer<lex::lexertl::lexer<lex::lexertl::token<Cha
     rules.add(R"(\<\<)", tok::lessless);
     rules.add(R"(\<=)", tok::lessequal);
     rules.add(R"(\<)", tok::less);
+    rules.add(R"(\:\:)", tok::coloncolon);
     rules.add(R"(\:\=)", tok::colonequal);
     rules.add(R"(\:)", tok::colon);
     rules.add(R"(\/\=)", tok::slashequal);
@@ -385,6 +389,7 @@ struct Lexer::Impl {
       token.range.end.line = char_end.Line();
       token.range.end.column = char_end.Column();
 
+      if (IterType() == tok::eof) token.range.end = token.range.begin;
       token.source_view = std::string_view(&*char_begin, size);
 
       token.type = IterType();

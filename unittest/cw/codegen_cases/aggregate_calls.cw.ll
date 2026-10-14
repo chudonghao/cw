@@ -1,4 +1,4 @@
-define void @Make(ptr sret([3 x i64]) align 8 %.result, i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:Make:func(i8,&mut i32)[3]i64"(ptr sret([3 x i64]) align 8 %.result, i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %value.addr = alloca i8, align 1
   %counter.addr = alloca ptr, align 8
@@ -20,7 +20,7 @@ entry:
   ret void
 }
 
-define void @Forward(ptr sret([3 x i64]) align 8 %.result, i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:Forward:func(i8,&mut i32)[3]i64"(ptr sret([3 x i64]) align 8 %.result, i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %value.addr = alloca i8, align 1
   %counter.addr = alloca ptr, align 8
@@ -28,11 +28,11 @@ entry:
   store ptr %counter, ptr %counter.addr, align 8
   %0 = load i8, ptr %value.addr, align 1
   %1 = load ptr, ptr %counter.addr, align 8
-  call void @Make(ptr sret([3 x i64]) align 8 %.result, i8 noundef signext %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
+  call void @"cw:Make:func(i8,&mut i32)[3]i64"(ptr sret([3 x i64]) align 8 %.result, i8 noundef signext %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
   ret void
 }
 
-define void @Indirect(ptr sret([3 x i64]) align 8 %.result, ptr noundef %callback, i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:Indirect:func(*func(i8,&mut i32)[3]i64,i8,&mut i32)[3]i64"(ptr sret([3 x i64]) align 8 %.result, ptr noundef %callback, i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %callback.addr = alloca ptr, align 8
   %value.addr = alloca i8, align 1
@@ -47,7 +47,7 @@ entry:
   ret void
 }
 
-define void @Discard(i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:Discard:func(i8,&mut i32)void"(i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %value.addr = alloca i8, align 1
   %counter.addr = alloca ptr, align 8
@@ -56,11 +56,11 @@ entry:
   store ptr %counter, ptr %counter.addr, align 8
   %0 = load i8, ptr %value.addr, align 1
   %1 = load ptr, ptr %counter.addr, align 8
-  call void @Make(ptr sret([3 x i64]) align 8 %call.result, i8 noundef signext %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
+  call void @"cw:Make:func(i8,&mut i32)[3]i64"(ptr sret([3 x i64]) align 8 %call.result, i8 noundef signext %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
   ret void
 }
 
-define noundef i64 @Element(i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter, i64 noundef %index) {
+define noundef i64 @"cw:Element:func(i8,&mut i32,usize)i64"(i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter, i64 noundef %index) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca i8, align 1
@@ -72,7 +72,7 @@ entry:
   store i64 %index, ptr %index.addr, align 8
   %0 = load i8, ptr %value.addr, align 1
   %1 = load ptr, ptr %counter.addr, align 8
-  call void @Make(ptr sret([3 x i64]) align 8 %temporary, i8 noundef signext %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
+  call void @"cw:Make:func(i8,&mut i32)[3]i64"(ptr sret([3 x i64]) align 8 %temporary, i8 noundef signext %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
   %2 = load i64, ptr %index.addr, align 8
   %element = getelementptr [3 x i64], ptr %temporary, i64 0, i64 %2
   %3 = load i64, ptr %element, align 8
@@ -81,7 +81,7 @@ entry:
   ret i64 %4
 }
 
-define noundef nonnull align 8 dereferenceable(24) ptr @Reference(ptr noundef nonnull align 8 dereferenceable(24) %value) {
+define noundef nonnull align 8 dereferenceable(24) ptr @"cw:Reference:func(&mut [3]i64)&mut [3]i64"(ptr noundef nonnull align 8 dereferenceable(24) %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -92,23 +92,23 @@ entry:
   ret ptr %1
 }
 
-define void @CopyReference(ptr sret([3 x i64]) align 8 %.result, ptr noundef nonnull align 8 dereferenceable(24) %value) {
+define void @"cw:CopyReference:func(&mut [3]i64)[3]i64"(ptr sret([3 x i64]) align 8 %.result, ptr noundef nonnull align 8 dereferenceable(24) %value) {
 entry:
   %value.addr = alloca ptr, align 8
   store ptr %value, ptr %value.addr, align 8
   %0 = load ptr, ptr %value.addr, align 8
-  %call = call noundef nonnull align 8 dereferenceable(24) ptr @Reference(ptr noundef nonnull align 8 dereferenceable(24) %0)
+  %call = call noundef nonnull align 8 dereferenceable(24) ptr @"cw:Reference:func(&mut [3]i64)&mut [3]i64"(ptr noundef nonnull align 8 dereferenceable(24) %0)
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %.result, ptr align 8 %call, i64 24, i1 false)
   ret void
 }
 
-define void @Identity(ptr sret([3 x i64]) align 8 %.result, ptr noundef %value) {
+define void @"cw:Identity:func([3]i64)[3]i64"(ptr sret([3 x i64]) align 8 %.result, ptr noundef %value) {
 entry:
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %.result, ptr align 8 %value, i64 24, i1 false)
   ret void
 }
 
-define void @Nested(ptr sret([3 x i64]) align 8 %.result, i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:Nested:func(i8,&mut i32)[3]i64"(ptr sret([3 x i64]) align 8 %.result, i8 noundef signext %value, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %value.addr = alloca i8, align 1
   %counter.addr = alloca ptr, align 8
@@ -117,8 +117,8 @@ entry:
   store ptr %counter, ptr %counter.addr, align 8
   %0 = load i8, ptr %value.addr, align 1
   %1 = load ptr, ptr %counter.addr, align 8
-  call void @Make(ptr sret([3 x i64]) align 8 %argument, i8 noundef signext %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
-  call void @Identity(ptr sret([3 x i64]) align 8 %.result, ptr noundef %argument)
+  call void @"cw:Make:func(i8,&mut i32)[3]i64"(ptr sret([3 x i64]) align 8 %argument, i8 noundef signext %0, ptr noundef nonnull align 4 dereferenceable(4) %1)
+  call void @"cw:Identity:func([3]i64)[3]i64"(ptr sret([3 x i64]) align 8 %.result, ptr noundef %argument)
   ret void
 }
 

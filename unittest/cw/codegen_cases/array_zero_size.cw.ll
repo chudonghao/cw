@@ -1,4 +1,4 @@
-define noundef nonnull align 4 ptr @Forward(ptr noundef nonnull align 4 %value) {
+define noundef nonnull align 4 ptr @"cw:Forward:func(&mut [0]i32)&mut [0]i32"(ptr noundef nonnull align 4 %value) {
 entry:
   %.result = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
@@ -9,20 +9,20 @@ entry:
   ret ptr %1
 }
 
-define void @Assign(ptr noundef nonnull align 4 %source, ptr noundef nonnull align 4 %target) {
+define void @"cw:Assign:func(&mut [0]i32,&mut [0]i32)void"(ptr noundef nonnull align 4 %source, ptr noundef nonnull align 4 %target) {
 entry:
   %source.addr = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
   store ptr %source, ptr %source.addr, align 8
   store ptr %target, ptr %target.addr, align 8
   %0 = load ptr, ptr %source.addr, align 8
-  %call = call noundef nonnull align 4 ptr @Forward(ptr noundef nonnull align 4 %0)
+  %call = call noundef nonnull align 4 ptr @"cw:Forward:func(&mut [0]i32)&mut [0]i32"(ptr noundef nonnull align 4 %0)
   %1 = load ptr, ptr %target.addr, align 8
-  %call1 = call noundef nonnull align 4 ptr @Forward(ptr noundef nonnull align 4 %1)
+  %call1 = call noundef nonnull align 4 ptr @"cw:Forward:func(&mut [0]i32)&mut [0]i32"(ptr noundef nonnull align 4 %1)
   ret void
 }
 
-define noundef i64 @Index(ptr noundef nonnull align 8 dereferenceable(8) %value) {
+define noundef i64 @"cw:Index:func(&mut usize)usize"(ptr noundef nonnull align 8 dereferenceable(8) %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca ptr, align 8
@@ -44,7 +44,7 @@ entry:
   ret i64 %9
 }
 
-define void @Nested(ptr noundef nonnull align 8 dereferenceable(8) %value) {
+define void @"cw:Nested:func(&mut usize)void"(ptr noundef nonnull align 8 dereferenceable(8) %value) {
 entry:
   %value.addr = alloca ptr, align 8
   %values = alloca [2 x [0 x i32]], align 4
@@ -54,15 +54,15 @@ entry:
   %element = getelementptr inbounds nuw [2 x [0 x i32]], ptr %values, i64 0, i64 0
   %element1 = getelementptr inbounds nuw [2 x [0 x i32]], ptr %values, i64 0, i64 1
   %0 = load ptr, ptr %value.addr, align 8
-  %call = call noundef i64 @Index(ptr noundef nonnull align 8 dereferenceable(8) %0)
+  %call = call noundef i64 @"cw:Index:func(&mut usize)usize"(ptr noundef nonnull align 8 dereferenceable(8) %0)
   %element2 = getelementptr [2 x [0 x i32]], ptr %values, i64 0, i64 %call
   %1 = load ptr, ptr %value.addr, align 8
-  %call3 = call noundef i64 @Index(ptr noundef nonnull align 8 dereferenceable(8) %1)
+  %call3 = call noundef i64 @"cw:Index:func(&mut usize)usize"(ptr noundef nonnull align 8 dereferenceable(8) %1)
   %element4 = getelementptr [2 x [0 x i32]], ptr %values, i64 0, i64 %call3
   ret void
 }
 
-define void @Large(ptr noundef nonnull align 4 %source) {
+define void @"cw:Large:func(&copy [18446744073709551615][0]i32)void"(ptr noundef nonnull align 4 %source) {
 entry:
   %source.addr = alloca ptr, align 8
   %copied = alloca [18446744073709551615 x [0 x i32]], align 4

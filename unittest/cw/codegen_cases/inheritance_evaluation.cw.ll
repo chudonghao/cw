@@ -1,7 +1,7 @@
 %struct.Derived = type { %struct.Base, i32 }
 %struct.Base = type { i32 }
 
-define void @Assign(ptr noundef %source, ptr noundef %target, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define void @"cw:Assign:func(*func(&mut i32)&mut Derived,*func(&mut i32)&mut Derived,&mut i32)void"(ptr noundef %source, ptr noundef %target, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %source.addr = alloca ptr, align 8
   %target.addr = alloca ptr, align 8
@@ -19,7 +19,7 @@ entry:
   ret void
 }
 
-define noundef ptr @Convert(ptr noundef %callback, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define noundef ptr @"cw:Convert:func(*func(&mut i32)*Derived,&mut i32)*Base"(ptr noundef %callback, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca ptr, align 8
   %callback.addr = alloca ptr, align 8
@@ -34,7 +34,7 @@ entry:
   ret ptr %2
 }
 
-define noundef i32 @Temporary(ptr noundef %callback, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
+define noundef i32 @"cw:Temporary:func(*func(&mut i32)Derived,&mut i32)i32"(ptr noundef %callback, ptr noundef nonnull align 4 dereferenceable(4) %counter) {
 entry:
   %.result = alloca i32, align 4
   %callback.addr = alloca ptr, align 8

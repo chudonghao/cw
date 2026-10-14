@@ -1,8 +1,3 @@
-/// \file integer_conversions.cpp
-/// \copyright 2026 Donghao Chu
-/// \license SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-/// \url https://github.com/chudonghao/cw
-
 // CW conversions keep low bits or extend using the source signedness.
 // Out-of-range conversions to signed types are implementation-defined in C++17;
 // this native Clang reference uses the same low-bit interpretation as CW.

@@ -1,4 +1,4 @@
-define noundef signext i8 @SignedByteArithmetic(i8 noundef signext %left, i8 noundef signext %right) {
+define noundef signext i8 @"cw:SignedByteArithmetic:func(i8,i8)i8"(i8 noundef signext %left, i8 noundef signext %right) {
 entry:
   %.result = alloca i8, align 1
   %left.addr = alloca i8, align 1
@@ -18,7 +18,7 @@ entry:
   ret i8 %4
 }
 
-define noundef zeroext i16 @UnsignedWordArithmetic(i16 noundef zeroext %left, i16 noundef zeroext %right) {
+define noundef zeroext i16 @"cw:UnsignedWordArithmetic:func(u16,u16)u16"(i16 noundef zeroext %left, i16 noundef zeroext %right) {
 entry:
   %.result = alloca i16, align 2
   %left.addr = alloca i16, align 2
@@ -37,7 +37,7 @@ entry:
   ret i16 %4
 }
 
-define noundef i64 @UnsignedWideArithmetic(i64 noundef %left, i64 noundef %right) {
+define noundef i64 @"cw:UnsignedWideArithmetic:func(u64,u64)u64"(i64 noundef %left, i64 noundef %right) {
 entry:
   %.result = alloca i64, align 8
   %left.addr = alloca i64, align 8
@@ -56,7 +56,7 @@ entry:
   ret i64 %4
 }
 
-define noundef i64 @SignedWideNegate(i64 noundef %value) {
+define noundef i64 @"cw:SignedWideNegate:func(i64)i64"(i64 noundef %value) {
 entry:
   %.result = alloca i64, align 8
   %value.addr = alloca i64, align 8
@@ -68,7 +68,7 @@ entry:
   ret i64 %1
 }
 
-define noundef i32 @MixedArithmetic(i8 noundef signext %left, i16 noundef zeroext %right) {
+define noundef i32 @"cw:MixedArithmetic:func(i8,u16)i32"(i8 noundef signext %left, i16 noundef zeroext %right) {
 entry:
   %.result = alloca i32, align 4
   %left.addr = alloca i8, align 1
@@ -85,7 +85,7 @@ entry:
   ret i32 %2
 }
 
-define noundef i64 @SizeArithmetic(i64 noundef %left, i64 noundef %right) {
+define noundef i64 @"cw:SizeArithmetic:func(isize,usize)usize"(i64 noundef %left, i64 noundef %right) {
 entry:
   %.result = alloca i64, align 8
   %left.addr = alloca i64, align 8

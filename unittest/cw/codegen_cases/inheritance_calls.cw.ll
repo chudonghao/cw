@@ -3,7 +3,7 @@
 %struct.BigBase = type { [3 x i64] }
 %struct.Big = type { %struct.BigBase, i8 }
 
-define %struct.Floats @FloatIdentity([2 x double] %value.coerce) {
+define %struct.Floats @"cw:FloatIdentity:func(Floats)Floats"([2 x double] %value.coerce) {
 entry:
   %.result = alloca %struct.Floats, align 8
   %value = alloca %struct.Floats, align 8
@@ -13,7 +13,7 @@ entry:
   ret %struct.Floats %0
 }
 
-define %struct.Floats @FloatCall(ptr noundef nonnull align 8 dereferenceable(16) %value) {
+define %struct.Floats @"cw:FloatCall:func(&copy Floats)Floats"(ptr noundef nonnull align 8 dereferenceable(16) %value) {
 entry:
   %.result = alloca %struct.Floats, align 8
   %value.addr = alloca ptr, align 8
@@ -22,23 +22,23 @@ entry:
   %0 = load ptr, ptr %value.addr, align 8
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %argument, ptr align 8 %0, i64 16, i1 false)
   %1 = load [2 x double], ptr %argument, align 8
-  %call = call %struct.Floats @FloatIdentity([2 x double] %1)
+  %call = call %struct.Floats @"cw:FloatIdentity:func(Floats)Floats"([2 x double] %1)
   store %struct.Floats %call, ptr %.result, align 8
   %2 = load %struct.Floats, ptr %.result, align 8
   ret %struct.Floats %2
 }
 
-define void @MakeBigBase(ptr sret(%struct.BigBase) align 8 %.result) {
+define void @"cw:MakeBigBase:func()BigBase"(ptr sret(%struct.BigBase) align 8 %.result) {
 entry:
   call void @llvm.memset.p0.i64(ptr align 8 %.result, i8 0, i64 24, i1 false)
   ret void
 }
 
-define void @BigCall(ptr sret(%struct.Big) align 8 %.result) {
+define void @"cw:BigCall:func()Big"(ptr sret(%struct.Big) align 8 %.result) {
 entry:
   %value = alloca %struct.Big, align 8
   %temporary = alloca %struct.BigBase, align 8
-  call void @MakeBigBase(ptr sret(%struct.BigBase) align 8 %temporary)
+  call void @"cw:MakeBigBase:func()BigBase"(ptr sret(%struct.BigBase) align 8 %temporary)
   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %value, ptr align 8 %temporary, i64 24, i1 false)
   %flag = getelementptr inbounds nuw %struct.Big, ptr %value, i32 0, i32 1
   store i8 1, ptr %flag, align 8
@@ -46,7 +46,7 @@ entry:
   ret void
 }
 
-define void @Indirect(ptr sret(%struct.Big) align 8 %.result, ptr noundef %callback, ptr noundef nonnull align 8 dereferenceable(25) %value) {
+define void @"cw:Indirect:func(*func(Big)Big,&copy Big)Big"(ptr sret(%struct.Big) align 8 %.result, ptr noundef %callback, ptr noundef nonnull align 8 dereferenceable(25) %value) {
 entry:
   %callback.addr = alloca ptr, align 8
   %value.addr = alloca ptr, align 8
