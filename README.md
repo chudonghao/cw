@@ -28,7 +28,6 @@ Avoiding C++'s excessive complexity and freedom:
 
 * Preprocessing
 * Forward declarations
-* Namespaces
 
 Grammar is limited to LL1 grammar and LR1 grammar
 
