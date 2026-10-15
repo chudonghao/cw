@@ -1377,7 +1377,6 @@ TEST_F(SemaTest, AcceptsWellFormedFunctionLikeDeclarations) {
 struct T {}
 func f() {}
 func operator+(value &copy S) {}
-func operator[](base *S, index i32) i32 { 0 }
 func operator()(callable &copy S) i32 { 0 }
 ctor S(value i32) {}
 ctor S() {}
@@ -4721,11 +4720,91 @@ TEST_F(SemaTest, RejectsInitializationOperatorOverload) {
   ExpectError(0, 5, "operator ':=' cannot be overloaded", 10);
 }
 
+TEST_F(SemaTest, RejectsNonOverloadableOperatorDeclarations) {
+  Analyze(R"(func operator.() {}
+func operator->() {}
+func operator&() {}
+func operator&&() {}
+func operator++() {}
+func operator--() {}
+func operator~() {}
+func operator<<() {}
+func operator>>() {}
+func operator^() {}
+func operator|() {}
+func operator||() {}
+func operator?() {}
+func operator:() {}
+func operator::() {}
+func operator:=() {}
+func operator+=() {}
+func operator-=() {}
+func operator*=() {}
+func operator/=() {}
+func operator%=() {}
+func operator<<=() {}
+func operator>>=() {}
+func operator&=() {}
+func operator^=() {}
+func operator|=() {}
+func operator,() {}
+func operator[]() {})");
+
+  ExpectError(0, 5, "operator '.' cannot be overloaded", 9);
+  ExpectError(1, 5, "operator '->' cannot be overloaded", 10);
+  ExpectError(2, 5, "operator '&' cannot be overloaded", 9);
+  ExpectError(3, 5, "operator '&&' cannot be overloaded", 10);
+  ExpectError(4, 5, "operator '++' cannot be overloaded", 10);
+  ExpectError(5, 5, "operator '--' cannot be overloaded", 10);
+  ExpectError(6, 5, "operator '~' cannot be overloaded", 9);
+  ExpectError(7, 5, "operator '<<' cannot be overloaded", 10);
+  ExpectError(8, 5, "operator '>>' cannot be overloaded", 10);
+  ExpectError(9, 5, "operator '^' cannot be overloaded", 9);
+  ExpectError(10, 5, "operator '|' cannot be overloaded", 9);
+  ExpectError(11, 5, "operator '||' cannot be overloaded", 10);
+  ExpectError(12, 5, "operator '?' cannot be overloaded", 9);
+  ExpectError(13, 5, "operator ':' cannot be overloaded", 9);
+  ExpectError(14, 5, "operator '::' cannot be overloaded", 10);
+  ExpectError(15, 5, "operator ':=' cannot be overloaded", 10);
+  ExpectError(16, 5, "operator '+=' cannot be overloaded", 10);
+  ExpectError(17, 5, "operator '-=' cannot be overloaded", 10);
+  ExpectError(18, 5, "operator '*=' cannot be overloaded", 10);
+  ExpectError(19, 5, "operator '/=' cannot be overloaded", 10);
+  ExpectError(20, 5, "operator '%=' cannot be overloaded", 10);
+  ExpectError(21, 5, "operator '<<=' cannot be overloaded", 11);
+  ExpectError(22, 5, "operator '>>=' cannot be overloaded", 11);
+  ExpectError(23, 5, "operator '&=' cannot be overloaded", 10);
+  ExpectError(24, 5, "operator '^=' cannot be overloaded", 10);
+  ExpectError(25, 5, "operator '|=' cannot be overloaded", 10);
+  ExpectError(26, 5, "operator ',' cannot be overloaded", 9);
+  ExpectError(27, 5, "operator '[]' cannot be overloaded", 10);
+}
+
+TEST_F(SemaTest, RejectsNonOverloadableImportedAndExportedOperators) {
+  Analyze(R"(import func operator::(value i32) i32;
+export func operator::(value i32) i32 { value }
+namespace Api {
+import func operator[](value i32) i32;
+export func operator[](value i32) i32 { value }
+})");
+
+  ExpectError(0, 12, "operator '::' cannot be overloaded", 10);
+  ExpectError(1, 12, "operator '::' cannot be overloaded", 10);
+  ExpectError(3, 12, "operator '[]' cannot be overloaded", 10);
+  ExpectError(4, 12, "operator '[]' cannot be overloaded", 10);
+}
+
 TEST_F(SemaTest, ChecksNonOverloadableOperatorAfterSignatureError) {
-  Analyze("func operator:=(value Missing) {}");
+  Analyze(R"(func operator:=(value Missing) {}
+func operator::(value Missing) {}
+func operator[](value Missing) {})");
 
   ExpectError(0, 22, "unknown type 'Missing'", 7);
+  ExpectError(1, 22, "unknown type 'Missing'", 7);
+  ExpectError(2, 22, "unknown type 'Missing'", 7);
   ExpectError(0, 5, "operator ':=' cannot be overloaded", 10);
+  ExpectError(1, 5, "operator '::' cannot be overloaded", 10);
+  ExpectError(2, 5, "operator '[]' cannot be overloaded", 10);
 }
 
 TEST_F(SemaTest, ReportsUnavailableOperatorsWithoutFunctionCandidates) {
@@ -4835,10 +4914,13 @@ func Diagnose(left S, right S) {
   ExpectNote(3, 0, "candidate function", 0);
 }
 
-TEST_F(SemaTest, SuppressesDependentExplicitOperatorCallDiagnosticsForInvalidDeclarations) {
+TEST_F(SemaTest, SuppressesDependentExplicitOperatorUseDiagnosticsForInvalidDeclarations) {
   Analyze(R"(trivial struct S {}
 func operator+() {}
-func Use() { operator +(); })");
+func Use() {
+  operator +();
+  var callback *func() void := &operator+;
+})");
 
   ExpectError(1, 5, "operator '+' requires one or two parameters", 9);
 }

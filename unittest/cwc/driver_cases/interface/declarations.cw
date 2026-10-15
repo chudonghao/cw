@@ -15,6 +15,5 @@ export func operator+(left &copy Point, right &copy Point) var result Point {
   result.x := left.x + right.x;
   result.y := left.y + right.y;
 }
-export func operator[](this &copy Point, index i32) i32 { this.x + index }
 export func operator()(this &copy Point) i32 { this.x }
 export func Flush() {}

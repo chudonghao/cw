@@ -2426,7 +2426,9 @@ void Sema::ValidateRequiredOverrideDeclarations(TranslationUnitDecl& translation
 bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
   BOOST_ASSERT(IsOperatorFunctionName(declaration.name));
   if (declaration.name == "[]") {
-    return true;
+    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+             fmt::format("operator '{}' cannot be overloaded", declaration.name));
+    return false;
   }
   if (declaration.name == "()") {
     if (declaration.ParmVars.empty()) {
@@ -2453,11 +2455,6 @@ bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
   }
 
   const expr::ExprGrammarSymbol op = expr::from_string(expr::ExprGrammarSymbol{}, declaration.name.c_str());
-  if (op == expr::colonequal) {
-    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-             fmt::format("operator '{}' cannot be overloaded", declaration.name));
-    return false;
-  }
   const std::size_t arity = declaration.ParmVars.size();
   bool valid_arity = true;
   if (op == expr::plus || op == expr::minus) {
@@ -2479,7 +2476,9 @@ bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
                fmt::format("operator '{}' requires exactly two parameters", declaration.name));
     }
   } else {
-    return true;
+    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+             fmt::format("operator '{}' cannot be overloaded", declaration.name));
+    return false;
   }
   if (!valid_arity || !declaration.type || declaration.type.GetTypePtr()->GetKind() != TypeKind::Function) {
     return false;
