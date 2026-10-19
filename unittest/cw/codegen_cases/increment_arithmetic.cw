@@ -1,0 +1,12 @@
+func SignedByte(value &mut i8) i8 { value++ }
+func UnsignedByte(value &mut u8) u8 { --value }
+func SignedShort(value &mut i16) i16 { ++value }
+func UnsignedShort(value &mut u16) u16 { value-- }
+func SignedInt(value &mut i32) i32 { value-- }
+func UnsignedInt(value &mut u32) u32 { ++value }
+func SignedLong(value &mut i64) i64 { --value }
+func UnsignedLong(value &mut u64) u64 { value++ }
+func SignedSize(value &mut isize) isize { ++value }
+func UnsignedSize(value &mut usize) usize { value-- }
+func Float32(value &mut f32) f32 { value++ }
+func Float64(value &mut f64) f64 { --value }

@@ -14,8 +14,8 @@ var global := api::Make();
 func Use() i32 {
   var first := api::Box(1);
   var second := first;
-  first = second;
-  second = move first;
+  api::operator=(first, second);
+  api::operator=(second, move first);
   var third := move second;
   api::Flush();
   api::Read(third)

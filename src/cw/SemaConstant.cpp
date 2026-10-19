@@ -62,7 +62,7 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       if (!unary.Operand) {
         return Failure(ConstantIntegerFailureKind::NotConstant, expression);
       }
-      if (unary.op != expr::plus && unary.op != expr::minus) {
+      if (unary.op != expr::plus && unary.op != expr::minus && unary.op != expr::tilde) {
         return Failure(ConstantIntegerFailureKind::UnsupportedOperation, expression);
       }
       auto operand = Evaluate(*unary.Operand, ast_context);
@@ -71,6 +71,9 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       }
       auto value = std::get<llvm::APSInt>(std::move(operand));
       if (!expression.type || expression.type.GetTypePtr()->GetKind() == TypeKind::ComptimeInt) {
+        if (unary.op == expr::tilde) {
+          return Failure(ConstantIntegerFailureKind::NotInteger, expression);
+        }
         if (unary.op == expr::minus) {
           NegateExactInteger(value);
         }
@@ -79,7 +82,9 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       if (!ConvertToType(value, expression.type, ast_context)) {
         return Failure(ConstantIntegerFailureKind::NotRepresentable, expression);
       }
-      if (unary.op == expr::minus) {
+      if (unary.op == expr::tilde) {
+        value.flipAllBits();
+      } else if (unary.op == expr::minus) {
         bool overflow = false;
         const llvm::APInt zero(value.getBitWidth(), 0);
         value = value.isSigned() ? zero.ssub_ov(value, overflow) : zero.usub_ov(value, overflow);
@@ -94,7 +99,9 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       if (!binary.LHS || !binary.RHS) {
         return Failure(ConstantIntegerFailureKind::NotConstant, expression);
       }
-      if (binary.op != expr::plus && binary.op != expr::minus && binary.op != expr::star) {
+      if (binary.op != expr::plus && binary.op != expr::minus && binary.op != expr::star && binary.op != expr::slash &&
+          binary.op != expr::percent && binary.op != expr::amp && binary.op != expr::pipe && binary.op != expr::caret &&
+          binary.op != expr::lessless && binary.op != expr::greatergreater) {
         return Failure(ConstantIntegerFailureKind::UnsupportedOperation, expression);
       }
       auto left = Evaluate(*binary.LHS, ast_context);
@@ -112,8 +119,24 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       auto left_value = std::get<llvm::APSInt>(std::move(left));
       auto right_value = std::get<llvm::APSInt>(std::move(right));
       if (!ConvertToType(left_value, expression.type, ast_context) ||
-          !ConvertToType(right_value, expression.type, ast_context)) {
+          !ConvertToType(right_value, binary.RHS->type, ast_context)) {
         return Failure(ConstantIntegerFailureKind::NotRepresentable, expression);
+      }
+      if (IsShiftBinaryOperator(binary.op)) {
+        // Required constant evaluation checks the original count, without masking or narrowing it.
+        if (right_value.isNegative() || right_value.uge(left_value.getBitWidth())) {
+          return Failure(ConstantIntegerFailureKind::InvalidShiftCount, *binary.RHS);
+        }
+        const unsigned count = static_cast<unsigned>(right_value.getZExtValue());
+        if (binary.op == expr::lessless) {
+          left_value <<= count;
+        } else {
+          left_value >>= count;
+        }
+        return left_value;
+      }
+      if ((binary.op == expr::slash || binary.op == expr::percent) && right_value.isZero()) {
+        return Failure(ConstantIntegerFailureKind::ZeroDivisor, *binary.RHS);
       }
       // Required constant evaluation rejects each overflow before evaluating its parent.
       llvm::APSInt value(left_value.getBitWidth(), left_value.isUnsigned());
@@ -124,9 +147,20 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       } else if (binary.op == expr::minus) {
         value =
             value.isSigned() ? left_value.ssub_ov(right_value, overflow) : left_value.usub_ov(right_value, overflow);
-      } else {
+      } else if (binary.op == expr::star) {
         value =
             value.isSigned() ? left_value.smul_ov(right_value, overflow) : left_value.umul_ov(right_value, overflow);
+      } else if (binary.op == expr::slash) {
+        value = value.isSigned() ? left_value.sdiv_ov(right_value, overflow) : left_value.udiv(right_value);
+      } else if (binary.op == expr::percent) {
+        // MIN % -1 is zero even though the corresponding quotient is not representable.
+        value = left_value % right_value;
+      } else if (binary.op == expr::amp) {
+        value = left_value & right_value;
+      } else if (binary.op == expr::pipe) {
+        value = left_value | right_value;
+      } else {
+        value = left_value ^ right_value;
       }
       if (overflow) {
         return Failure(ConstantIntegerFailureKind::NotRepresentable, expression);

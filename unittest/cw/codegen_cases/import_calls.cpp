@@ -18,8 +18,8 @@ auto global = api::Make();
 int Use() {
   api::Box first(1);
   auto second = first;
-  first = second;
-  second = static_cast<api::Box&&>(first);
+  first.operator=(second);
+  second.operator=(static_cast<api::Box&&>(first));
   auto third = static_cast<api::Box&&>(second);
   api::Flush();
   return api::Read(third);

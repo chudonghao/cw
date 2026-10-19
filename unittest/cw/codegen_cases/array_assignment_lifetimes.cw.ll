@@ -208,7 +208,7 @@ entry:
   %trace.addr = alloca ptr, align 8
   %temporary = alloca %struct.Token, align 8
   %temporary2 = alloca %struct.Token, align 8
-  %call.result = alloca %struct.Receipt, align 8
+  %temporary6 = alloca %struct.Receipt, align 8
   store ptr %target, ptr %target.addr, align 8
   store ptr %source, ptr %source.addr, align 8
   store ptr %trace, ptr %trace.addr, align 8
@@ -226,15 +226,15 @@ array.assign:                                     ; preds = %array.assign, %entr
   %array.index = phi i64 [ 0, %entry ], [ %array.next, %array.assign ]
   %element = getelementptr inbounds nuw [2 x %struct.Item], ptr %call4, i64 0, i64 %array.index
   %element5 = getelementptr inbounds nuw [2 x %struct.Item], ptr %call1, i64 0, i64 %array.index
-  call void @"cw:operator=:func(&mut Item,&copy Item)Receipt"(ptr sret(%struct.Receipt) align 8 %call.result, ptr noundef nonnull align 8 dereferenceable(8) %element, ptr noundef nonnull align 8 dereferenceable(8) %element5)
-  %call6 = call noundef ptr @"cw:Receipt:dtor():complete"(ptr noundef returned %call.result)
+  call void @"cw:operator=:func(&mut Item,&copy Item)Receipt"(ptr sret(%struct.Receipt) align 8 %temporary6, ptr noundef nonnull align 8 dereferenceable(8) %element, ptr noundef nonnull align 8 dereferenceable(8) %element5)
+  %call7 = call noundef ptr @"cw:Receipt:dtor():complete"(ptr noundef returned %temporary6)
   %array.next = add i64 %array.index, 1
   %array.finished = icmp eq i64 %array.next, 2
   br i1 %array.finished, label %array.end, label %array.assign
 
 array.end:                                        ; preds = %array.assign
-  %call7 = call noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %temporary2)
-  %call8 = call noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %temporary)
+  %call8 = call noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %temporary2)
+  %call9 = call noundef ptr @"cw:Token:dtor():complete"(ptr noundef returned %temporary)
   ret void
 }
 
@@ -243,7 +243,7 @@ entry:
   %flag.addr = alloca i8, align 1
   %target.addr = alloca ptr, align 8
   %source.addr = alloca ptr, align 8
-  %call.result = alloca %struct.Receipt, align 8
+  %temporary = alloca %struct.Receipt, align 8
   %storedv = zext i1 %flag to i8
   store i8 %storedv, ptr %flag.addr, align 1
   store ptr %target, ptr %target.addr, align 8
@@ -261,11 +261,11 @@ array.assign:                                     ; preds = %cleanup.end, %cond.
   %array.index = phi i64 [ 0, %cond.true ], [ %array.next, %cleanup.end ]
   %element = getelementptr inbounds nuw [2 x %struct.Item], ptr %2, i64 0, i64 %array.index
   %element1 = getelementptr inbounds nuw [2 x %struct.Item], ptr %1, i64 0, i64 %array.index
-  call void @"cw:operator=:func(&mut Item,&copy Item)Receipt"(ptr sret(%struct.Receipt) align 8 %call.result, ptr noundef nonnull align 8 dereferenceable(8) %element, ptr noundef nonnull align 8 dereferenceable(8) %element1)
+  call void @"cw:operator=:func(&mut Item,&copy Item)Receipt"(ptr sret(%struct.Receipt) align 8 %temporary, ptr noundef nonnull align 8 dereferenceable(8) %element, ptr noundef nonnull align 8 dereferenceable(8) %element1)
   br i1 %loadedv, label %cleanup.destroy, label %cleanup.end
 
 cleanup.destroy:                                  ; preds = %array.assign
-  %call = call noundef ptr @"cw:Receipt:dtor():complete"(ptr noundef returned %call.result)
+  %call = call noundef ptr @"cw:Receipt:dtor():complete"(ptr noundef returned %temporary)
   br label %cleanup.end
 
 cleanup.end:                                      ; preds = %cleanup.destroy, %array.assign

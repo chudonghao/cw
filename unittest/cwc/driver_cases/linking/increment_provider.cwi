@@ -1,0 +1,9 @@
+namespace Steps {
+  import trivial struct Counter {
+    value i32;
+  }
+  import func operator ++(counter &mut ::Steps::Counter) &mut ::Steps::Counter;
+  import func operator ++(counter &mut ::Steps::Counter, marker i32) ::Steps::Counter;
+  import func operator --(counter &mut ::Steps::Counter) &mut ::Steps::Counter;
+  import func operator --(counter &mut ::Steps::Counter, marker i32) ::Steps::Counter;
+}

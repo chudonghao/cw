@@ -57,6 +57,7 @@ enum class ImplicitConversionRisk;
 namespace sema_detail {
 struct ConversionSequence;
 struct OverloadSetSelectionFailure;
+struct ValueState;
 }  // namespace sema_detail
 
 /// \brief Performs semantic analysis after parsing a translation unit.
@@ -224,7 +225,6 @@ class Sema {
   void ValidateRequiredOverrideDeclarations(TranslationUnitDecl& translation_unit,
                                             const InheritedVirtualSlots& inherited_slots);
   bool ValidateOperatorFunctionInterface(FunctionDecl& declaration);
-  bool RegisterSpecialAssignment(FunctionDecl& declaration);
   bool ValidateTypeOperationIdentity(FunctionDecl& declaration, const StructDecl& structure);
   bool AddFunctionDeclaration(const std::string& name, FunctionDecl& declaration);
   void ResolveConstructorTarget(ConstructorDecl& declaration);
@@ -283,7 +283,7 @@ class Sema {
   void AnalyzeSubscriptExpr(SubscriptExpr& expression);
   void AnalyzeArrayValueExpr(ArrayValueExpr& expression, QualType contextual_type = {});
   void AnalyzeArrayValueElementsForRecovery(ArrayValueExpr& expression);
-  [[nodiscard]] std::unique_ptr<Expr> AnalyzeSimpleAssignment(std::unique_ptr<Expr> expression);
+  [[nodiscard]] std::unique_ptr<Expr> AnalyzeAssignment(std::unique_ptr<Expr> expression);
   void AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionUse use);
   void AnalyzeConditionalOperator(ConditionalOperator& expression,
                                   const ConstructionResultContext* construction_context);
@@ -314,6 +314,8 @@ class Sema {
   void DiagnoseFunctionAddressFailure(Node& owner, const SourceRange& range,
                                       const sema_detail::OverloadSetSelectionFailure& failure);
   void DiagnoseConversionRisks(Node& owner, const Expr& source, QualType target,
+                               const sema_detail::ConversionSequence& conversion);
+  void DiagnoseConversionRisks(Node& owner, SourceRange range, sema_detail::ValueState source, QualType target,
                                const sema_detail::ConversionSequence& conversion);
   /// \brief Diagnoses all completed argument conversions before committing any argument.
   void CommitArgumentConversions(const std::vector<std::unique_ptr<Expr>*>& arguments,

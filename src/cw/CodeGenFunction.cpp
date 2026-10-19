@@ -307,7 +307,7 @@ bool CodeGenFunction::EmitBranchOnBoolExpr(const Expr& expression, llvm::BasicBl
   }
   if (condition.GetKind() == NodeKind::BinaryOperator) {
     const auto& binary = static_cast<const BinaryOperator&>(condition);
-    if (binary.op == expr::ampamp || binary.op == expr::pipepipe) {
+    if (IsLogicalBinaryOperator(binary.op)) {
       const bool is_and = binary.op == expr::ampamp;
       auto* rhs = CreateBasicBlock(is_and ? "land.rhs" : "lor.rhs");
       auto* entry = builder_.GetInsertBlock();
@@ -1146,6 +1146,11 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
     }
     case NodeKind::UnaryOperator: {
       const auto& unary = static_cast<const UnaryOperator&>(expression);
+      if (IsIncrementDecrementOperator(unary.op)) {
+        BOOST_ASSERT(!unary.is_postfix);
+        Address target = EmitLValue(*unary.Operand);
+        return target && EmitScalarIncrementDecrement(unary, target) ? target : Address{};
+      }
       if (unary.op == expr::move_) {
         return EmitLValue(*unary.Operand);
       }
@@ -1191,7 +1196,7 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
     }
     case NodeKind::BinaryOperator: {
       const auto& assignment = static_cast<const BinaryOperator&>(expression);
-      if (!assignment.IsSimpleAssignment()) {
+      if (!assignment.IsAssignment()) {
         break;
       }
       if (IsAggregate(*assignment.type.GetTypePtr())) {
@@ -1233,6 +1238,19 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
       if (!target) {
         return {};
       }
+      if (assignment.IsCompoundAssignment()) {
+        const auto op = GetComputationOp(assignment.op);
+        const auto& target_type = *assignment.LHS->type.GetTypePtr()->AsBuiltinType();
+        const auto& computation_type =
+            IsShiftBinaryOperator(op) ? target_type : *assignment.RHS->type.GetTypePtr()->AsBuiltinType();
+        auto* lhs = EmitLoadOfScalar(target, target_type);
+        lhs = EmitNumericConversion(lhs, target_type, computation_type);
+        value = EmitNumericBinaryOperator(assignment, op, lhs, value, computation_type);
+        if (!value) {
+          return {};
+        }
+        value = EmitNumericConversion(value, computation_type, target_type);
+      }
       EmitStoreOfScalar(value, target, *assignment.LHS->type.GetTypePtr());
       return target;
     }
@@ -1247,8 +1265,10 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
         return {};
       }
       const auto& type = *assignment.type.GetTypePtr()->AsArrayType();
-      return EmitArrayAssignment(target, source, type, *assignment.element_assignment) ? target : Address{};
+      return EmitArrayAssignment(target, source, type, assignment) ? target : Address{};
     }
+    case NodeKind::OpaqueValueExpr:
+      return opaque_values_.at(static_cast<const OpaqueValueExpr*>(&expression));
     case NodeKind::CallExpr:
     case NodeKind::OperatorCallExpr:
     case NodeKind::ReceiverCallExpr: {
@@ -1526,7 +1546,7 @@ bool CodeGenFunction::EmitArrayConstruction(Address destination, Address source,
 }
 
 bool CodeGenFunction::EmitArrayAssignment(Address destination, Address source, const ArrayType& type,
-                                          const FunctionDecl& assignment) {
+                                          const ArrayAssignmentExpr& assignment) {
   if (!HasArrayElements(type)) {
     return true;
   }
@@ -1537,18 +1557,13 @@ bool CodeGenFunction::EmitArrayAssignment(Address destination, Address source, c
     if (const auto* array = element_type.AsArrayType()) {
       return EmitArrayAssignment(target_element, source_element, *array, assignment);
     }
-    const auto& signature = *assignment.type.GetTypePtr()->AsFunctionType();
-    const auto& info = *std::get<const CodeGen::FunctionInfo*>(codegen_.GetFunctionInfo(assignment));
-    BOOST_ASSERT(info.parameters.size() == 2);
-    std::vector<llvm::Value*> arguments(info.type->getNumParams());
-    arguments[*info.parameters[0].llvm_index] = target_element.pointer;
-    arguments[*info.parameters[1].llvm_index] = source_element.pointer;
-    // Each implicit element call is a full-expression; operand temporaries belong to the outer one.
-    const auto depth = temporary_cleanups_.size();
-    auto* function = codegen_.GetOrCreateFunction(assignment);
-    if (!function) return false;
-    EmitCall(signature, info, function, arguments, {{}, true});
-    return EmitTemporaryCleanups(depth);
+    // Supply existing objects to the analyzed conversions and ordinary call emission.
+    opaque_values_.emplace(assignment.target_element, target_element);
+    opaque_values_.emplace(assignment.source_element, source_element);
+    const bool emitted = EmitFullExpr(*assignment.ElementAssignment);
+    opaque_values_.erase(assignment.target_element);
+    opaque_values_.erase(assignment.source_element);
+    return emitted;
   });
 }
 
@@ -1653,23 +1668,8 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
           if (!value) {
             return nullptr;
           }
-          const auto* source_type = cast.SubExpr->type.GetTypePtr()->AsBuiltinType();
-          if (cast.conversion_kind == ImplicitConversionKind::IntegerToInteger) {
-            // Widen using the source interpretation; narrowing keeps low bits and equal widths keep all bits.
-            return builder_.CreateIntCast(value, result_type, source_type->IsSignedInteger(), "conv");
-          }
-          if (cast.conversion_kind == ImplicitConversionKind::IntegerToFloat) {
-            return source_type->IsSignedInteger() ? builder_.CreateSIToFP(value, result_type, "conv")
-                                                  : builder_.CreateUIToFP(value, result_type, "conv");
-          }
-          if (cast.conversion_kind == ImplicitConversionKind::FloatToFloat) {
-            return builder_.CreateFPCast(value, result_type, "conv");
-          }
-          // Saturation includes NaN -> 0; ordinary fptosi/fptoui would produce poison out of range.
-          const auto intrinsic = expression.type.GetTypePtr()->AsBuiltinType()->IsSignedInteger()
-                                     ? llvm::Intrinsic::fptosi_sat
-                                     : llvm::Intrinsic::fptoui_sat;
-          return builder_.CreateIntrinsic(intrinsic, {result_type, value->getType()}, {value}, {}, "conv");
+          return EmitNumericConversion(value, *cast.SubExpr->type.GetTypePtr()->AsBuiltinType(),
+                                       *expression.type.GetTypePtr()->AsBuiltinType());
         }
         case ImplicitConversionKind::Identity:
         case ImplicitConversionKind::Qualification:
@@ -1681,15 +1681,20 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
     }
     case NodeKind::UnaryOperator: {
       const auto& unary = static_cast<const UnaryOperator&>(expression);
+      if (IsIncrementDecrementOperator(unary.op)) {
+        BOOST_ASSERT(unary.is_postfix);
+        Address target = EmitLValue(*unary.Operand);
+        return target ? EmitScalarIncrementDecrement(unary, target) : nullptr;
+      }
       if (unary.op == expr::amp) {
         return EmitLValue(*unary.Operand).pointer;
       }
-      if (unary.op == expr::exclaim || unary.op == expr::plus || unary.op == expr::minus) {
+      if (unary.op == expr::exclaim || unary.op == expr::tilde || unary.op == expr::plus || unary.op == expr::minus) {
         auto* operand = EmitScalarExpr(*unary.Operand);
         if (!operand) {
           return nullptr;
         }
-        if (unary.op == expr::exclaim) {
+        if (unary.op == expr::exclaim || unary.op == expr::tilde) {
           return builder_.CreateNot(operand);
         }
         if (unary.Operand->type.GetTypePtr()->AsBuiltinType()->IsFloatingPoint()) {
@@ -1702,7 +1707,7 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
     }
     case NodeKind::BinaryOperator: {
       const auto& binary = static_cast<const BinaryOperator&>(expression);
-      if (binary.op == expr::ampamp || binary.op == expr::pipepipe) {
+      if (IsLogicalBinaryOperator(binary.op)) {
         return EmitLogicalExpr(binary);
       }
       if (binary.LHS->type.GetTypePtr()->AsNullType() && binary.RHS->type.GetTypePtr()->AsNullType()) {
@@ -1718,7 +1723,7 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
       if (!rhs) {
         return nullptr;
       }
-      // Sema has converted both operands to their common type; the result may instead be bool.
+      // Except for shifts, Sema has converted both operands to their common type.
       if (binary.LHS->type.GetTypePtr()->AsVirtualSlotType()) {
         // Sema permits virtual interface pointers to be compared only with null.
         auto* left = EmitVirtualPointerIsNotNull(lhs);
@@ -1735,63 +1740,7 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
         }
         break;
       }
-      const auto* operand_type = binary.LHS->type.GetTypePtr()->AsBuiltinType();
-      if (operand_type->IsFloatingPoint()) {
-        // Keep default IEEE behavior and per-operation rounding; do not grant fast-math permissions.
-        switch (binary.op) {
-          case expr::plus:
-            return builder_.CreateFAdd(lhs, rhs, "add");
-          case expr::minus:
-            return builder_.CreateFSub(lhs, rhs, "sub");
-          case expr::star:
-            return builder_.CreateFMul(lhs, rhs, "mul");
-          case expr::slash:
-            return builder_.CreateFDiv(lhs, rhs, "div");
-          case expr::equalequal:
-            return builder_.CreateFCmpOEQ(lhs, rhs, "cmp");
-          case expr::exclaimequal:
-            return builder_.CreateFCmpUNE(lhs, rhs, "cmp");
-          case expr::less:
-            return builder_.CreateFCmpOLT(lhs, rhs, "cmp");
-          case expr::lessequal:
-            return builder_.CreateFCmpOLE(lhs, rhs, "cmp");
-          case expr::greater:
-            return builder_.CreateFCmpOGT(lhs, rhs, "cmp");
-          case expr::greaterequal:
-            return builder_.CreateFCmpOGE(lhs, rhs, "cmp");
-          default:
-            break;
-        }
-        break;
-      }
-      const bool is_signed = operand_type->IsSignedInteger();
-      // Do not attach overflow flags: ordinary integer arithmetic wraps at its type width.
-      switch (binary.op) {
-        case expr::plus:
-          return builder_.CreateAdd(lhs, rhs, "add");
-        case expr::minus:
-          return builder_.CreateSub(lhs, rhs, "sub");
-        case expr::star:
-          return builder_.CreateMul(lhs, rhs, "mul");
-        case expr::slash:
-        case expr::percent:
-          return EmitIntegerDivRem(lhs, rhs, binary.op == expr::slash, is_signed);
-        case expr::equalequal:
-          return builder_.CreateICmpEQ(lhs, rhs, "cmp");
-        case expr::exclaimequal:
-          return builder_.CreateICmpNE(lhs, rhs, "cmp");
-        case expr::less:
-          return is_signed ? builder_.CreateICmpSLT(lhs, rhs, "cmp") : builder_.CreateICmpULT(lhs, rhs, "cmp");
-        case expr::lessequal:
-          return is_signed ? builder_.CreateICmpSLE(lhs, rhs, "cmp") : builder_.CreateICmpULE(lhs, rhs, "cmp");
-        case expr::greater:
-          return is_signed ? builder_.CreateICmpSGT(lhs, rhs, "cmp") : builder_.CreateICmpUGT(lhs, rhs, "cmp");
-        case expr::greaterequal:
-          return is_signed ? builder_.CreateICmpSGE(lhs, rhs, "cmp") : builder_.CreateICmpUGE(lhs, rhs, "cmp");
-        default:
-          break;
-      }
-      break;
+      return EmitNumericBinaryOperator(binary, binary.op, lhs, rhs, *binary.LHS->type.GetTypePtr()->AsBuiltinType());
     }
     case NodeKind::ConditionalOperator:
       return EmitConditionalExpr(static_cast<const ConditionalOperator&>(expression));
@@ -1799,6 +1748,118 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
       break;
   }
   codegen_.Unsupported(expression, "this scalar expression");
+  return nullptr;
+}
+
+llvm::Value* CodeGenFunction::EmitScalarIncrementDecrement(const UnaryOperator& expression, Address target) {
+  const auto& type = *expression.Operand->type.GetTypePtr()->AsBuiltinType();
+  auto* old_value = EmitLoadOfScalar(target, type);
+  llvm::Value* one = type.IsFloatingPoint() ? llvm::ConstantFP::get(old_value->getType(), 1.0)
+                                            : llvm::ConstantInt::get(old_value->getType(), 1);
+  const auto op = expression.op == expr::plusplus ? expr::plus : expr::minus;
+  auto* value = EmitNumericBinaryOperator(expression, op, old_value, one, type);
+  if (!value) {
+    return nullptr;
+  }
+  EmitStoreOfScalar(value, target, type);
+  // Prefix callers retain the target address; postfix callers deliver this saved value.
+  return old_value;
+}
+
+llvm::Value* CodeGenFunction::EmitNumericConversion(llvm::Value* value, const BuiltinType& source,
+                                                    const BuiltinType& target) {
+  auto* result_type = std::get<llvm::Type*>(codegen_.ConvertType(target));
+  if (source.IsInteger() && target.IsInteger()) {
+    // Widen using the source interpretation; narrowing keeps low bits and equal widths keep all bits.
+    return builder_.CreateIntCast(value, result_type, source.IsSignedInteger(), "conv");
+  }
+  if (source.IsInteger()) {
+    return source.IsSignedInteger() ? builder_.CreateSIToFP(value, result_type, "conv")
+                                    : builder_.CreateUIToFP(value, result_type, "conv");
+  }
+  if (target.IsFloatingPoint()) {
+    return builder_.CreateFPCast(value, result_type, "conv");
+  }
+  // Saturation includes NaN -> 0; ordinary fptosi/fptoui would produce poison out of range.
+  const auto intrinsic = target.IsSignedInteger() ? llvm::Intrinsic::fptosi_sat : llvm::Intrinsic::fptoui_sat;
+  return builder_.CreateIntrinsic(intrinsic, {result_type, value->getType()}, {value}, {}, "conv");
+}
+
+llvm::Value* CodeGenFunction::EmitNumericBinaryOperator(const Expr& expression, expr::ExprGrammarSymbol op,
+                                                        llvm::Value* lhs, llvm::Value* rhs, const BuiltinType& type) {
+  if (type.IsFloatingPoint()) {
+    // Keep default IEEE behavior and per-operation rounding; do not grant fast-math permissions.
+    switch (op) {
+      case expr::plus:
+        return builder_.CreateFAdd(lhs, rhs, "add");
+      case expr::minus:
+        return builder_.CreateFSub(lhs, rhs, "sub");
+      case expr::star:
+        return builder_.CreateFMul(lhs, rhs, "mul");
+      case expr::slash:
+        return builder_.CreateFDiv(lhs, rhs, "div");
+      case expr::equalequal:
+        return builder_.CreateFCmpOEQ(lhs, rhs, "cmp");
+      case expr::exclaimequal:
+        return builder_.CreateFCmpUNE(lhs, rhs, "cmp");
+      case expr::less:
+        return builder_.CreateFCmpOLT(lhs, rhs, "cmp");
+      case expr::lessequal:
+        return builder_.CreateFCmpOLE(lhs, rhs, "cmp");
+      case expr::greater:
+        return builder_.CreateFCmpOGT(lhs, rhs, "cmp");
+      case expr::greaterequal:
+        return builder_.CreateFCmpOGE(lhs, rhs, "cmp");
+      default:
+        break;
+    }
+  } else {
+    const bool is_signed = type.IsSignedInteger();
+    // Do not attach overflow flags: ordinary integer arithmetic wraps at its type width.
+    switch (op) {
+      case expr::lessless:
+      case expr::greatergreater: {
+        // Normalize in the count's own type before adapting to LLVM's equal-width operands.
+        const unsigned width = lhs->getType()->getIntegerBitWidth();
+        rhs = builder_.CreateAnd(rhs, llvm::ConstantInt::get(rhs->getType(), width - 1), "shift.count");
+        rhs = builder_.CreateZExtOrTrunc(rhs, lhs->getType(), "shift.cast");
+        if (op == expr::lessless) {
+          return builder_.CreateShl(lhs, rhs, "shl");
+        }
+        return is_signed ? builder_.CreateAShr(lhs, rhs, "ashr") : builder_.CreateLShr(lhs, rhs, "lshr");
+      }
+      case expr::amp:
+        return builder_.CreateAnd(lhs, rhs, "and");
+      case expr::pipe:
+        return builder_.CreateOr(lhs, rhs, "or");
+      case expr::caret:
+        return builder_.CreateXor(lhs, rhs, "xor");
+      case expr::plus:
+        return builder_.CreateAdd(lhs, rhs, "add");
+      case expr::minus:
+        return builder_.CreateSub(lhs, rhs, "sub");
+      case expr::star:
+        return builder_.CreateMul(lhs, rhs, "mul");
+      case expr::slash:
+      case expr::percent:
+        return EmitIntegerDivRem(lhs, rhs, op == expr::slash, is_signed);
+      case expr::equalequal:
+        return builder_.CreateICmpEQ(lhs, rhs, "cmp");
+      case expr::exclaimequal:
+        return builder_.CreateICmpNE(lhs, rhs, "cmp");
+      case expr::less:
+        return is_signed ? builder_.CreateICmpSLT(lhs, rhs, "cmp") : builder_.CreateICmpULT(lhs, rhs, "cmp");
+      case expr::lessequal:
+        return is_signed ? builder_.CreateICmpSLE(lhs, rhs, "cmp") : builder_.CreateICmpULE(lhs, rhs, "cmp");
+      case expr::greater:
+        return is_signed ? builder_.CreateICmpSGT(lhs, rhs, "cmp") : builder_.CreateICmpUGT(lhs, rhs, "cmp");
+      case expr::greaterequal:
+        return is_signed ? builder_.CreateICmpSGE(lhs, rhs, "cmp") : builder_.CreateICmpUGE(lhs, rhs, "cmp");
+      default:
+        break;
+    }
+  }
+  codegen_.Unsupported(expression, "this numeric binary operator");
   return nullptr;
 }
 
@@ -1965,7 +2026,7 @@ std::optional<RValue> CodeGenFunction::EmitCall(const CallExpr& expression, Retu
   // Complete each argument, including value loads, before evaluating the next one.
   std::vector<llvm::Value*> arguments(info.type->getNumParams());
   const auto order = expression.GetKind() == NodeKind::OperatorCallExpr &&
-                             static_cast<const OperatorCallExpr&>(expression).IsSimpleAssignment()
+                             static_cast<const OperatorCallExpr&>(expression).IsAssignment()
                          ? EvaluationOrder::RightToLeft
                          : EvaluationOrder::LeftToRight;
   if (!EmitCallArguments(*signature, info, sources, order, arguments)) {

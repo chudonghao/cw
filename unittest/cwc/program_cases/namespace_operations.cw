@@ -27,8 +27,8 @@ func main() i32 {
   var copied A::T := source;
   var moved A::T := move source;
   if copied.value != 6 || moved.value != 7 { return 1; }
-  copied = source;
-  moved = move source;
+  A::operator=(copied, source);
+  A::operator=(moved, move source);
   if copied.value != 8 || moved.value != 9 { return 2; }
   if A::operator+(copied, moved) != 17 || A::Invoke(source) != 10 { return 3; }
   var other := B::T();

@@ -14,10 +14,6 @@
 namespace cw {
 namespace {
 
-bool IsLogicalOperator(const BinaryOperator& expression) {
-  return expression.op == expr::ampamp || expression.op == expr::pipepipe;
-}
-
 void AppendChild(const std::unique_ptr<Expr>& child, std::vector<const Expr*>& children) {
   if (child) {
     children.push_back(child.get());
@@ -135,7 +131,7 @@ bool ContainsControlFlow(const Expr& expression) {
     return true;
   }
   if (expression.GetKind() == NodeKind::BinaryOperator &&
-      IsLogicalOperator(static_cast<const BinaryOperator&>(expression))) {
+      IsLogicalBinaryOperator(static_cast<const BinaryOperator&>(expression).op)) {
     return true;
   }
 
@@ -549,17 +545,17 @@ CFGBlock* CFGBuilder::BuildExpression(const Expr& expression, CFGBlock& current,
       return BuildConditionalExpression(static_cast<const ConditionalOperator&>(expression), current, context);
     case NodeKind::BinaryOperator: {
       const auto& binary = static_cast<const BinaryOperator&>(expression);
-      if (binary.IsSimpleAssignment()) {
-        return BuildSimpleAssignment(binary, current);
+      if (binary.IsAssignment()) {
+        return BuildAssignment(binary, current);
       }
-      if (IsLogicalOperator(binary)) {
+      if (IsLogicalBinaryOperator(binary.op)) {
         return BuildLogicalExpression(binary, current);
       }
       break;
     }
     case NodeKind::OperatorCallExpr: {
       const auto& call = static_cast<const OperatorCallExpr&>(expression);
-      if (call.IsSimpleAssignment()) {
+      if (call.IsAssignment()) {
         return BuildAssignmentOperatorCall(call, current);
       }
       break;
@@ -678,8 +674,8 @@ CFGBlock* CFGBuilder::BuildLogicalExpression(const BinaryOperator& expression, C
   return &join;
 }
 
-CFGBlock* CFGBuilder::BuildSimpleAssignment(const BinaryOperator& expression, CFGBlock& current) {
-  BOOST_ASSERT(expression.IsSimpleAssignment());
+CFGBlock* CFGBuilder::BuildAssignment(const BinaryOperator& expression, CFGBlock& current) {
+  BOOST_ASSERT(expression.IsAssignment());
   CFGBlock* block = &current;
   std::vector<const Expr*> operands;
   if (expression.RHS) {
@@ -726,11 +722,11 @@ CFGBlock* CFGBuilder::BuildArrayValue(const ArrayValueExpr& expression, CFGBlock
 }
 
 CFGBlock* CFGBuilder::BuildAssignmentOperatorCall(const OperatorCallExpr& expression, CFGBlock& current) {
-  BOOST_ASSERT(expression.IsSimpleAssignment());
+  BOOST_ASSERT(expression.IsAssignment());
   CFGBlock* block = &current;
   std::vector<const Expr*> operands;
 
-  // `=` has a language-defined evaluation order even after Sema replaces the
+  // Assignment has a language-defined evaluation order even after Sema replaces the
   // source BinaryOperator with an OperatorCallExpr. Args retain source order
   // [lhs, rhs], while the CFG evaluates rhs before lhs.
   block = BuildExpression(*expression.Args[1], *block);

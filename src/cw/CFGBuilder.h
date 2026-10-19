@@ -62,7 +62,7 @@ class CFGBuilder {
   CFGBlock* BuildConditionalExpression(const ConditionalOperator& expression, CFGBlock& current,
                                        CFGExpressionContext context);
   CFGBlock* BuildLogicalExpression(const BinaryOperator& expression, CFGBlock& current);
-  CFGBlock* BuildSimpleAssignment(const BinaryOperator& expression, CFGBlock& current);
+  CFGBlock* BuildAssignment(const BinaryOperator& expression, CFGBlock& current);
   CFGBlock* BuildArrayAssignment(const ArrayAssignmentExpr& expression, CFGBlock& current);
   CFGBlock* BuildArrayValue(const ArrayValueExpr& expression, CFGBlock& current, CFGExpressionContext context);
   CFGBlock* BuildAssignmentOperatorCall(const OperatorCallExpr& expression, CFGBlock& current);

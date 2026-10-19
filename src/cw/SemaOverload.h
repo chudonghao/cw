@@ -13,6 +13,12 @@
 
 namespace cw::sema_detail {
 
+/// \brief A source declaration or a semantic-only signature supplied by the caller.
+using OverloadCandidate = std::variant<const FunctionDecl*, const FunctionType*>;
+
+/// \brief Returns the signature used for matching and ordering either candidate kind.
+const FunctionType& CandidateType(const OverloadCandidate& candidate);
+
 /// \brief A candidate's full arity mismatch, including any prepared receiver.
 struct CandidateArityFailure {
   std::size_t required{};  ///< Number of parameters.
@@ -28,26 +34,26 @@ struct CandidateArgumentFailure {
 using CandidateFailure = std::variant<CandidateArityFailure, CandidateArgumentFailure>;
 using MatchArgumentsResult = std::variant<std::vector<ConversionSequence>, CandidateFailure>;
 
-/// \brief An unavailable declaration and its call-specific failure.
+/// \brief An unavailable candidate and its call-specific failure.
 struct CandidateFailureRecord {
-  const FunctionDecl* target{};  ///< Borrowed declaration supplied by the caller.
+  OverloadCandidate target{};    ///< Borrowed declaration or signature supplied by the caller.
   CandidateFailure failure{};    ///< Arity mismatch or first failed argument conversion.
 };
 
 /// \brief A unique winner and its conversions awaiting completion by the caller.
 struct SelectedOverload {
-  const FunctionDecl* target{};                 ///< Borrowed declaration better than every other viable candidate.
+  OverloadCandidate target{};                   ///< Candidate better than every other viable candidate.
   std::vector<ConversionSequence> conversions;  ///< Owned matches in full parameter order.
 };
 
-/// \brief Failure facts for all supplied declarations, in input order.
+/// \brief Failure facts for all supplied candidates, in input order.
 struct NoViableOverload {
-  std::vector<CandidateFailureRecord> candidates;  ///< Empty when no declarations were supplied.
+  std::vector<CandidateFailureRecord> candidates;  ///< Empty when no candidates were supplied.
 };
 
-/// \brief All viable declarations when none is better than every other one.
+/// \brief All viable candidates when none is better than every other one.
 struct AmbiguousOverload {
-  std::vector<const FunctionDecl*> candidates;  ///< Borrowed declarations in input order, including dominated ones.
+  std::vector<OverloadCandidate> candidates;  ///< Candidates in input order, including dominated ones.
 };
 
 using OverloadResult = std::variant<SelectedOverload, NoViableOverload, AmbiguousOverload>;
@@ -57,7 +63,12 @@ MatchArgumentsResult MatchArguments(const std::vector<ConversionSource>& argumen
                                     const std::vector<const Type*>& parameter_types, ASTContext& ast_context,
                                     const LookupContext& lookup_context);
 
-/// \brief Matches and orders caller-selected valid function declarations without committing a call.
+/// \brief Matches and orders caller-selected candidates without committing an operation.
+OverloadResult ResolveOverload(const std::vector<ConversionSource>& arguments,
+                               const std::vector<OverloadCandidate>& candidates, ASTContext& ast_context,
+                               const LookupContext& lookup_context);
+
+/// \brief Resolves a call whose candidates are all function declarations.
 OverloadResult ResolveOverload(const std::vector<ConversionSource>& arguments,
                                const std::vector<const FunctionDecl*>& functions, ASTContext& ast_context,
                                const LookupContext& lookup_context);

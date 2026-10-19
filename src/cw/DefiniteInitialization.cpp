@@ -435,7 +435,7 @@ SourceRange PreferredRange(const Node& owner, TrackedRoot root) {
 bool GetAssignmentOperands(const Expr& expression, const Expr*& lhs, const Expr*& rhs) {
   if (expression.GetKind() == NodeKind::BinaryOperator) {
     const auto& binary = static_cast<const BinaryOperator&>(expression);
-    if (!binary.IsSimpleAssignment()) {
+    if (!binary.IsAssignment()) {
       return false;
     }
     lhs = binary.LHS.get();
@@ -444,7 +444,7 @@ bool GetAssignmentOperands(const Expr& expression, const Expr*& lhs, const Expr*
   }
   if (expression.GetKind() == NodeKind::OperatorCallExpr) {
     const auto& call = static_cast<const OperatorCallExpr&>(expression);
-    if (!call.IsSimpleAssignment()) {
+    if (!call.IsAssignment()) {
       return false;
     }
     lhs = call.Args[0].get();

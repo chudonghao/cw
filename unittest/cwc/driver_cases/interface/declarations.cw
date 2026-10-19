@@ -15,6 +15,21 @@ export func operator+(left &copy Point, right &copy Point) var result Point {
   result.x := left.x + right.x;
   result.y := left.y + right.y;
 }
-export func operator[](this &copy Point, index i32) i32 { this.x + index }
 export func operator()(this &copy Point) i32 { this.x }
+export func operator~(value &copy Point) i32 { ~value.x }
+export func operator&(left &copy Point, right &copy Point) i32 { left.x & right.x }
+export func operator|(left &copy Point, right &copy Point) i32 { left.x | right.x }
+export func operator^(left &copy Point, right &copy Point) i32 { left.x ^ right.x }
+export func operator<<(left &copy Point, count i64) i64 { count }
+export func operator>>(left &copy Point, count i32) i32 { count }
+export func operator+=(left &mut Point, right i32) &mut Point { left.x += right; left }
+export func operator-=(left &mut Point, right i32) &mut Point { left.x -= right; left }
+export func operator*=(left &mut Point, right i32) &mut Point { left.x *= right; left }
+export func operator/=(left &mut Point, right i32) &mut Point { left.x /= right; left }
+export func operator%=(left &mut Point, right i32) &mut Point { left.x %= right; left }
+export func operator&=(left &mut Point, right i32) &mut Point { left.x &= right; left }
+export func operator|=(left &mut Point, right i32) &mut Point { left.x |= right; left }
+export func operator^=(left &mut Point, right i32) &mut Point { left.x ^= right; left }
+export func operator<<=(left &mut Point, right i32) &mut Point { left.x <<= right; left }
+export func operator>>=(left &mut Point, right i32) &mut Point { left.x >>= right; left }
 export func Flush() {}

@@ -431,7 +431,7 @@ TEST_F(SemaTest, KeepsSameShortTypeNamesDistinct) {
     func Run() i32 { F(A::T()) + F(B::T()) })");
 }
 
-TEST_F(SemaTest, BindsLifecycleAndAssignmentByTypeIdentityAcrossFiles) {
+TEST_F(SemaTest, BindsLifecycleAcrossFilesAndLooksUpQualifiedAssignments) {
   Analyze(std::vector<cw::Source>{
       {"types", R"(namespace A { struct T { value i32; } }
          namespace B { trivial struct T {} })"},
@@ -446,8 +446,8 @@ TEST_F(SemaTest, BindsLifecycleAndAssignmentByTypeIdentityAcrossFiles) {
       {"use", R"(namespace B { func Use(source &mut A::T) {
          var copied A::T := source;
          var moved A::T := move source;
-         copied = source;
-         copied = move moved;
+         A::operator=(copied, source);
+         A::operator=(copied, move moved);
          A::operator=(copied, source);
          var T i32 := 0;
          var again A::T := source;
@@ -466,18 +466,16 @@ TEST_F(SemaTest, RejectsDestructorOutsideTypeNamespace) {
   ExpectError(0, 71, "unknown destructor target type 'T'", 1);
 }
 
-TEST_F(SemaTest, RejectsCopyAssignmentOutsideTypeNamespace) {
+TEST_F(SemaTest, AcceptsCopyAssignmentOutsideTypeNamespace) {
   Analyze(
       "namespace A { struct T {} ctor T() {} dtor T() {} } namespace B { func operator=(to &mut A::T, from &copy A::T) "
       "{} }");
-  ExpectError(0, 71, "copy or move assignment must be declared in the target type's namespace", 9);
 }
 
-TEST_F(SemaTest, RejectsMoveAssignmentOutsideTypeNamespace) {
+TEST_F(SemaTest, AcceptsMoveAssignmentOutsideTypeNamespace) {
   Analyze(
       "namespace A { struct T {} ctor T() {} dtor T() {} } namespace B { func operator=(to &mut A::T, from &move A::T) "
       "{} }");
-  ExpectError(0, 71, "copy or move assignment must be declared in the target type's namespace", 9);
 }
 
 TEST_F(SemaTest, InnerReceiverOverloadsHideOuterOverloads) {
@@ -1377,7 +1375,6 @@ TEST_F(SemaTest, AcceptsWellFormedFunctionLikeDeclarations) {
 struct T {}
 func f() {}
 func operator+(value &copy S) {}
-func operator[](base *S, index i32) i32 { 0 }
 func operator()(callable &copy S) i32 { 0 }
 ctor S(value i32) {}
 ctor S() {}
@@ -4567,7 +4564,254 @@ ctor Holder(source &copy Derived) { this.Base := source; })");
 )");
 }
 
-// User operators and special assignment.
+// User operators and assignment overloads.
+
+TEST_F(SemaTest, RequiresStructInFirstAssignmentParameter) {
+  Analyze(R"(trivial struct T {}
+func operator=(target &mut i32, source T) {}
+func operator=(target *T, source T) {}
+func operator=(target &mut [1] T, source T) {})");
+
+  ExpectError(1, 5, "first parameter of operator '=' must be a struct or reference to a struct, not '&mut i32'", 9);
+  ExpectError(2, 5, "first parameter of operator '=' must be a struct or reference to a struct, not '*T'", 9);
+  ExpectError(3, 5, "first parameter of operator '=' must be a struct or reference to a struct, not '&mut [1] T'", 9);
+}
+
+TEST_F(SemaTest, RejectsAllTrivialSameTypeAssignmentParameterModes) {
+  Analyze(R"(trivial struct T {}
+func operator=(target T, source T) {}
+func operator=(target &mut T, source &mut T) {}
+func operator=(target &copy T, source &copy T) {}
+func operator=(target &move T, source &move T) {}
+func operator=(target T, source &copy T) {})");
+
+  ExpectError(1, 5, "same-type assignment cannot be declared for trivial type 'T'", 9);
+  ExpectError(2, 5, "same-type assignment cannot be declared for trivial type 'T'", 9);
+  ExpectError(3, 5, "same-type assignment cannot be declared for trivial type 'T'", 9);
+  ExpectError(4, 5, "same-type assignment cannot be declared for trivial type 'T'", 9);
+  ExpectError(5, 5, "same-type assignment cannot be declared for trivial type 'T'", 9);
+}
+
+TEST_F(SemaTest, RejectsTrivialSameTypeAssignmentAcrossNamespacesAndImportIdentities) {
+  Analyze(R"(export trivial struct T {}
+namespace Other {
+func operator=(target &copy T, source T) {}
+import func operator=(target &mut T, source &move T);
+export func operator=(target T, source &copy T) {}
+}
+import trivial struct External {}
+func operator=(target &mut External, source &copy External) {})");
+
+  ExpectError(2, 5, "same-type assignment cannot be declared for trivial type 'T'", 9);
+  ExpectError(3, 12, "same-type assignment cannot be declared for trivial type 'T'", 9);
+  ExpectError(4, 12, "same-type assignment cannot be declared for trivial type 'T'", 9);
+  ExpectError(7, 5, "same-type assignment cannot be declared for trivial type 'External'", 9);
+}
+
+TEST_F(SemaTest, AcceptsNonTrivialAssignmentWithMutableSourceAndValueParameters) {
+  Analyze(R"(struct T {}
+ctor T(source &copy T) {}
+dtor T() {}
+namespace Mutable {
+func operator=(target &mut T, source &mut T) i32 { 1 }
+func operator=(target &mut T, source &copy T) bool { true }
+func Use(target &mut T, source &mut T) i32 { target = source }
+func Readonly(target &mut T, source &copy T) bool { target = source }
+}
+namespace Value {
+func operator=(target T, source T) i32 { 2 }
+func Use(target &copy T, source &copy T) i32 { target = source }
+func Arrays(target &mut [1] T, source &copy [1] T) { target = source; }
+}
+namespace Receivers {
+func operator=(target &copy T, source i32) i32 { source }
+func Readonly(target &copy T) i32 { target = 3 }
+func operator=(target &move T, source bool) bool { source }
+func Moving(target &mut T) bool { (move target) = true }
+})");
+}
+
+TEST_F(SemaTest, AssignmentLookupDoesNotSupplementTypeNamespaceFunctions) {
+  Analyze(R"(namespace A {
+struct T {} ctor T() {}
+dtor T() {}
+func operator=(target &mut T, source &copy T) {}
+}
+func Use(target &mut A::T, source &copy A::T) {
+  target = source;
+})");
+
+  ExpectError(6, 2, "binary operator '=' cannot be applied to types 'A::T' and 'const A::T'", 15);
+}
+
+TEST_F(SemaTest, AssignmentLookupStopsAtNearestOverloadSet) {
+  Analyze(R"(struct T {} ctor T() {}
+dtor T() {}
+func operator=(target &mut T, source &copy T) {}
+namespace Inner {
+func operator=(target &mut T, source i32) {}
+func Use(target &mut T, source &copy T) {
+  target = source;
+}
+})");
+
+  ExpectError(6, 2, "no matching overloaded operator '='", 15);
+  ExpectNote(4, 0, "candidate function is not viable: no implicit conversion from 'T' to 'i32' for operand 2", 0);
+}
+
+TEST_F(SemaTest, IntrinsicAssignmentCompetesWithVisibleHeterogeneousFunctions) {
+  Analyze(R"(trivial struct Base {}
+trivial struct T : Base {}
+namespace Copy {
+func operator=(target &copy Base, source &copy T) i32 { 42 }
+func Mutable(target &mut T, source &copy T) &mut T { target = source }
+func Readonly(target &copy T, source &copy T) i32 { target = source }
+}
+namespace Move {
+func operator=(target &mut Base, source &move T) i32 { 7 }
+func Use(target &mut T, source &move T) &mut T { target = move source }
+func Temporary(target &mut T) &mut T { target = T(); target }
+})");
+}
+
+TEST_F(SemaTest, DiagnosesCrossedIntrinsicAndUserAssignmentRanks) {
+  Analyze(R"(trivial struct Base {}
+trivial struct T : Base {}
+func operator=(target &mut Base, source &mut T) {}
+func Use(target &mut T, source &mut T) {
+  target = source;
+})");
+
+  ExpectError(4, 2, "use of overloaded operator '=' is ambiguous", 15);
+  ExpectNote(2, 0, "candidate function", 0);
+  ExpectNote(4, 9, "candidate intrinsic assignment 'func (&mut T, &copy T) &mut T'", 0);
+}
+
+TEST_F(SemaTest, ChecksIntrinsicAssignmentAmbiguityForZeroLengthArrayElements) {
+  Analyze(R"(trivial struct Base {}
+trivial struct T : Base {}
+func operator=(target &mut Base, source &mut T) {}
+func Use(target &mut [1] [0] T, source &mut [1] [0] T) {
+  target = source;
+})");
+
+  ExpectError(4, 2, "use of overloaded operator '=' is ambiguous", 15);
+  ExpectNote(2, 0, "candidate function", 0);
+  ExpectNote(4, 9, "candidate intrinsic assignment 'func (&mut T, &copy T) &mut T'", 0);
+}
+
+TEST_F(SemaTest, DoesNotReselectAssignmentAfterValueFormationFails) {
+  Analyze(R"(struct Base {} ctor Base() {} dtor Base() {}
+struct T : Base {} ctor T() { this.Base := Base(); }
+dtor T() {}
+func operator=(target &mut T, source T) {}
+func operator=(target &mut T, source &copy Base) {}
+func Use(target &mut T, source &copy T) {
+  target = source;
+}
+func Arrays(target &mut [0] T, source &copy [0] T) {
+  target = source;
+})");
+
+  ExpectError(6, 11, "cannot initialize parameter 2 of operator '=': no copy constructor is available for 'T'", 6);
+  ExpectError(9, 11, "cannot initialize parameter 2 of operator '=': no copy constructor is available for 'T'", 6);
+}
+
+TEST_F(SemaTest, ResolvesAssignmentNullAndFunctionAddressesPerCandidate) {
+  Analyze(R"(trivial struct T {}
+func Read(value i32) i32 { value }
+func Read(value bool) bool { value }
+namespace Address {
+func operator=(target &mut T, source *func (i32) i32) i32 { source(1) }
+func operator=(target &mut T, source *i32) bool { source != null }
+func Use(target &mut T) i32 { target = &Read }
+}
+namespace Null {
+func operator=(target &copy T, source *i32) bool { source == null }
+func Use(target &copy T) bool { target = null }
+func Temporary() bool { T() = null }
+})");
+}
+
+TEST_F(SemaTest, UserAssignmentStillRequiresInitializedTarget) {
+  Analyze(R"(trivial struct T {}
+func operator=(target &copy T, source i32) {}
+func Use() {
+  var target T;
+  target = 1;
+})");
+
+  ExpectError(4, 2, "use of uninitialized variable 'target'", 6);
+}
+
+TEST_F(SemaTest, IntrinsicAssignmentDoesNotBindBaseSourceToDerivedTarget) {
+  Analyze(R"(trivial struct Base {}
+trivial struct T : Base {}
+func Use(target &mut T, source &copy Base) {
+  target = source;
+})");
+
+  ExpectError(3, 2, "no matching overloaded operator '='", 15);
+  ExpectNote(3, 9,
+             "candidate intrinsic assignment 'func (&mut T, &copy T) &mut T' is not viable: reference type '&copy T' "
+             "cannot bind to a value of type 'const Base' for operand 2",
+             0);
+  ExpectNote(3, 9,
+             "candidate intrinsic assignment 'func (&mut T, &move T) &mut T' is not viable: reference type '&move T' "
+             "cannot bind to a value of type 'const Base' for operand 2",
+             0);
+}
+
+TEST_F(SemaTest, IntrinsicAssignmentRequiresModifiableOrdinaryLvalue) {
+  Analyze(R"(trivial struct T {}
+func Readonly(target &copy T, source &copy T) {
+  target = source;
+}
+func Temporary(source &copy T) {
+  T() = source;
+})");
+
+  ExpectError(2, 2, "no matching overloaded operator '='", 15);
+  ExpectNote(2, 9,
+             "candidate intrinsic assignment 'func (&mut T, &copy T) &mut T' is not viable: binding a reference of "
+             "type '&mut T' to a value of type 'const T' would discard const for operand 1",
+             0);
+  ExpectNote(2, 9,
+             "candidate intrinsic assignment 'func (&mut T, &move T) &mut T' is not viable: binding a reference of "
+             "type '&mut T' to a value of type 'const T' would discard const for operand 1",
+             0);
+  ExpectError(5, 2, "no matching overloaded operator '='", 12);
+  ExpectNote(5, 6,
+             "candidate intrinsic assignment 'func (&mut T, &copy T) &mut T' is not viable: reference type '&mut T' "
+             "cannot bind to pure rvalue of type 'T' for operand 1",
+             0);
+  ExpectNote(5, 6,
+             "candidate intrinsic assignment 'func (&mut T, &move T) &mut T' is not viable: reference type '&mut T' "
+             "cannot bind to pure rvalue of type 'T' for operand 1",
+             0);
+}
+
+TEST_F(SemaTest, IntrinsicAssignmentsAreNotDeclaredFunctions) {
+  Analyze(R"(trivial struct T {}
+func Use(target &mut T, source &copy T) {
+  target = source;
+  operator=(target, source);
+  var address *func (&mut T, &copy T) &mut T := &operator=;
+})");
+
+  ExpectError(3, 2, "use of undeclared operator '='", 9);
+  ExpectError(4, 49, "use of undeclared operator '='", 9);
+}
+
+TEST_F(SemaTest, AssignmentImportStillRejectsDuplicateFunctionSignature) {
+  Analyze(R"(import struct T {}
+import dtor T();
+import func operator=(target &mut T, source &copy T);
+func operator=(target &mut T, source &copy T) {})");
+
+  ExpectError(3, 5, "redefinition of operator '='", 0);
+  ExpectNote(2, 12, "previous declaration is here", 0);
+}
 
 TEST_F(SemaTest, RejectsDuplicateOperatorSignatures) {
   Analyze(R"(trivial struct S {}
@@ -4579,7 +4823,7 @@ func operator+(left &copy S, right &copy S) {})");
   ExpectNote(1, 5, "previous declaration is here", 0);
 }
 
-TEST_F(SemaTest, SelectsCopyMoveAndMoveFallbackAssignmentBySameTypeIdentity) {
+TEST_F(SemaTest, SelectsCopyAndMoveAssignmentsByOverloadResolution) {
   Analyze(R"(struct Both {}
 func operator=(dst &mut Both, src &copy Both) i32 { return 1; }
 func operator=(dst &mut Both, src &move Both) bool { return true; }
@@ -4594,7 +4838,7 @@ dtor CopyOnly() {}
 func move_fallback(dst &mut CopyOnly, src &move CopyOnly) i32 { return dst = move src; })");
 }
 
-TEST_F(SemaTest, RejectsForbiddenAndDuplicateSpecialAssignmentIdentities) {
+TEST_F(SemaTest, RejectsDuplicateAssignmentSignatures) {
   Analyze(R"(struct S {}
 func operator=(dst &mut S, src &mut S) {}
 func operator=(dst &mut S, src &copy S) {}
@@ -4604,10 +4848,9 @@ func operator=(other &mut S, value &move S) {}
 ctor S() {}
 dtor S() {})");
 
-  ExpectError(1, 5, "same-type assignment cannot use a '&mut' source parameter", 9);
-  ExpectError(3, 5, "redefinition of copy assignment", 0);
+  ExpectError(3, 5, "redefinition of operator '='", 0);
   ExpectNote(2, 5, "previous declaration is here", 0);
-  ExpectError(5, 5, "redefinition of move assignment", 0);
+  ExpectError(5, 5, "redefinition of operator '='", 0);
   ExpectNote(4, 5, "previous declaration is here", 0);
 }
 
@@ -4616,11 +4859,11 @@ TEST_F(SemaTest, RejectsSpecialAssignmentDeclarationsForTrivialTypes) {
 func operator=(dst &mut S, src &copy S) {}
 func operator=(dst &mut S, src &move S) {})");
 
-  ExpectError(1, 5, "copy assignment cannot be declared for trivial type 'S'", 9);
-  ExpectError(2, 5, "move assignment cannot be declared for trivial type 'S'", 9);
+  ExpectError(1, 5, "same-type assignment cannot be declared for trivial type 'S'", 9);
+  ExpectError(2, 5, "same-type assignment cannot be declared for trivial type 'S'", 9);
 }
 
-TEST_F(SemaTest, ExcludesInvalidCopyAssignmentInterfaceFromCallableSlot) {
+TEST_F(SemaTest, ExcludesInvalidAssignmentInterfaceFromCandidates) {
   Analyze(R"(struct S {}
 func operator=(dst &mut S, src &copy S) var result void {}
 ctor S() {}
@@ -4630,10 +4873,10 @@ func use(dst &mut S, src &copy S) {
 })");
 
   ExpectError(1, 40, "void function cannot declare a named return object", 15);
-  ExpectError(5, 2, "no copy assignment declared for type 'S'", 9);
+  ExpectError(5, 2, "binary operator '=' cannot be applied to types 'S' and 'const S'", 9);
 }
 
-TEST_F(SemaTest, KeepsSpecialAssignmentWithErroneousBodyInCallableSlot) {
+TEST_F(SemaTest, KeepsAssignmentWithErroneousBodyInCandidates) {
   Analyze(R"(struct S {}
 func operator=(dst &mut S, src &copy S) { missing_body; }
 ctor S() {}
@@ -4688,6 +4931,1129 @@ func Assign(dst &mut S) { dst = Make(); })");
 )");
 }
 
+TEST_F(SemaTest, AcceptsBuiltinBitwiseIntegerTypes) {
+  Analyze(R"(func I8(a i8, b i8) i8 { (~a & b) | (a ^ b) }
+func U8(a u8, b u8) u8 { (~a & b) | (a ^ b) }
+func I16(a i16, b i16) i16 { (~a & b) | (a ^ b) }
+func U16(a u16, b u16) u16 { (~a & b) | (a ^ b) }
+func I32(a i32, b i32) i32 { (~a & b) | (a ^ b) }
+func U32(a u32, b u32) u32 { (~a & b) | (a ^ b) }
+func I64(a i64, b i64) i64 { (~a & b) | (a ^ b) }
+func U64(a u64, b u64) u64 { (~a & b) | (a ^ b) }
+func ISize(a isize, b isize) isize { (~a & b) | (a ^ b) }
+func USize(a usize, b usize) usize { (~a & b) | (a ^ b) }
+func Mixed(a u8, b i16) i16 { a & b }
+func Unsigned(a i32, b u32) u32 { a | b }
+func Sizes(a isize, b usize) usize { a ^ b }
+func Const(value &copy u8) u8 { ~value }
+func Character() u8 { ~'a' }
+func Literal32() i32 { ~0 }
+func Literal64() i64 { ~0x80000000 }
+func LiteralUnsigned() u64 { ~18446744073709551615 })");
+}
+
+TEST_F(SemaTest, AcceptsBitwiseOperatorCallsAndAddresses) {
+  Analyze(R"(namespace Api {
+trivial struct Bits { value i32; }
+func operator~(value &copy Bits) i32 { ~value.value }
+func operator&(left &copy Bits, right &copy Bits) i32 { left.value & right.value }
+func operator|(left &copy Bits, right &copy Bits) bool { left.value == right.value }
+func operator^(left &mut Bits, right &copy Bits) &mut Bits { left }
+func Use(left &mut Bits, right &copy Bits) {
+  ~left; left & right; left | right; left ^ right;
+  operator~(left); operator&(left, right); operator|(left, right); operator^(left, right);
+  var invert *func (&copy Bits) i32 := &operator~;
+  var both *func (&copy Bits, &copy Bits) i32 := &operator&;
+  var either *func (&copy Bits, &copy Bits) bool := &operator|;
+  var different *func (&mut Bits, &copy Bits) &mut Bits := &operator^;
+  invert(left); both(left, right); either(left, right); different(left, right);
+  var address *Bits := &left;
+}
+}
+func Qualified(left &mut Api::Bits, right &copy Api::Bits) {
+  Api::operator~(left); Api::operator&(left, right);
+  ::Api::operator|(left, right); ::Api::operator^(left, right);
+  var invert *func (&copy Api::Bits) i32 := &Api::operator~;
+  var both *func (&copy Api::Bits, &copy Api::Bits) i32 := &Api::operator&;
+  var either *func (&copy Api::Bits, &copy Api::Bits) bool := &::Api::operator|;
+  var different *func (&mut Api::Bits, &copy Api::Bits) &mut Api::Bits := &::Api::operator^;
+  invert(left); both(left, right); either(left, right); different(left, right);
+})");
+}
+
+TEST_F(SemaTest, EvaluatesBitwiseArrayLengthsAtTheirIntegerWidth) {
+  Analyze(R"(func Lengths(a &copy [8 | 3] u8, b &copy [15 & 7] u8, c &copy [1 ^ 3] u8,
+             d &copy [~0 & 7] u8, e &copy [~(-2147483648) & 7] u8,
+             f &copy [~18446744073709551615] u8,
+             g &copy [~(9223372036854775808 | 9223372036854775807)] u8,
+             h &copy [~0x80000000 & 7] u8) {
+  var first [11] u8 := a;
+  var second [7] u8 := b;
+  var third [2] u8 := c;
+  var fourth [7] u8 := d;
+  var fifth [7] u8 := e;
+  var sixth [0] u8 := f;
+  var seventh [0] u8 := g;
+  var eighth [7] u8 := h;
+})");
+}
+
+TEST_F(SemaTest, RejectsNonIntegerBitwiseOperands) {
+  Analyze(R"(func Invalid(b bool, f f32, p *i32) {
+  ~b;
+  ~f;
+  ~p;
+  b & b;
+  b | b;
+  b ^ b;
+  f & f;
+  f | f;
+  f ^ f;
+  p & p;
+  p | p;
+  p ^ p;
+  1 & f;
+  f | 1;
+  1 ^ b;
+})");
+
+  ExpectError(1, 2, "unary operator '~' cannot be applied to type 'bool'", 2);
+  ExpectError(2, 2, "unary operator '~' cannot be applied to type 'f32'", 2);
+  ExpectError(3, 2, "unary operator '~' cannot be applied to type '*i32'", 2);
+  ExpectError(4, 2, "binary operator '&' cannot be applied to types 'bool' and 'bool'", 5);
+  ExpectError(5, 2, "binary operator '|' cannot be applied to types 'bool' and 'bool'", 5);
+  ExpectError(6, 2, "binary operator '^' cannot be applied to types 'bool' and 'bool'", 5);
+  ExpectError(7, 2, "binary operator '&' cannot be applied to types 'f32' and 'f32'", 5);
+  ExpectError(8, 2, "binary operator '|' cannot be applied to types 'f32' and 'f32'", 5);
+  ExpectError(9, 2, "binary operator '^' cannot be applied to types 'f32' and 'f32'", 5);
+  ExpectError(10, 2, "binary operator '&' cannot be applied to types '*i32' and '*i32'", 5);
+  ExpectError(11, 2, "binary operator '|' cannot be applied to types '*i32' and '*i32'", 5);
+  ExpectError(12, 2, "binary operator '^' cannot be applied to types '*i32' and '*i32'", 5);
+  ExpectError(13, 2, "binary operator '&' cannot be applied to types 'i32' and 'f32'", 5);
+  ExpectError(14, 2, "binary operator '|' cannot be applied to types 'f32' and 'i32'", 5);
+  ExpectError(15, 2, "binary operator '^' cannot be applied to types 'i32' and 'bool'", 5);
+}
+
+TEST_F(SemaTest, RejectsBitwiseSizeAndFixedWidthMixing) {
+  Analyze(R"(func Invalid(a usize, b isize, c i32) {
+  a & c;
+  b | c;
+  a ^ 1;
+  'a' & b;
+})");
+
+  ExpectError(1, 2, "binary operator '&' cannot be applied to types 'usize' and 'i32'", 5);
+  ExpectError(2, 2, "binary operator '|' cannot be applied to types 'isize' and 'i32'", 5);
+  ExpectError(3, 2, "binary operator '^' cannot be applied to types 'usize' and 'i32'", 5);
+  ExpectError(4, 2, "binary operator '&' cannot be applied to types 'u8' and 'isize'", 7);
+}
+
+TEST_F(SemaTest, RejectsInvalidBitwiseOperatorInterfaces) {
+  Analyze(R"(trivial struct Bits {}
+func operator~() {}
+func operator~(a Bits, b Bits) {}
+func operator~(a i32) {}
+func operator&(a Bits) {}
+func operator&(a Bits, b Bits, c Bits) {}
+func operator&(a i32, b i32) {}
+func operator|(a Bits) {}
+func operator|(a i32, b i32) {}
+func operator^(a Bits) {}
+func operator^(a *Bits, b *Bits) {})");
+
+  ExpectError(1, 5, "operator '~' requires exactly one parameter", 9);
+  ExpectError(2, 5, "operator '~' requires exactly one parameter", 9);
+  ExpectError(3, 5, "operator '~' requires a struct or reference-to-struct parameter", 9);
+  ExpectError(4, 5, "operator '&' requires exactly two parameters", 9);
+  ExpectError(5, 5, "operator '&' requires exactly two parameters", 9);
+  ExpectError(6, 5, "operator '&' requires a struct or reference-to-struct parameter", 9);
+  ExpectError(7, 5, "operator '|' requires exactly two parameters", 9);
+  ExpectError(8, 5, "operator '|' requires a struct or reference-to-struct parameter", 9);
+  ExpectError(9, 5, "operator '^' requires exactly two parameters", 9);
+  ExpectError(10, 5, "operator '^' requires a struct or reference-to-struct parameter", 9);
+}
+
+TEST_F(SemaTest, RejectsInvalidImportedAndExportedBitwiseOperators) {
+  Analyze(R"(import trivial struct Bits {}
+import func operator&(value &copy Bits);
+export func operator~(value bool) {}
+export func operator^(left i32, right i32) {})");
+
+  ExpectError(1, 12, "operator '&' requires exactly two parameters", 9);
+  ExpectError(2, 12, "operator '~' requires a struct or reference-to-struct parameter", 9);
+  ExpectError(3, 12, "operator '^' requires a struct or reference-to-struct parameter", 9);
+}
+
+TEST_F(SemaTest, ExcludesInvalidBitwiseOperatorsFromCallsAndAddresses) {
+  Analyze(R"(trivial struct Bits {}
+func operator~(left Bits, right Bits) i32 { 0 }
+func Use(value Bits) {
+  ~value;
+  operator~(value, value);
+  var operation *func (Bits, Bits) i32 := &operator~;
+})");
+
+  ExpectError(1, 5, "operator '~' requires exactly one parameter", 9);
+  ExpectError(3, 2, "unary operator '~' cannot be applied to type 'Bits'", 6);
+}
+
+TEST_F(SemaTest, KeepsBitwiseOperatorLookupInTheUseNamespace) {
+  Analyze(R"(namespace Api {
+trivial struct Bits {}
+func operator~(value Bits) i32 { 0 }
+func operator&(left Bits, right Bits) i32 { 0 }
+}
+func Use(value Api::Bits) {
+  ~value;
+  value & value;
+})");
+
+  ExpectError(6, 2, "unary operator '~' cannot be applied to type 'Api::Bits'", 6);
+  ExpectError(7, 2, "binary operator '&' cannot be applied to types 'Api::Bits' and 'Api::Bits'", 13);
+}
+
+TEST_F(SemaTest, RejectsBitwiseArrayLengthsWithInvalidIntermediateValues) {
+  Analyze(R"(func Lengths() {
+  var negative [~0] u8;
+  var wide_negative [~0x80000000] u8;
+  var overflow [(2147483647 + 1) & 0] u8;
+  var right_overflow [0 & (2147483647 + 1)] u8;
+  var unsigned_overflow [(18446744073709551615 + 1) & 0] u8;
+  var conversion [(-1 & 18446744073709551615) & 0] u8;
+})");
+
+  ExpectError(1, 16, "array length cannot be negative", 2);
+  ExpectError(2, 21, "array length cannot be negative", 11);
+  ExpectError(3, 17, "array length constant expression overflows its integer type", 14);
+  ExpectError(4, 27, "array length constant expression overflows its integer type", 14);
+  ExpectError(5, 26, "array length constant expression overflows its integer type", 24);
+  ExpectError(6, 19, "array length constant expression overflows its integer type", 2);
+}
+
+TEST_F(SemaTest, AcceptsUserDefinedIncrementDecrementForms) {
+  Analyze(R"(trivial struct S { value i32; }
+func operator++(s &mut S) &mut S { s }
+func operator++(s &mut S, marker i32) S { s }
+func operator--(s &mut S) &mut i32 { s.value }
+func operator--(s &mut S, marker i32) &mut S { s }
+func F(s S) {
+  ++s; s++; --s; s--;
+  var old S := s++;
+  var reference &mut S := s--;
+  var address *S := &(++s);
+  (s--).value = 3;
+  --s = 4;
+  ++(++s);
+  operator++(s); operator++(s, 7);
+  operator--(s); operator--(s, -1);
+  var prefix *func (&mut S) &mut S := &operator++;
+  var postfix *func (&mut S, i32) S := &operator++;
+  prefix(s); postfix(s, 9);
+})");
+}
+
+TEST_F(SemaTest, UsesOrdinaryIncrementDecrementParameterAndReturnRules) {
+  Analyze(R"(trivial struct S { value i32; }
+namespace Copy {
+func operator++(s &copy S) &copy S { s }
+func operator++(s &copy S, marker i32) bool { true }
+func operator--(s &copy S) {}
+func operator--(s &copy S, marker i32) {}
+func F(s &copy S) {
+  var address *const S := &(++s);
+  var value bool := s++;
+  ++S(); S()++; --s; s--; --S(); S()--;
+}
+}
+namespace Value {
+func operator++(s S) S { s }
+func operator--(s S, marker i32) i32 { s.value }
+func F(s &copy S) { ++s; ++S(); s--; S()--; }
+}
+namespace Move {
+func operator++(s &move S) &move S { move s }
+func operator--(s &move S, marker i32) &move S { move s }
+func F(s &mut S) &move S {
+  var value S := ++(move s);
+  (move s)--
+}
+})");
+}
+
+TEST_F(SemaTest, RejectsInvalidIncrementDecrementOperatorInterfaces) {
+  Analyze(R"(trivial struct S {}
+func operator++() {}
+func operator--(s S, marker i32, extra i32) {}
+func operator++(s S, marker u32) {}
+func operator--(s S, marker &copy i32) {}
+func operator++(s i32) {}
+func operator--(s *S, marker i32) {}
+import func operator++(s S, marker i64);
+export func operator--(s i32, marker i32) {}
+func F(s S) {
+  s++;
+  operator++(s, 0);
+  var operation *func (S, u32) void := &operator++;
+})");
+
+  ExpectError(1, 5, "operator '++' requires one or two parameters", 10);
+  ExpectError(2, 5, "operator '--' requires one or two parameters", 10);
+  ExpectError(3, 5, "second parameter of postfix operator '++' must be 'i32', not 'u32'", 10);
+  ExpectError(4, 5, "second parameter of postfix operator '--' must be 'i32', not '&copy i32'", 10);
+  ExpectError(5, 5, "operator '++' requires a struct or reference-to-struct parameter", 10);
+  ExpectError(6, 5, "operator '--' requires a struct or reference-to-struct parameter", 10);
+  ExpectError(7, 12, "second parameter of postfix operator '++' must be 'i32', not 'i64'", 10);
+  ExpectError(8, 12, "operator '--' requires a struct or reference-to-struct parameter", 10);
+  ExpectError(10, 2, "unary operator '++' cannot be applied to type 'S'", 3);
+}
+
+TEST_F(SemaTest, HandlesUnresolvedIncrementDecrementParameterTypes) {
+  Analyze(R"(trivial struct S {}
+func operator++(s S, marker Missing) {}
+func operator--(s Missing, marker i32) {})");
+
+  ExpectError(1, 28, "unknown type 'Missing'", 7);
+  ExpectError(2, 18, "unknown type 'Missing'", 7);
+}
+
+TEST_F(SemaTest, KeepsIncrementDecrementOverloadsIndependent) {
+  Analyze(R"(trivial struct S {}
+func operator++(s &mut S) {}
+func operator+=(s &mut S, n i32) {}
+func operator-=(s &mut S, n i32) {}
+func F(s S) {
+  ++s;
+  s++;
+  --s;
+  s--;
+}
+namespace Postfix {
+func operator--(s &mut S, marker i32) {}
+func F(s S) { s--; --s; }
+})");
+
+  ExpectError(6, 2, "unary operator '++' cannot be applied to type 'S'", 3);
+  ExpectError(7, 2, "unary operator '--' cannot be applied to type 'S'", 3);
+  ExpectError(8, 2, "unary operator '--' cannot be applied to type 'S'", 3);
+  ExpectError(12, 19, "unary operator '--' cannot be applied to type 'S'", 3);
+}
+
+TEST_F(SemaTest, DoesNotMergeOuterIncrementDecrementOverloads) {
+  Analyze(R"(trivial struct S {}
+func operator++(s &mut S, marker i32) {}
+func operator--(s &mut S) {}
+namespace Inner {
+func operator++(s &mut S) {}
+func operator--(s &mut S, marker i32) {}
+func F(s S) {
+  ++s; s--;
+  s++;
+  --s;
+}
+})");
+
+  ExpectError(8, 2, "unary operator '++' cannot be applied to type 'S'", 3);
+  ExpectError(9, 2, "unary operator '--' cannot be applied to type 'S'", 3);
+}
+
+TEST_F(SemaTest, KeepsIncrementDecrementLookupInTheUseNamespace) {
+  Analyze(R"(namespace Api {
+trivial struct S {}
+func operator++(s &mut S) {}
+func operator++(s &mut S, marker i32) {}
+func operator--(s &mut S) {}
+func operator--(s &mut S, marker i32) {}
+}
+func F(s Api::S) {
+  Api::operator++(s); ::Api::operator++(s, 5);
+  Api::operator--(s); ::Api::operator--(s, -1);
+  var prefix *func (&mut Api::S) void := &Api::operator++;
+  var postfix *func (&mut Api::S, i32) void := &::Api::operator--;
+  prefix(s); postfix(s, 7);
+  ++s;
+  s--;
+})");
+
+  ExpectError(13, 2, "unary operator '++' cannot be applied to type 'Api::S'", 3);
+  ExpectError(14, 2, "unary operator '--' cannot be applied to type 'Api::S'", 3);
+}
+
+TEST_F(SemaTest, ReportsAmbiguousIncrementDecrementOverloads) {
+  Analyze(R"(trivial struct S {}
+func operator++(s S, marker i32) {}
+func operator++(s &copy S, marker i32) {}
+func F(s &copy S) { s++; })");
+
+  ExpectError(3, 20, "use of overloaded operator '++' is ambiguous", 3);
+  ExpectNote(1, 0, "candidate function", 0);
+  ExpectNote(2, 0, "candidate function", 0);
+}
+
+TEST_F(SemaTest, CompletesIncrementDecrementValueParametersAfterSelection) {
+  Analyze(R"(struct S {}
+ctor S() {}
+dtor S() {}
+func operator++(s S, marker i32) {}
+func F(s &mut S) {
+  S()++;
+  s++;
+  (move s)++;
+})");
+
+  ExpectError(6, 2, "cannot initialize parameter 1 of operator '++': no copy constructor is available for 'S'", 1);
+  ExpectError(7, 2, "cannot initialize parameter 1 of operator '++': no move or copy constructor is available for 'S'",
+              8);
+}
+
+TEST_F(SemaTest, RequiresInitializedUserDefinedIncrementDecrementArguments) {
+  Analyze(R"(trivial struct S { value i32; }
+func operator++(s &mut S) &mut S { s }
+func operator++(s &copy S, marker i32) {}
+func F() {
+  var s S;
+  ++s;
+  s++;
+  var reference &mut S := ++s;
+  s.value;
+})");
+
+  ExpectError(5, 4, "use of uninitialized variable 's'", 1);
+  ExpectError(6, 2, "use of uninitialized variable 's'", 1);
+  ExpectError(7, 28, "use of uninitialized variable 's'", 1);
+  ExpectError(8, 2, "use of uninitialized variable 's'", 1);
+}
+
+TEST_F(SemaTest, RejectsVoidIncrementDecrementResultsInInitialization) {
+  Analyze(R"(trivial struct S {}
+func operator++(s &copy S) {}
+func operator++(s &copy S, marker i32) {}
+func F(s S) {
+  ++s; s++;
+  var prefix := ++s;
+  var postfix := s++;
+})");
+
+  ExpectError(5, 16, "cannot infer an object type from expression of type 'void'", 3);
+  ExpectError(6, 17, "cannot infer an object type from expression of type 'void'", 3);
+}
+
+TEST_F(SemaTest, RequiresExplicitPostfixMarkerInOrdinaryCalls) {
+  Analyze(R"(trivial struct S {}
+func operator++(s &mut S, marker i32) {}
+func F(s S) {
+  operator++(s);
+  var operation *func (&mut S, i32) void := &operator++;
+  operation(s);
+})");
+
+  ExpectError(3, 2, "no matching function for call to operator '++'", 13);
+  ExpectNote(1, 0, "candidate function requires 2 arguments, but 1 was provided", 0);
+  ExpectError(5, 2, "indirect function call requires 2 arguments, but 1 was provided", 12);
+}
+
+TEST_F(SemaTest, AcceptsBuiltinIncrementDecrementTypes) {
+  Analyze(R"(func Integers(a i8, b u8, c i16, d u16, e i32, f u32, g i64, h u64) {
+  ++a; --a; a++; a--;
+  ++b; --b; b++; b--;
+  ++c; --c; c++; c--;
+  ++d; --d; d++; d--;
+  ++e; --e; e++; e--;
+  ++f; --f; f++; f--;
+  ++g; --g; g++; g--;
+  ++h; --h; h++; h--;
+}
+func Sizes(a isize, b usize) {
+  ++a; --a; a++; a--;
+  ++b; --b; b++; b--;
+}
+func Floats(a f32, b f64) {
+  ++a; --a; a++; a--;
+  ++b; --b; b++; b--;
+})");
+}
+
+TEST_F(SemaTest, PreservesIncrementDecrementTargetsAndResultTypes) {
+  Analyze(R"(func F(value &mut i8) i8 { ++value + value++ })");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, col:47> F 'func (&mut i8) i8'
+  |-ParmVarDecl {{address:value}} <col:8, col:21> value '&mut i8'
+  | `-ReferenceType {{address}} <col:14, col:21> '&mut'
+  |   `-BuiltinType {{address}} <col:19, col:21> 'i8'
+  |-ReturnVarDecl {{address:result}} <col:23, col:25> 'i8'
+  | `-BuiltinType {{address}} <col:23, col:25> 'i8'
+  `-CompoundStmt {{address}} <col:26, col:47>
+    `-ImplicitResultInitializationExpr {{address}} <col:28, col:45> 'void' ReturnVar {{address:result}} 'i8'
+      `-BinaryOperator {{address}} <col:28, col:45> 'i8' pure-rvalue '+'
+        |-ImplicitCastExpr {{address}} <col:28, col:35> 'i8' pure-rvalue <LValueToRValue>
+        | `-UnaryOperator {{address}} <col:28, col:35> 'i8' lvalue '++'
+        |   `-DeclRefExpr {{address}} <col:30, col:35> 'i8' lvalue ParmVar {{address:value}} 'value' '&mut i8'
+        `-UnaryOperator {{address}} <col:38, col:45> 'i8' pure-rvalue '++' postfix
+          `-DeclRefExpr {{address}} <col:38, col:43> 'i8' lvalue ParmVar {{address:value}} 'value' '&mut i8')");
+}
+
+TEST_F(SemaTest, AcceptsIncrementDecrementObjectResults) {
+  Analyze(R"(trivial struct Item { value i32; }
+func Locate(value &mut i32) &mut i32 { value }
+func F(a &mut i32, b &move i32, p *i32, item &mut Item, data &mut [2] i32, index usize, c bool) &mut i32 {
+  var reference &mut i32 := ++a;
+  var address *i32 := &(--a);
+  (++a) = 5;
+  ++(++a);
+  (--a)++;
+  b++;
+  (*p)--;
+  item.value++;
+  ++data[index];
+  (c ? a : b)--;
+  ++Locate(a);
+  ++a += a++;
+  --reference
+})");
+}
+
+TEST_F(SemaTest, RejectsUnsupportedIncrementDecrementTypes) {
+  Analyze(R"(trivial struct Item {}
+func F(b bool, p *i32, data &mut [2] i32, item Item) {
+  ++b;
+  b--;
+  p++;
+  --data;
+  item++;
+})");
+
+  ExpectError(2, 2, "unary operator '++' cannot be applied to type 'bool'", 3);
+  ExpectError(3, 2, "unary operator '--' cannot be applied to type 'bool'", 3);
+  ExpectError(4, 2, "unary operator '++' cannot be applied to type '*i32'", 3);
+  ExpectError(5, 2, "unary operator '--' cannot be applied to type '[2] i32'", 6);
+  ExpectError(6, 2, "unary operator '++' cannot be applied to type 'Item'", 6);
+}
+
+TEST_F(SemaTest, RequiresModifiableLValueIncrementDecrementTargets) {
+  Analyze(R"(func F(a &copy i32, b i32) {
+  ++a;
+  a--;
+  1++;
+  --(b + 1);
+  (move b)++;
+  ++(b++);
+  (b++) = 1;
+})");
+
+  ExpectError(1, 4, "unary operator '++' requires a modifiable lvalue operand, not 'const i32'", 1);
+  ExpectError(2, 2, "unary operator '--' requires a modifiable lvalue operand, not 'const i32'", 1);
+  ExpectError(3, 2, "unary operator '++' requires a modifiable lvalue operand, not 'i32'", 1);
+  ExpectError(4, 4, "unary operator '--' requires a modifiable lvalue operand, not 'i32'", 7);
+  ExpectError(5, 2, "unary operator '++' requires a modifiable lvalue operand, not 'i32'", 8);
+  ExpectError(6, 4, "unary operator '++' requires a modifiable lvalue operand, not 'i32'", 5);
+  ExpectError(7, 2, "assignment target must be a modifiable lvalue, not 'i32'", 5);
+}
+
+TEST_F(SemaTest, RequiresInitializedIncrementDecrementTargets) {
+  Analyze(R"(func F() {
+  var x i32;
+  ++x;
+  x--;
+  &(++x);
+  var reference &mut i32 := --x;
+  ++(++x);
+  x;
+})");
+
+  ExpectError(2, 4, "use of uninitialized variable 'x'", 1);
+  ExpectError(3, 2, "use of uninitialized variable 'x'", 1);
+  ExpectError(4, 6, "use of uninitialized variable 'x'", 1);
+  ExpectError(5, 30, "use of uninitialized variable 'x'", 1);
+  ExpectError(6, 7, "use of uninitialized variable 'x'", 1);
+  ExpectError(7, 2, "use of uninitialized variable 'x'", 1);
+}
+
+TEST_F(SemaTest, ChecksConditionalIncrementDecrementTargets) {
+  Analyze(R"(func F(c bool) {
+  var first i32;
+  var second i32;
+  (c ? first : second)++;
+  &++(c ? first : second);
+})");
+
+  ExpectError(3, 7, "use of uninitialized variable 'first'", 5);
+  ExpectError(3, 15, "use of uninitialized variable 'second'", 6);
+  ExpectError(4, 10, "use of uninitialized variable 'first'", 5);
+  ExpectError(4, 18, "use of uninitialized variable 'second'", 6);
+}
+
+TEST_F(SemaTest, ChecksIncrementDecrementSubobjectInitialization) {
+  Analyze(R"(trivial struct Item { value i32; }
+func F(index usize) {
+  var item Item;
+  var data [2] i32;
+  item.value++;
+  ++data[index];
+  item.value;
+  data[index];
+})");
+
+  ExpectError(4, 2, "use of uninitialized variable 'item'", 4);
+  ExpectError(5, 4, "use of uninitialized variable 'data'", 4);
+  ExpectError(6, 2, "use of uninitialized variable 'item'", 4);
+  ExpectError(7, 2, "use of uninitialized variable 'data'", 4);
+}
+
+TEST_F(SemaTest, RejectsIncrementDecrementInArrayLengths) {
+  Analyze(R"(func F(value i32) {
+  var first [++value] i32;
+  var second [value--] i32;
+})");
+
+  ExpectError(1, 15, "array length is not a constant integer expression", 5);
+  ExpectError(2, 14, "array length is not a constant integer expression", 5);
+}
+
+TEST_F(SemaTest, AcceptsAllCompoundAssignmentOperatorCallsAndAddresses) {
+  Analyze(R"(namespace Api {
+trivial struct S {}
+func operator+=(a &mut S, b i32) &mut S { a }
+func operator-=(a &mut S, b i32) &mut S { a }
+func operator*=(a &mut S, b i32) &mut S { a }
+func operator/=(a &mut S, b i32) &mut S { a }
+func operator%=(a &mut S, b i32) &mut S { a }
+func operator&=(a &mut S, b i32) &mut S { a }
+func operator|=(a &mut S, b i32) &mut S { a }
+func operator^=(a &mut S, b i32) &mut S { a }
+func operator<<=(a &mut S, b i32) &mut S { a }
+func operator>>=(a &mut S, b i32) &mut S { a }
+func F(a &mut S) {
+  a += 1; operator+=(a, 1);
+  a -= 1; operator-=(a, 1);
+  a *= 1; operator*=(a, 1);
+  a /= 1; operator/=(a, 1);
+  a %= 1; operator%=(a, 1);
+  a &= 1; operator&=(a, 1);
+  a |= 1; operator|=(a, 1);
+  a ^= 1; operator^=(a, 1);
+  a <<= 1; operator<<=(a, 1);
+  a >>= 1; operator>>=(a, 1);
+}
+}
+func Qualified(a &mut Api::S) {
+  ::Api::operator+=(a, 1);
+  var f0 *func (&mut Api::S, i32) &mut Api::S := &Api::operator+=;
+  f0(a, 1);
+  ::Api::operator-=(a, 1);
+  var f1 *func (&mut Api::S, i32) &mut Api::S := &Api::operator-=;
+  f1(a, 1);
+  ::Api::operator*=(a, 1);
+  var f2 *func (&mut Api::S, i32) &mut Api::S := &Api::operator*=;
+  f2(a, 1);
+  ::Api::operator/=(a, 1);
+  var f3 *func (&mut Api::S, i32) &mut Api::S := &Api::operator/=;
+  f3(a, 1);
+  ::Api::operator%=(a, 1);
+  var f4 *func (&mut Api::S, i32) &mut Api::S := &Api::operator%=;
+  f4(a, 1);
+  ::Api::operator&=(a, 1);
+  var f5 *func (&mut Api::S, i32) &mut Api::S := &Api::operator&=;
+  f5(a, 1);
+  ::Api::operator|=(a, 1);
+  var f6 *func (&mut Api::S, i32) &mut Api::S := &Api::operator|=;
+  f6(a, 1);
+  ::Api::operator^=(a, 1);
+  var f7 *func (&mut Api::S, i32) &mut Api::S := &Api::operator^=;
+  f7(a, 1);
+  ::Api::operator<<=(a, 1);
+  var f8 *func (&mut Api::S, i32) &mut Api::S := &Api::operator<<=;
+  f8(a, 1);
+  ::Api::operator>>=(a, 1);
+  var f9 *func (&mut Api::S, i32) &mut Api::S := &Api::operator>>=;
+  f9(a, 1);
+})");
+}
+
+TEST_F(SemaTest, AcceptsBuiltinCompoundAssignmentTypesAndResults) {
+  Analyze(R"(func Integers(a i8, b i8, c u16, d u16, e i64, f i64) {
+  a += b; a -= b; a *= b; a /= b; a %= b;
+  a &= b; a |= b; a ^= b; a <<= f; a >>= c;
+  c += d; c -= d; c *= d; c /= d; c %= d;
+  c &= d; c |= d; c ^= d; c <<= b; c >>= f;
+  e += f; e -= f; e *= f; e /= f; e %= f;
+  e &= f; e |= f; e ^= f; e <<= b; e >>= c;
+}
+func Floats(a f32, b f32, c f64, d f64) {
+  a += b; a -= b; a *= b; a /= b;
+  c += d; c -= d; c *= d; c /= d;
+}
+func Sizes(a usize, b usize, c isize, d isize) {
+  a += b; a -= b; a *= b; a /= b; a %= b;
+  a &= b; a |= b; a ^= b; a <<= 1; a >>= c;
+  c += d; c -= d; c *= d; c /= d; c %= d;
+  c &= d; c |= d; c ^= d; c <<= a; c >>= -1;
+}
+func Results(a &mut i32, b &move i32, c bool) &mut i32 {
+  var reference &mut i32 := a += 1;
+  var address *i32 := &(a *= 2);
+  (a += 2) += 3;
+  (a -= 1) = 4;
+  b += 1;
+  (c ? a : b) <<= 32;
+  reference += 1
+})");
+}
+
+TEST_F(SemaTest, DiagnosesCompoundAssignmentWritebackRisks) {
+  Analyze(R"(func F(a i8, b f32, c i32, d f64) {
+  a += 1;
+  b += d;
+  c += b;
+})");
+
+  ExpectWarning(1, 4, "implicit integer conversion from 'i32' to 'i8' may truncate value", 2);
+  ExpectWarning(2, 4, "implicit floating-point conversion from 'f64' to 'f32' may lose precision or range", 2);
+  ExpectWarning(3, 4, "implicit conversion from 'f32' to 'i32' may lose fractional value or exceed integer range", 2);
+}
+
+TEST_F(SemaTest, RejectsInvalidBuiltinCompoundAssignmentOperands) {
+  Analyze(R"(func F(b bool, f f32, p *i32, a &mut [2] i32, n usize, i i32) {
+  b += b;
+  f %= f;
+  p += i;
+  a += a;
+  n += 1;
+  i &= f;
+  i <<= b;
+  f >>= i;
+  i |= n;
+})");
+
+  ExpectError(1, 2, "binary operator '+=' cannot be applied to types 'bool' and 'bool'", 6);
+  ExpectError(2, 2, "binary operator '%=' cannot be applied to types 'f32' and 'f32'", 6);
+  ExpectError(3, 2, "binary operator '+=' cannot be applied to types '*i32' and 'i32'", 6);
+  ExpectError(4, 2, "binary operator '+=' cannot be applied to types '[2] i32' and '[2] i32'", 6);
+  ExpectError(5, 2, "binary operator '+=' cannot be applied to types 'usize' and 'i32'", 6);
+  ExpectError(6, 2, "binary operator '&=' cannot be applied to types 'i32' and 'f32'", 6);
+  ExpectError(7, 2, "binary operator '<<=' cannot be applied to types 'i32' and 'bool'", 7);
+  ExpectError(8, 2, "binary operator '>>=' cannot be applied to types 'f32' and 'i32'", 7);
+  ExpectError(9, 2, "binary operator '|=' cannot be applied to types 'i32' and 'usize'", 6);
+}
+
+TEST_F(SemaTest, RequiresModifiableLValueCompoundAssignmentTargets) {
+  Analyze(R"(func F(a &copy i32, b i32) {
+  a += 1;
+  1 += 2;
+  (b + 1) *= 2;
+  (move b) <<= 1;
+})");
+
+  ExpectError(1, 2, "assignment target must be a modifiable lvalue, not 'const i32'", 1);
+  ExpectError(2, 2, "assignment target must be a modifiable lvalue, not 'i32'", 1);
+  ExpectError(3, 2, "assignment target must be a modifiable lvalue, not 'i32'", 7);
+  ExpectError(4, 2, "assignment target must be a modifiable lvalue, not 'i32'", 8);
+}
+
+TEST_F(SemaTest, RejectsCompoundAssignmentInArrayLengths) {
+  Analyze(R"(func F(a i32) {
+  var data [a += 1] i32;
+})");
+
+  ExpectError(1, 12, "array length is not a constant integer expression", 1);
+}
+
+TEST_F(SemaTest, KeepsCompoundAssignmentResultsFromInitializingTheirTargets) {
+  Analyze(R"(func F() {
+  var x i32;
+  (x += 1) += 2;
+  x;
+})");
+
+  ExpectError(2, 3, "use of uninitialized variable 'x'", 1);
+  ExpectError(3, 2, "use of uninitialized variable 'x'", 1);
+}
+
+TEST_F(SemaTest, OrdersCompoundAssignmentInitializationChecksRightFirst) {
+  Analyze(R"(func F() {
+  var first i32;
+  var second i32;
+  first += second *= 1;
+  0 + (first += second <<= 1);
+})");
+
+  ExpectError(3, 11, "use of uninitialized variable 'second'", 6);
+  ExpectError(3, 2, "use of uninitialized variable 'first'", 5);
+  ExpectError(4, 16, "use of uninitialized variable 'second'", 6);
+  ExpectError(4, 7, "use of uninitialized variable 'first'", 5);
+}
+
+TEST_F(SemaTest, ChecksConditionalCompoundAssignmentTargets) {
+  Analyze(R"(func F(c bool) {
+  var first i32;
+  var second i32;
+  (c ? first : second) += 1;
+  ((c ? first : second) <<= 1) + 0;
+})");
+
+  ExpectError(3, 7, "use of uninitialized variable 'first'", 5);
+  ExpectError(3, 15, "use of uninitialized variable 'second'", 6);
+  ExpectError(4, 8, "use of uninitialized variable 'first'", 5);
+  ExpectError(4, 16, "use of uninitialized variable 'second'", 6);
+}
+
+TEST_F(SemaTest, KeepsCompoundAssignmentOverloadsIndependent) {
+  Analyze(R"(trivial struct S {}
+func operator+(a S, b S) S { a }
+func operator=(a &mut S, b i32) &mut S { a }
+func F(a S, b S) {
+  a += b;
+  a += 1;
+})");
+
+  ExpectError(4, 2, "binary operator '+=' cannot be applied to types 'S' and 'S'", 6);
+  ExpectError(5, 2, "binary operator '+=' cannot be applied to types 'S' and 'i32'", 6);
+}
+
+TEST_F(SemaTest, DoesNotMergeOuterCompoundAssignmentOverloads) {
+  Analyze(R"(trivial struct S {}
+func operator+=(left &mut S, right &copy S) {}
+namespace Inner {
+func operator+=(left &mut S, right i32) {}
+func F(left S, right S) { left += right; }
+})");
+
+  ExpectError(4, 26, "no matching overloaded operator '+='", 13);
+  ExpectNote(3, 0, "candidate function is not viable: no implicit conversion from 'S' to 'i32' for operand 2", 0);
+}
+
+TEST_F(SemaTest, ReportsAmbiguousCompoundAssignmentOverloads) {
+  Analyze(R"(trivial struct S {}
+func operator+=(left &mut S, right &copy S) {}
+func operator+=(left &copy S, right &mut S) {}
+func F(left S, right S) { left += right; })");
+
+  ExpectError(3, 26, "use of overloaded operator '+=' is ambiguous", 13);
+  ExpectNote(1, 0, "candidate function", 0);
+  ExpectNote(2, 0, "candidate function", 0);
+}
+
+TEST_F(SemaTest, PreservesCompoundAssignmentTargetAndComputationTypes) {
+  Analyze("func F(a &mut i8, b i32) { a += b; }");
+  ExpectWarning(0, 29, "implicit integer conversion from 'i32' to 'i8' may truncate value", 2);
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, col:37> F 'func (&mut i8, i32) void'
+  |-ParmVarDecl {{address:a}} <col:8, col:17> a '&mut i8'
+  | `-ReferenceType {{address}} <col:10, col:17> '&mut'
+  |   `-BuiltinType {{address}} <col:15, col:17> 'i8'
+  |-ParmVarDecl {{address:b}} <col:19, col:24> b 'i32'
+  | `-BuiltinType {{address}} <col:21, col:24> 'i32'
+  `-CompoundStmt {{address}} <col:26, col:37>
+    `-ExprStmt {{address}} <col:28, col:35>
+      `-BinaryOperator {{address}} <col:28, col:34> 'i8' lvalue '+='
+        |-DeclRefExpr {{address}} <col:28, col:29> 'i8' lvalue ParmVar {{address:a}} 'a' '&mut i8'
+        `-ImplicitCastExpr {{address}} <col:33, col:34> 'i32' pure-rvalue <LValueToRValue>
+          `-DeclRefExpr {{address}} <col:33, col:34> 'i32' lvalue ParmVar {{address:b}} 'b' 'i32'
+)");
+}
+
+TEST_F(SemaTest, PreservesCompoundShiftOperandTypes) {
+  Analyze("func F(a &mut u8, b i64) { a <<= b; }");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, col:38> F 'func (&mut u8, i64) void'
+  |-ParmVarDecl {{address:a}} <col:8, col:17> a '&mut u8'
+  | `-ReferenceType {{address}} <col:10, col:17> '&mut'
+  |   `-BuiltinType {{address}} <col:15, col:17> 'u8'
+  |-ParmVarDecl {{address:b}} <col:19, col:24> b 'i64'
+  | `-BuiltinType {{address}} <col:21, col:24> 'i64'
+  `-CompoundStmt {{address}} <col:26, col:38>
+    `-ExprStmt {{address}} <col:28, col:36>
+      `-BinaryOperator {{address}} <col:28, col:35> 'u8' lvalue '<<='
+        |-DeclRefExpr {{address}} <col:28, col:29> 'u8' lvalue ParmVar {{address:a}} 'a' '&mut u8'
+        `-ImplicitCastExpr {{address}} <col:34, col:35> 'i64' pure-rvalue <LValueToRValue>
+          `-DeclRefExpr {{address}} <col:34, col:35> 'i64' lvalue ParmVar {{address:b}} 'b' 'i64'
+)");
+}
+
+TEST_F(SemaTest, DistinguishesCompoundAssignmentSyntaxFromExplicitCalls) {
+  Analyze(R"(trivial struct S {}
+func operator+=(a S, b i32) bool { true }
+func operator-=(a &copy S, b i32) {}
+func operator*=(a &mut S, b &mut S) &mut S { b }
+func F(a &copy S, b &mut S) {
+  var result bool := operator+=(S(), 1);
+  operator-=(a, 1);
+  var operation *func (S, i32) bool := &operator+=;
+  operation(S(), 1);
+  a += 1;
+  S() -= 1;
+  (b *= b) += 1;
+})");
+
+  ExpectError(9, 2, "assignment target must be a modifiable lvalue, not 'const S'", 1);
+  ExpectError(10, 2, "assignment target must be a modifiable lvalue, not 'S'", 3);
+}
+
+TEST_F(SemaTest, ChecksCompoundAssignmentOperatorOperandsInSyntaxOrder) {
+  Analyze(R"(trivial struct S {}
+func operator+=(a &mut S, b &copy S) &mut S { a }
+func F() {
+  var first S;
+  var second S;
+  first += second;
+  operator+=(first, second);
+})");
+
+  ExpectError(5, 11, "use of uninitialized variable 'second'", 6);
+  ExpectError(5, 2, "use of uninitialized variable 'first'", 5);
+  ExpectError(6, 13, "use of uninitialized variable 'first'", 5);
+  ExpectError(6, 20, "use of uninitialized variable 'second'", 6);
+}
+
+TEST_F(SemaTest, KeepsCompoundAssignmentOperatorLookupInTheUseNamespace) {
+  Analyze(R"(namespace Api {
+trivial struct S {}
+func operator+=(a &mut S, b i32) &mut S { a }
+}
+func F(a Api::S) {
+  Api::operator+=(a, 1);
+  var operation *func (&mut Api::S, i32) &mut Api::S := &::Api::operator+=;
+  operation(a, 1);
+  a += 1;
+})");
+
+  ExpectError(8, 2, "binary operator '+=' cannot be applied to types 'Api::S' and 'i32'", 6);
+}
+
+TEST_F(SemaTest, RejectsInvalidCompoundAssignmentOperatorInterfaces) {
+  Analyze(R"(trivial struct S {}
+func operator+=() {}
+func operator-=(a S) {}
+func operator*=(a S, b i32, c i32) {}
+func operator/=(a i32, b i32) {}
+func operator%=(a *S, b i32) {}
+import func operator&=(a S);
+export func operator|=(a i32, b i32) {}
+func operator^=(a S) {}
+func operator<<=(a S) {}
+func operator>>=(a S) {}
+func F(a S) {
+  a += 1;
+  operator-= (a);
+  var operation *func (S) void := &operator-=;
+})");
+
+  ExpectError(1, 5, "operator '+=' requires exactly two parameters", 10);
+  ExpectError(2, 5, "operator '-=' requires exactly two parameters", 10);
+  ExpectError(3, 5, "operator '*=' requires exactly two parameters", 10);
+  ExpectError(4, 5, "operator '/=' requires a struct or reference-to-struct parameter", 10);
+  ExpectError(5, 5, "operator '%=' requires a struct or reference-to-struct parameter", 10);
+  ExpectError(6, 12, "operator '&=' requires exactly two parameters", 10);
+  ExpectError(7, 12, "operator '|=' requires a struct or reference-to-struct parameter", 10);
+  ExpectError(8, 5, "operator '^=' requires exactly two parameters", 10);
+  ExpectError(9, 5, "operator '<<=' requires exactly two parameters", 11);
+  ExpectError(10, 5, "operator '>>=' requires exactly two parameters", 11);
+  ExpectError(12, 2, "binary operator '+=' cannot be applied to types 'S' and 'i32'", 6);
+}
+
+TEST_F(SemaTest, AcceptsBuiltinShiftIntegerTypes) {
+  Analyze(R"(func I8(a i8, b u64) i8 { (a << b) >> b }
+func U8(a u8, b i64) u8 { (a << b) >> b }
+func I16(a i16, b u8) i16 { (a << b) >> b }
+func U16(a u16, b i8) u16 { (a << b) >> b }
+func I32(a i32, b u32) i32 { (a << b) >> b }
+func U32(a u32, b i32) u32 { (a << b) >> b }
+func I64(a i64, b u16) i64 { (a << b) >> b }
+func U64(a u64, b i16) u64 { (a << b) >> b }
+func ISize(a isize, b i32) isize { (a << b) >> b }
+func USize(a usize, b u8) usize { (a << b) >> b }
+func FixedBySize(a u8, b usize) u8 { a << b }
+func FixedBySignedSize(a i64, b isize) i64 { a >> b }
+func Sizes(a isize, b usize) isize { a << b }
+func Const(a &copy u8, b &copy i64) u8 { a << b }
+func Character() u8 { 'a' >> 1 }
+func Literal32() i32 { 1 << 4294967296 }
+func Literal64() i64 { 0x80000000 >> 1 }
+func LiteralUnsigned() u64 { 18446744073709551615 << -1 }
+func Ordinary() {
+  var a := 1 << 32;
+  var b := 1 << -1;
+  var c const i32 := 8 >> -1;
+})");
+}
+
+TEST_F(SemaTest, PreservesShiftOperandTypesAndValueCategory) {
+  Analyze("func F(a &copy u8, b i64) { a << b; }");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, col:38> F 'func (&copy u8, i64) void'
+  |-ParmVarDecl {{address:a}} <col:8, col:18> a '&copy u8'
+  | `-ReferenceType {{address}} <col:10, col:18> '&copy'
+  |   `-BuiltinType {{address}} <col:16, col:18> 'u8'
+  |-ParmVarDecl {{address:b}} <col:20, col:25> b 'i64'
+  | `-BuiltinType {{address}} <col:22, col:25> 'i64'
+  `-CompoundStmt {{address}} <col:27, col:38>
+    `-ExprStmt {{address}} <col:29, col:36>
+      `-BinaryOperator {{address}} <col:29, col:35> 'u8' pure-rvalue '<<'
+        |-ImplicitCastExpr {{address}} <col:29, col:30> 'u8' pure-rvalue <LValueToRValue>
+        | `-DeclRefExpr {{address}} <col:29, col:30> 'const u8' lvalue ParmVar {{address:a}} 'a' '&copy u8'
+        `-ImplicitCastExpr {{address}} <col:34, col:35> 'i64' pure-rvalue <LValueToRValue>
+          `-DeclRefExpr {{address}} <col:34, col:35> 'i64' lvalue ParmVar {{address:b}} 'b' 'i64'
+)");
+}
+
+TEST_F(SemaTest, EvaluatesShiftArrayLengthsAtTheLeftIntegerWidth) {
+  Analyze(R"(func Lengths(a &copy [1 << 4] u8, b &copy [8 >> 0] u8,
+             c &copy [1 << (4294967296 >> 32)] u8,
+             d &copy [(1 << 30) << 2] u8, e &copy [(-3 >> 1) + 2] u8,
+             f &copy [18446744073709551615 >> 63] u8,
+             g &copy [(-1 << 1) + 2] u8, h &copy [1 << 0] u8,
+             i &copy [9223372036854775808 << 1] u8) {
+  var first [16] u8 := a;
+  var second [8] u8 := b;
+  var third [2] u8 := c;
+  var fourth [0] u8 := d;
+  var fifth [0] u8 := e;
+  var sixth [1] u8 := f;
+  var seventh [0] u8 := g;
+  var eighth [1] u8 := h;
+  var ninth [0] u8 := i;
+})");
+}
+
+TEST_F(SemaTest, RejectsInvalidOriginalShiftCountsInArrayLengths) {
+  Analyze(R"(func Lengths() {
+  var a [1 << -1] u8;
+  var b [1 >> 32] u8;
+  var c [1 << 33] u8;
+  var d [8 >> -32] u8;
+  var e [1 << 4294967296] u8;
+  var f [1 >> 18446744073709551615] u8;
+  var g [1 << -9223372036854775808] u8;
+  var h [4294967296 >> 64] u8;
+  var i [0 << 32] u8;
+  var j [(1 << 32) & 0] u8;
+})");
+
+  ExpectError(1, 14, "array length shift count must be non-negative and less than the left operand's bit width", 2);
+  ExpectError(2, 14, "array length shift count must be non-negative and less than the left operand's bit width", 2);
+  ExpectError(3, 14, "array length shift count must be non-negative and less than the left operand's bit width", 2);
+  ExpectError(4, 14, "array length shift count must be non-negative and less than the left operand's bit width", 3);
+  ExpectError(5, 14, "array length shift count must be non-negative and less than the left operand's bit width", 10);
+  ExpectError(6, 14, "array length shift count must be non-negative and less than the left operand's bit width", 20);
+  ExpectError(7, 14, "array length shift count must be non-negative and less than the left operand's bit width", 20);
+  ExpectError(8, 23, "array length shift count must be non-negative and less than the left operand's bit width", 2);
+  ExpectError(9, 14, "array length shift count must be non-negative and less than the left operand's bit width", 2);
+  ExpectError(10, 15, "array length shift count must be non-negative and less than the left operand's bit width", 2);
+}
+
+TEST_F(SemaTest, PreservesArithmeticAndConversionChecksInShiftArrayLengths) {
+  Analyze(R"(func Lengths() {
+  var a [1 << 31] u8;
+  var b [1 << (2147483647 + 1)] u8;
+  var c [(2147483647 + 1) >> 1] u8;
+  var d [(-1 & 18446744073709551615) >> 1] u8;
+  var e [(-(-2147483648 + 0)) >> 1] u8;
+})");
+
+  ExpectError(1, 9, "array length cannot be negative", 7);
+  ExpectError(2, 15, "array length constant expression overflows its integer type", 14);
+  ExpectError(3, 10, "array length constant expression overflows its integer type", 14);
+  ExpectError(4, 10, "array length constant expression overflows its integer type", 2);
+  ExpectError(5, 10, "array length constant expression overflows its integer type", 18);
+}
+
+TEST_F(SemaTest, RejectsNonIntegerShiftOperands) {
+  Analyze(R"(func Invalid(b bool, f f32, p *i32) {
+  b << 1;
+  1 >> b;
+  f << 1;
+  1 >> f;
+  p << 1;
+  1 >> p;
+})");
+
+  ExpectError(1, 2, "binary operator '<<' cannot be applied to types 'bool' and 'i32'", 6);
+  ExpectError(2, 2, "binary operator '>>' cannot be applied to types 'i32' and 'bool'", 6);
+  ExpectError(3, 2, "binary operator '<<' cannot be applied to types 'f32' and 'i32'", 6);
+  ExpectError(4, 2, "binary operator '>>' cannot be applied to types 'i32' and 'f32'", 6);
+  ExpectError(5, 2, "binary operator '<<' cannot be applied to types '*i32' and 'i32'", 6);
+  ExpectError(6, 2, "binary operator '>>' cannot be applied to types 'i32' and '*i32'", 6);
+}
+
+TEST_F(SemaTest, AcceptsShiftOperatorCallsAndAddresses) {
+  Analyze(R"(namespace Api {
+trivial struct Bits { value i32; }
+func operator<<(left Bits, right i32) bool { left.value == right }
+func operator>>(left &mut Bits, right i64) &mut Bits { left }
+func Use(left &mut Bits, right i8) {
+  var equal bool := left << right;
+  var reference &mut Bits := left >> right;
+  operator<<(left, right); operator>>(left, right);
+  var shl *func (Bits, i32) bool := &operator<<;
+  var shr *func (&mut Bits, i64) &mut Bits := &operator>>;
+  shl(left, right); shr(left, right);
+}
+}
+func Qualified(left &mut Api::Bits) {
+  Api::operator<<(left, -1); ::Api::operator>>(left, -1);
+  var shl *func (Api::Bits, i32) bool := &Api::operator<<;
+  var shr *func (&mut Api::Bits, i64) &mut Api::Bits := &::Api::operator>>;
+  shl(left, -1); shr(left, -1);
+})");
+}
+
+TEST_F(SemaTest, RejectsInvalidShiftOperatorInterfaces) {
+  Analyze(R"(trivial struct Bits {}
+func operator<<() {}
+func operator<<(a Bits) {}
+func operator<<(a Bits, b i32, c i32) {}
+func operator<<(a i32, b i32) {}
+func operator>>(a Bits) {}
+func operator>>(a Bits, b i32, c i32) {}
+func operator>>(a *Bits, b i32) {})");
+
+  ExpectError(1, 5, "operator '<<' requires exactly two parameters", 10);
+  ExpectError(2, 5, "operator '<<' requires exactly two parameters", 10);
+  ExpectError(3, 5, "operator '<<' requires exactly two parameters", 10);
+  ExpectError(4, 5, "operator '<<' requires a struct or reference-to-struct parameter", 10);
+  ExpectError(5, 5, "operator '>>' requires exactly two parameters", 10);
+  ExpectError(6, 5, "operator '>>' requires exactly two parameters", 10);
+  ExpectError(7, 5, "operator '>>' requires a struct or reference-to-struct parameter", 10);
+}
+
+TEST_F(SemaTest, RejectsInvalidImportedAndExportedShiftOperators) {
+  Analyze(R"(import trivial struct Bits {}
+import func operator<<(value &copy Bits);
+export func operator>>(value bool, count i32) {}
+export func operator<<(left i32, right i32) {})");
+
+  ExpectError(1, 12, "operator '<<' requires exactly two parameters", 10);
+  ExpectError(2, 12, "operator '>>' requires a struct or reference-to-struct parameter", 10);
+  ExpectError(3, 12, "operator '<<' requires a struct or reference-to-struct parameter", 10);
+}
+
+TEST_F(SemaTest, ExcludesInvalidShiftOperatorsFromCallsAndAddresses) {
+  Analyze(R"(trivial struct Bits {}
+func operator<<(value Bits) i32 { 0 }
+func Use(value Bits) {
+  value << 1;
+  operator<<(value);
+  var operation *func (Bits) i32 := &operator<<;
+})");
+
+  ExpectError(1, 5, "operator '<<' requires exactly two parameters", 10);
+  ExpectError(3, 2, "binary operator '<<' cannot be applied to types 'Bits' and 'i32'", 10);
+}
+
+TEST_F(SemaTest, KeepsShiftOperatorLookupInTheUseNamespace) {
+  Analyze(R"(namespace Api {
+trivial struct Bits {}
+func operator<<(left Bits, right i32) i32 { 0 }
+func operator>>(left Bits, right i32) i32 { 0 }
+}
+func Use(value Api::Bits) {
+  value << 1;
+  value >> 1;
+})");
+
+  ExpectError(6, 2, "binary operator '<<' cannot be applied to types 'Api::Bits' and 'i32'", 10);
+  ExpectError(7, 2, "binary operator '>>' cannot be applied to types 'Api::Bits' and 'i32'", 10);
+}
+
 TEST_F(SemaTest, RejectsInvalidSupportedOperatorInterfacesBeforeLookup) {
   Analyze(R"(trivial struct S {}
 func operator+() {}
@@ -4721,11 +6087,55 @@ TEST_F(SemaTest, RejectsInitializationOperatorOverload) {
   ExpectError(0, 5, "operator ':=' cannot be overloaded", 10);
 }
 
+TEST_F(SemaTest, RejectsNonOverloadableOperatorDeclarations) {
+  Analyze(R"(func operator.() {}
+func operator->() {}
+func operator&&() {}
+func operator||() {}
+func operator?() {}
+func operator:() {}
+func operator::() {}
+func operator:=() {}
+func operator,() {}
+func operator[]() {})");
+
+  ExpectError(0, 5, "operator '.' cannot be overloaded", 9);
+  ExpectError(1, 5, "operator '->' cannot be overloaded", 10);
+  ExpectError(2, 5, "operator '&&' cannot be overloaded", 10);
+  ExpectError(3, 5, "operator '||' cannot be overloaded", 10);
+  ExpectError(4, 5, "operator '?' cannot be overloaded", 9);
+  ExpectError(5, 5, "operator ':' cannot be overloaded", 9);
+  ExpectError(6, 5, "operator '::' cannot be overloaded", 10);
+  ExpectError(7, 5, "operator ':=' cannot be overloaded", 10);
+  ExpectError(8, 5, "operator ',' cannot be overloaded", 9);
+  ExpectError(9, 5, "operator '[]' cannot be overloaded", 10);
+}
+
+TEST_F(SemaTest, RejectsNonOverloadableImportedAndExportedOperators) {
+  Analyze(R"(import func operator::(value i32) i32;
+export func operator::(value i32) i32 { value }
+namespace Api {
+import func operator[](value i32) i32;
+export func operator[](value i32) i32 { value }
+})");
+
+  ExpectError(0, 12, "operator '::' cannot be overloaded", 10);
+  ExpectError(1, 12, "operator '::' cannot be overloaded", 10);
+  ExpectError(3, 12, "operator '[]' cannot be overloaded", 10);
+  ExpectError(4, 12, "operator '[]' cannot be overloaded", 10);
+}
+
 TEST_F(SemaTest, ChecksNonOverloadableOperatorAfterSignatureError) {
-  Analyze("func operator:=(value Missing) {}");
+  Analyze(R"(func operator:=(value Missing) {}
+func operator::(value Missing) {}
+func operator[](value Missing) {})");
 
   ExpectError(0, 22, "unknown type 'Missing'", 7);
+  ExpectError(1, 22, "unknown type 'Missing'", 7);
+  ExpectError(2, 22, "unknown type 'Missing'", 7);
   ExpectError(0, 5, "operator ':=' cannot be overloaded", 10);
+  ExpectError(1, 5, "operator '::' cannot be overloaded", 10);
+  ExpectError(2, 5, "operator '[]' cannot be overloaded", 10);
 }
 
 TEST_F(SemaTest, ReportsUnavailableOperatorsWithoutFunctionCandidates) {
@@ -4835,10 +6245,13 @@ func Diagnose(left S, right S) {
   ExpectNote(3, 0, "candidate function", 0);
 }
 
-TEST_F(SemaTest, SuppressesDependentExplicitOperatorCallDiagnosticsForInvalidDeclarations) {
+TEST_F(SemaTest, SuppressesDependentExplicitOperatorUseDiagnosticsForInvalidDeclarations) {
   Analyze(R"(trivial struct S {}
 func operator+() {}
-func Use() { operator +(); })");
+func Use() {
+  operator +();
+  var callback *func() void := &operator+;
+})");
 
   ExpectError(1, 5, "operator '+' requires one or two parameters", 9);
 }
@@ -4900,13 +6313,12 @@ func Use(right &copy S) {
   ExpectError(4, 2, "use of uninitialized variable 'left'", 4);
 }
 
-TEST_F(SemaTest, KeepsOrdinaryAssignmentOutsideBaseValueSlicing) {
+TEST_F(SemaTest, UsesReferenceBaseBindingForIntrinsicAssignment) {
   Analyze(R"(trivial struct Base {}
 trivial struct Derived : Base {}
 func Use(base &mut Base, derived &mut Derived) {
   base = derived;
 })");
-  ExpectError(3, 9, "cannot assign to target: no implicit conversion from 'Derived' to 'Base'", 7);
 }
 
 // Return conversions and result boundaries.
@@ -7410,7 +8822,11 @@ func Use(x &mut T, y &copy T) T {
   move y
 })");
 
-  ExpectError(5, 2, "no copy assignment declared for type 'T'", 10);
+  ExpectError(5, 2, "no matching overloaded operator '='", 10);
+  ExpectNote(3, 0,
+             "candidate function is not viable: binding a reference of type '&move T' to a value of type 'const T' "
+             "would discard const for operand 2",
+             0);
   ExpectError(6, 2, "cannot initialize return object: no copy constructor is available for 'T'", 6);
 }
 
@@ -7428,7 +8844,11 @@ func Leaf(y &mut [1] [0] const T) {
 })");
 
   ExpectError(5, 25, "cannot initialize variable 'value': no copy constructor is available for '[1] [1] T'", 6);
-  ExpectError(6, 2, "no copy assignment declared for array element type 'T'", 10);
+  ExpectError(6, 2, "no matching overloaded operator '='", 10);
+  ExpectNote(3, 0,
+             "candidate function is not viable: binding a reference of type '&move T' to a value of type 'const T' "
+             "would discard const for operand 2",
+             0);
   ExpectError(9, 31, "cannot initialize variable 'value': no copy constructor is available for '[1] [0] const T'", 6);
 }
 
@@ -7732,13 +9152,18 @@ func Assign(dst &mut [0] S) {
   |     `-NamedType {{address}} <col:26, col:27> 'S'
   `-CompoundStmt {{address}} <col:29, line:7:2>
     `-ExprStmt {{address}} <line:6:3, col:18>
-      `-ArrayAssignmentExpr {{address}} <col:3, col:17> '[0] S' lvalue Function {{address:assignment}} 'operator=' 'func (&mut S, &copy S) void'
+      `-ArrayAssignmentExpr {{address}} <col:3, col:17> '[0] S' lvalue
         |-DeclRefExpr {{address}} <col:3, col:6> '[0] S' lvalue ParmVar {{address:dst}} 'dst' '&mut [0] S'
-        `-MaterializeTemporaryExpr {{address}} <col:9, col:17> '[0] S' move-lvalue
-          `-ArrayValueExpr {{address}} <col:9, col:17> '[0] S' pure-rvalue
-            `-ArrayType {{address}} <col:9, col:14>
-              |-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' 0
-              `-NamedType {{address}} <col:13, col:14> 'S'
+        |-MaterializeTemporaryExpr {{address}} <col:9, col:17> '[0] S' move-lvalue
+        | `-ArrayValueExpr {{address}} <col:9, col:17> '[0] S' pure-rvalue
+        |   `-ArrayType {{address}} <col:9, col:14>
+        |     |-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' 0
+        |     `-NamedType {{address}} <col:13, col:14> 'S'
+        `-OperatorCallExpr {{address}} <col:3, col:17> 'void'
+          |-DeclRefExpr {{address}} <col:7, col:8> 'func (&mut S, &copy S) void' Function {{address:assignment}} 'operator=' 'func (&mut S, &copy S) void'
+          |-OpaqueValueExpr {{address}} <col:3, col:6> 'S' lvalue
+          `-ImplicitCastExpr {{address}} <col:9, col:17> 'const S' move-lvalue <NoOp>
+            `-OpaqueValueExpr {{address}} <col:9, col:17> 'S' move-lvalue
 )");
 }
 
@@ -7813,7 +9238,7 @@ func Values(source &copy Value, number i32) {
 TEST_F(SemaTest, DiagnosesInvalidArrayLengthExpressions) {
   Analyze(R"(func Lengths(runtime usize) {
   var named [runtime] i32;
-  var division [4 / 2] i32;
+  var comparison [4 < 2] i32;
   var negative [-1] i32;
   var floating [1.0] i32;
   var overflow [2147483647 * 3] i32;
@@ -7821,11 +9246,127 @@ TEST_F(SemaTest, DiagnosesInvalidArrayLengthExpressions) {
 })");
 
   ExpectError(1, 13, "array length is not a constant integer expression", 7);
-  ExpectError(2, 16, "array length constant expression may use only '+', '-', and '*' arithmetic", 5);
+  ExpectError(2, 18,
+              "array length constant expression may use only '+', '-', '*', '/', '%', '~', '&', '|', '^', '<<', and "
+              "'>>' operators",
+              5);
   ExpectError(3, 16, "array length cannot be negative", 2);
   ExpectError(4, 16, "array length expression must have integer type, not 'f64'", 3);
   ExpectError(5, 16, "array length constant expression overflows its integer type", 14);
   ExpectError(6, 17, "array length is outside the range of 'usize'", 20);
+}
+
+TEST_F(SemaTest, EvaluatesDivisionAndRemainderArrayLengths) {
+  Analyze(R"(func Lengths(a &copy [7 / 3] u8, b &copy [(-7 / 3) + 2] u8,
+             c &copy [(7 / -3) + 2] u8, d &copy [-7 / -3] u8,
+             e &copy [7 % 3] u8, f &copy [(-7 % 3) + 1] u8,
+             g &copy [7 % -3] u8, h &copy [(-7 % -3) + 1] u8,
+             i &copy [0 / -1] u8, j &copy [0 % 3] u8,
+             k &copy [(19 % 8) * 2 + 8 / 4] u8,
+             l &copy [((15 / 3) & 3) << (5 % 2)] u8) {
+  var first [2] u8 := a;
+  var second [0] u8 := b;
+  var third [0] u8 := c;
+  var fourth [2] u8 := d;
+  var fifth [1] u8 := e;
+  var sixth [0] u8 := f;
+  var seventh [1] u8 := g;
+  var eighth [0] u8 := h;
+  var ninth [0] u8 := i;
+  var tenth [0] u8 := j;
+  var eleventh [8] u8 := k;
+  var twelfth [2] u8 := l;
+})");
+}
+
+TEST_F(SemaTest, EvaluatesUnsignedDivisionAndRemainderArrayLengths) {
+  Analyze(R"(func Lengths(a &copy [18446744073709551615 / 9223372036854775808] u8,
+             b &copy [18446744073709551615 % 256] u8) {
+  var first [1] u8 := a;
+  var second [255] u8 := b;
+})");
+}
+
+TEST_F(SemaTest, AcceptsRepresentableSignedDivisionAndRemainderArrayLengths) {
+  Analyze(R"(func Lengths(a &copy [-2147483648 % -1] u8, b &copy [-9223372036854775808 % -1] u8,
+             c &copy [-2147483648 / -2147483648] u8,
+             d &copy [-9223372036854775808 / -9223372036854775808] u8) {
+  var first [0] u8 := a;
+  var second [0] u8 := b;
+  var third [1] u8 := c;
+  var fourth [1] u8 := d;
+})");
+}
+
+TEST_F(SemaTest, ResolvesDivisionArrayLengthsInDeclarationsAndValues) {
+  Analyze(R"(trivial struct Buffer { values [10 / 3] u8; }
+var global [8 % 3] i32 := [7 / 3] i32 { 1, 2 };
+func Make() [8 / 4] i32 { [9 % 7] i32 { 1, 2 } }
+func Use(source &copy Buffer) {
+  var members [3] u8 := source.values;
+  var copied [2] i32 := global;
+  var returned [2] i32 := Make();
+  var nested [1] [3] i32 := [5 % 2] [10 / 3] i32 { { 1, 2, 3 } };
+  var empty [0] u8 := [-2147483648 % -1] u8 {};
+})");
+}
+
+TEST_F(SemaTest, RejectsZeroDivisorsInArrayLengths) {
+  Analyze(R"(func Lengths() {
+  var a [1 / 0] u8;
+  var b [1 % 0] u8;
+  var c [0 / (3 - 3)] u8;
+})");
+  ExpectError(1, 13, "array length divisor must be non-zero", 1);
+  ExpectError(2, 13, "array length divisor must be non-zero", 1);
+  ExpectError(3, 13, "array length divisor must be non-zero", 7);
+}
+
+TEST_F(SemaTest, RejectsUnrepresentableSignedDivisionArrayLengths) {
+  Analyze(R"(func Lengths() {
+  var a [-2147483648 / -1] u8;
+  var b [-9223372036854775808 / -1] u8;
+})");
+  ExpectError(1, 9, "array length constant expression overflows its integer type", 16);
+  ExpectError(2, 9, "array length constant expression overflows its integer type", 25);
+}
+
+TEST_F(SemaTest, PreservesInnerErrorsInDivisionArrayLengths) {
+  Analyze(R"(func Lengths() {
+  var c [(1 / 0) % -1] u8;
+  var j [0 % (1 / 0)] u8;
+  var k [1 / (1 << 32)] u8;
+})");
+  ExpectError(1, 14, "array length divisor must be non-zero", 1);
+  ExpectError(2, 18, "array length divisor must be non-zero", 1);
+  ExpectError(3, 19, "array length shift count must be non-negative and less than the left operand's bit width", 2);
+}
+
+TEST_F(SemaTest, RejectsNegativeDivisionAndRemainderArrayLengths) {
+  Analyze(R"(func Lengths() {
+  var a [-7 / 3] u8;
+  var b [-7 % 3] u8;
+})");
+  ExpectError(1, 9, "array length cannot be negative", 6);
+  ExpectError(2, 9, "array length cannot be negative", 6);
+}
+
+TEST_F(SemaTest, RejectsNonIntegerOrNonConstantDivisionArrayLengths) {
+  Analyze(R"(func Value() i32 { 4 }
+func Lengths(runtime i32) {
+  var a [6.0 / 2.0] u8;
+  var c [6.0 % 2.0] u8;
+  var d [true / false] u8;
+  var e [runtime / 2] u8;
+  var f [0 % runtime] u8;
+  var g [0 / Value()] u8;
+})");
+  ExpectError(2, 9, "array length expression must have integer type, not 'f64'", 3);
+  ExpectError(3, 9, "binary operator '%' cannot be applied to types 'f64' and 'f64'", 9);
+  ExpectError(4, 9, "binary operator '/' cannot be applied to types 'bool' and 'bool'", 12);
+  ExpectError(5, 9, "array length is not a constant integer expression", 7);
+  ExpectError(6, 13, "array length is not a constant integer expression", 7);
+  ExpectError(7, 13, "array length is not a constant integer expression", 7);
 }
 
 TEST_F(SemaTest, ChecksEachTypedArrayLengthOperationBeforeContinuing) {
@@ -8002,10 +9543,15 @@ func Arrays(source &mut [1] Value) {
     |     `-UnaryOperator {{address}} <col:27, col:38> '[1] Value' move-lvalue 'move'
     |       `-DeclRefExpr {{address}} <col:32, col:38> '[1] Value' lvalue ParmVar {{address:array_source}} 'source' '&mut [1] Value'
     `-ExprStmt {{address}} <line:7:3, col:24>
-      `-ArrayAssignmentExpr {{address}} <col:3, col:23> '[1] Value' lvalue Function {{address:copy_assignment}} 'operator=' 'func (&mut Value, &copy Value) void'
+      `-ArrayAssignmentExpr {{address}} <col:3, col:23> '[1] Value' lvalue
         |-DeclRefExpr {{address}} <col:3, col:9> '[1] Value' lvalue Var {{address:copied}} 'copied' '[1] Value'
-        `-UnaryOperator {{address}} <col:12, col:23> '[1] Value' move-lvalue 'move'
-          `-DeclRefExpr {{address}} <col:17, col:23> '[1] Value' lvalue ParmVar {{address:array_source}} 'source' '&mut [1] Value'
+        |-UnaryOperator {{address}} <col:12, col:23> '[1] Value' move-lvalue 'move'
+        | `-DeclRefExpr {{address}} <col:17, col:23> '[1] Value' lvalue ParmVar {{address:array_source}} 'source' '&mut [1] Value'
+        `-OperatorCallExpr {{address}} <col:3, col:23> 'void'
+          |-DeclRefExpr {{address}} <col:10, col:11> 'func (&mut Value, &copy Value) void' Function {{address:copy_assignment}} 'operator=' 'func (&mut Value, &copy Value) void'
+          |-OpaqueValueExpr {{address}} <col:3, col:9> 'Value' lvalue
+          `-ImplicitCastExpr {{address}} <col:12, col:23> 'const Value' move-lvalue <NoOp>
+            `-OpaqueValueExpr {{address}} <col:12, col:23> 'Value' move-lvalue
 )");
 }
 
@@ -8017,7 +9563,7 @@ func Assign(dst &mut [1] [1] Missing, src &copy [1] [1] Missing) {
   dst = src;
 })");
 
-  ExpectError(4, 2, "no copy assignment declared for array element type 'Missing'", 9);
+  ExpectError(4, 2, "binary operator '=' cannot be applied to types 'Missing' and 'const Missing'", 9);
 }
 
 TEST_F(SemaTest, RejectsWholeArrayAssignmentWhenElementsAreConst) {
@@ -9989,21 +11535,19 @@ import trivial struct Item {}
   ExpectNote(0, 22, "previous declaration is here", 0);
 }
 
-TEST_F(SemaTest, RejectsLocalAssignmentForImportedType) {
+TEST_F(SemaTest, AcceptsLocalAssignmentForImportedType) {
   Analyze(R"(import struct Box {}
 import dtor Box();
 func operator=(this &mut Box, source &copy Box) {}
 )");
-  ExpectError(2, 5, "operation for imported struct 'Box' must be imported", 9);
 }
 
-TEST_F(SemaTest, RejectsImportedAssignmentForLocalType) {
+TEST_F(SemaTest, AcceptsImportedAssignmentForLocalType) {
   Analyze(R"(struct Box {}
 ctor Box() {}
 dtor Box() {}
 import func operator=(this &mut Box, source &move Box);
 )");
-  ExpectError(3, 12, "operation for local struct 'Box' cannot be imported", 9);
 }
 
 TEST_F(SemaTest, ChecksReturnTypeOfImportedVirtualImplementation) {

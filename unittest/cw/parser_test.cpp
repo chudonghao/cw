@@ -107,6 +107,153 @@ var block i32 := { 3 }
 )");
 }
 
+TEST_F(ParserTest, ParsesBitwiseOperatorFunctionNames) {
+  Parse(R"(namespace Api {
+func operator~(value Bits) Bits {}
+func operator&(left Bits, right Bits) Bits {}
+func operator|(left Bits, right Bits) Bits {}
+func operator^(left Bits, right Bits) Bits {}
+func Use() {
+  operator~(a); operator&(a, b); operator|(a, b); operator^(a, b);
+  &operator~; &operator&; &operator|; &operator^;
+}
+}
+func Qualified() {
+  Api::operator~(a); Api::operator&(a, b);
+  ::Api::operator|(a, b); ::Api::operator^(a, b);
+  &Api::operator~; &Api::operator&; &::Api::operator|; &::Api::operator^;
+})");
+}
+
+TEST_F(ParserTest, PreservesBitwisePrecedenceAndAssociativity) {
+  Parse("func F() { ~a & b == c ^ d | e | f; }");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, col:38> F
+  `-CompoundStmt {{address}} <col:10, col:38>
+    `-ExprStmt {{address}} <col:12, col:36>
+      `-BinaryOperator {{address}} <col:12, col:35> '|'
+        |-BinaryOperator {{address}} <col:12, col:31> '|'
+        | |-BinaryOperator {{address}} <col:12, col:27> '^'
+        | | |-BinaryOperator {{address}} <col:12, col:23> '&'
+        | | | |-UnaryOperator {{address}} <col:12, col:14> '~'
+        | | | | `-DeclRefExpr {{address}} <col:13, col:14> 'a'
+        | | | `-BinaryOperator {{address}} <col:17, col:23> '=='
+        | | |   |-DeclRefExpr {{address}} <col:17, col:18> 'b'
+        | | |   `-DeclRefExpr {{address}} <col:22, col:23> 'c'
+        | | `-DeclRefExpr {{address}} <col:26, col:27> 'd'
+        | `-DeclRefExpr {{address}} <col:30, col:31> 'e'
+        `-DeclRefExpr {{address}} <col:34, col:35> 'f'
+)");
+}
+
+TEST_F(ParserTest, ParsesIncrementDecrementOperatorFunctionNames) {
+  Parse(R"(namespace Api {
+func operator++(value &mut Value) &mut Value {}
+func operator++(value &mut Value, marker i32) Value {}
+func operator--(value &copy Value) {}
+func operator--(value Value, marker i32) {}
+func Use() {
+  operator++(value); operator++(value, 7);
+  operator--(value); operator--(value, -1);
+  &operator++; &operator--;
+}
+}
+func Qualified() {
+  Api::operator++(value); ::Api::operator++(value, 7);
+  Api::operator--(value); ::Api::operator--(value, -1);
+  &Api::operator++; &::Api::operator--;
+})");
+}
+
+TEST_F(ParserTest, ParsesCompoundAssignmentOperatorFunctionNames) {
+  Parse(R"(namespace Api {
+func operator+=(a Value, b Value) {}
+func operator-=(a Value, b Value) {}
+func operator*=(a Value, b Value) {}
+func operator/=(a Value, b Value) {}
+func operator%=(a Value, b Value) {}
+func operator&=(a Value, b Value) {}
+func operator|=(a Value, b Value) {}
+func operator^=(a Value, b Value) {}
+func operator<<=(a Value, b Value) {}
+func operator>>=(a Value, b Value) {}
+func Use() {
+  operator+=(a, b); &operator+=;
+  operator-=(a, b); &operator-=;
+  operator*=(a, b); &operator*=;
+  operator/=(a, b); &operator/=;
+  operator%=(a, b); &operator%=;
+  operator&=(a, b); &operator&=;
+  operator|=(a, b); &operator|=;
+  operator^=(a, b); &operator^=;
+  operator<<=(a, b); &operator<<=;
+  operator>>=(a, b); &operator>>=;
+}
+}
+func Qualified() {
+  Api::operator+=(a, b); &::Api::operator+=;
+  Api::operator-=(a, b); &::Api::operator-=;
+  Api::operator*=(a, b); &::Api::operator*=;
+  Api::operator/=(a, b); &::Api::operator/=;
+  Api::operator%=(a, b); &::Api::operator%=;
+  Api::operator&=(a, b); &::Api::operator&=;
+  Api::operator|=(a, b); &::Api::operator|=;
+  Api::operator^=(a, b); &::Api::operator^=;
+  Api::operator<<=(a, b); &::Api::operator<<=;
+  Api::operator>>=(a, b); &::Api::operator>>=;
+})");
+}
+
+TEST_F(ParserTest, PreservesCompoundAssignmentPrecedenceAndAssociativity) {
+  Parse("func F() { a += b *= c + d; }");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, col:30> F
+  `-CompoundStmt {{address}} <col:10, col:30>
+    `-ExprStmt {{address}} <col:12, col:28>
+      `-BinaryOperator {{address}} <col:12, col:27> '+='
+        |-DeclRefExpr {{address}} <col:12, col:13> 'a'
+        `-BinaryOperator {{address}} <col:17, col:27> '*='
+          |-DeclRefExpr {{address}} <col:17, col:18> 'b'
+          `-BinaryOperator {{address}} <col:22, col:27> '+'
+            |-DeclRefExpr {{address}} <col:22, col:23> 'c'
+            `-DeclRefExpr {{address}} <col:26, col:27> 'd'
+)");
+}
+
+TEST_F(ParserTest, ParsesShiftOperatorFunctionNames) {
+  Parse(R"(namespace Api {
+func operator<<(value Bits, count i32) Bits {}
+func operator>>(value Bits, count i32) Bits {}
+func Use() {
+  operator<<(a, b); operator>>(a, b);
+  &operator<<; &operator>>;
+}
+}
+func Qualified() {
+  Api::operator<<(a, b); ::Api::operator>>(a, b);
+  &Api::operator<<; &::Api::operator>>;
+})");
+}
+
+TEST_F(ParserTest, PreservesShiftPrecedenceAndAssociativity) {
+  Parse("func F() { a + b << c >> d < e; }");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, col:34> F
+  `-CompoundStmt {{address}} <col:10, col:34>
+    `-ExprStmt {{address}} <col:12, col:32>
+      `-BinaryOperator {{address}} <col:12, col:31> '<'
+        |-BinaryOperator {{address}} <col:12, col:27> '>>'
+        | |-BinaryOperator {{address}} <col:12, col:22> '<<'
+        | | |-BinaryOperator {{address}} <col:12, col:17> '+'
+        | | | |-DeclRefExpr {{address}} <col:12, col:13> 'a'
+        | | | `-DeclRefExpr {{address}} <col:16, col:17> 'b'
+        | | `-DeclRefExpr {{address}} <col:21, col:22> 'c'
+        | `-DeclRefExpr {{address}} <col:26, col:27> 'd'
+        `-DeclRefExpr {{address}} <col:30, col:31> 'e'
+)");
+}
+
 TEST_F(ParserTest, ParsesVirtualInterfaceModifiers) {
   Parse(R"(struct S {
 virtual {
@@ -709,6 +856,42 @@ TEST_F(ParserTest, PreservesVariableAttributesAndPerVariableOptionalType) {
   |   `-NamedType {{address}} <col:21, col:24> 'Foo'
   |-DeclRefExpr {{address}} <col:28, col:29> 'x'
   `-DeclRefExpr {{address}} <col:31, col:32> 'y')");
+}
+
+TEST_F(ParserTest, PreservesIncrementDecrementFormsAndGrouping) {
+  Parse(R"(func F() {
+  ++x;
+  --x;
+  x++;
+  x--;
+  ++x++;
+  ++(++x);
+})");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, line:8:2> F
+  `-CompoundStmt {{address}} <line:1:10, line:8:2>
+    |-ExprStmt {{address}} <line:2:3, col:7>
+    | `-UnaryOperator {{address}} <col:3, col:6> '++'
+    |   `-DeclRefExpr {{address}} <col:5, col:6> 'x'
+    |-ExprStmt {{address}} <line:3:3, col:7>
+    | `-UnaryOperator {{address}} <col:3, col:6> '--'
+    |   `-DeclRefExpr {{address}} <col:5, col:6> 'x'
+    |-ExprStmt {{address}} <line:4:3, col:7>
+    | `-UnaryOperator {{address}} <col:3, col:6> '++' postfix
+    |   `-DeclRefExpr {{address}} <col:3, col:4> 'x'
+    |-ExprStmt {{address}} <line:5:3, col:7>
+    | `-UnaryOperator {{address}} <col:3, col:6> '--' postfix
+    |   `-DeclRefExpr {{address}} <col:3, col:4> 'x'
+    |-ExprStmt {{address}} <line:6:3, col:9>
+    | `-UnaryOperator {{address}} <col:3, col:8> '++'
+    |   `-UnaryOperator {{address}} <col:5, col:8> '++' postfix
+    |     `-DeclRefExpr {{address}} <col:5, col:6> 'x'
+    `-ExprStmt {{address}} <line:7:3, col:11>
+      `-UnaryOperator {{address}} <col:3, col:10> '++'
+        `-ParenExpr {{address}} <col:5, col:10>
+          `-UnaryOperator {{address}} <col:6, col:9> '++'
+            `-DeclRefExpr {{address}} <col:8, col:9> 'x')");
 }
 
 TEST_F(ParserTest, DumpsStatementNodes) {

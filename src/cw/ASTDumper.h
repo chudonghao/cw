@@ -91,6 +91,7 @@ class ASTDumper : public ASTVisitor {
   void Visit(OperatorCallExpr& n) override;
   void Visit(ConstructionExpr& n) override;
   void Visit(ArrayConstructionExpr& n) override;
+  void Visit(OpaqueValueExpr& n) override;
   void Visit(ArrayAssignmentExpr& n) override;
   void Visit(DestructorCallExpr& n) override;
   void Visit(ReceiverCallExpr& n) override;

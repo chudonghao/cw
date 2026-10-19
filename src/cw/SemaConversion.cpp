@@ -752,11 +752,11 @@ ConversionCompletionResult CompleteConversion(const ConversionSource& source, Qu
   return std::nullopt;
 }
 
-ConversionRiskFacts CollectConversionRisks(const ConversionSource& source, QualType target,
-                                           const ConversionSequence& sequence, const ASTContext& ast_context) {
+ConversionRiskFacts CollectConversionRisks(ValueState source, QualType target, const ConversionSequence& sequence,
+                                           const ASTContext& ast_context) {
   BOOST_ASSERT(target);
   ConversionRiskFacts facts;
-  ValueState current = source.state;
+  ValueState current = source;
   for (const auto& step : sequence.transitions) {
     BOOST_ASSERT(!std::holds_alternative<PendingObjectFormation>(step.semantics));
     if (const auto* numeric = std::get_if<NumericConversion>(&step.semantics)) {

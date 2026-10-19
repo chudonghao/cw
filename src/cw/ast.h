@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -83,6 +84,7 @@ enum class NodeKind {
   OperatorCallExpr,
   ConstructionExpr,
   ArrayConstructionExpr,
+  OpaqueValueExpr,
   ArrayAssignmentExpr,
   DestructorCallExpr,
   ReceiverCallExpr,
@@ -190,7 +192,17 @@ const char* to_string(ImplicitConversionKind kind);
 const char* to_string(ConstructionKind kind);
 
 /// \brief Returns whether a stored declaration name is an operator spelling.
-bool IsOperatorFunctionName(const std::string& name);
+bool IsOperatorFunctionName(std::string_view name);
+
+bool IsIncrementDecrementOperator(expr::ExprGrammarSymbol op);
+bool IsLogicalBinaryOperator(expr::ExprGrammarSymbol op);
+bool IsShiftBinaryOperator(expr::ExprGrammarSymbol op);
+bool IsCompoundAssignmentOperator(expr::ExprGrammarSymbol op);
+bool IsAssignmentOperator(expr::ExprGrammarSymbol op);
+bool IsAssignmentOperator(std::string_view name);
+
+/// \brief Returns the corresponding binary operator for compound assignment, or the original operator.
+expr::ExprGrammarSymbol GetComputationOp(expr::ExprGrammarSymbol op);
 
 /// \brief One source-level declaration attribute.
 struct Attribute {
@@ -393,13 +405,11 @@ struct StructDecl : NamedDecl {
   TypeTriviality triviality{TypeTriviality::Unknown};  ///< Final semantic triviality classification.
   bool is_abstract{};                                  ///< Whether a final virtual slot remains abstract.
 
-  // Non-owning lifecycle and assignment declarations, formed by Sema.
+  // Non-owning lifecycle declarations, formed by Sema.
   std::vector<ConstructorDecl*> constructors;
   ConstructorDecl* copy_constructor{};
   ConstructorDecl* move_constructor{};
   DestructorDecl* destructor{};
-  FunctionDecl* copy_assignment{};
-  FunctionDecl* move_assignment{};
 
  private:
   mutable std::optional<bool> cxx11_standard_layout_;
@@ -617,6 +627,8 @@ struct BinaryOperator : Expr {
   void Accept(ASTVisitor& visitor) override;
   void Traverse(ASTVisitor& visitor) override;
   bool IsSimpleAssignment() const { return op == expr::equal; }
+  bool IsCompoundAssignment() const { return IsCompoundAssignmentOperator(op); }
+  bool IsAssignment() const { return IsAssignmentOperator(op); }
 };
 
 /// \brief Explicit initialization expression (target := source).
@@ -725,7 +737,7 @@ struct CallExpr : Expr {
 struct OperatorCallExpr : CallExpr {
   NodeKind GetKind() const override { return NodeKind::OperatorCallExpr; }
   void Accept(ASTVisitor& visitor) override;
-  bool IsSimpleAssignment() const;
+  bool IsAssignment() const;
 };
 
 /// \brief Construction of a complete object, base subobject, or delegated current object.
@@ -754,14 +766,23 @@ struct ArrayConstructionExpr : Expr {
   void Traverse(ASTVisitor& visitor) override;
 };
 
-/// \brief Compact whole-array copy or move assignment.
+/// \brief An already evaluated object supplied by an enclosing semantic operation.
+struct OpaqueValueExpr : Expr {
+  NodeKind GetKind() const override { return NodeKind::OpaqueValueExpr; }
+  void Accept(ASTVisitor& visitor) override;
+  void Traverse(ASTVisitor& visitor) override;
+};
+
+/// \brief Whole-array assignment with a converted operation for each final leaf pair.
 struct ArrayAssignmentExpr : Expr {
   std::unique_ptr<Expr> LHS{};  ///< Destination array expression.
   std::unique_ptr<Expr> RHS{};  ///< Source array expression.
+  std::unique_ptr<Expr> ElementAssignment{};  ///< Analyzed operation reused for each final leaf pair.
 
   SourceRange operator_range{};  ///< Exact source range of `=`.
 
-  const FunctionDecl* element_assignment{};  ///< Non-owning selected final leaf assignment.
+  const OpaqueValueExpr* target_element{};  ///< Borrowed leaf in ElementAssignment, supplied by iteration.
+  const OpaqueValueExpr* source_element{};  ///< Borrowed leaf in ElementAssignment, supplied by iteration.
 
   NodeKind GetKind() const override { return NodeKind::ArrayAssignmentExpr; }
   void Accept(ASTVisitor& visitor) override;

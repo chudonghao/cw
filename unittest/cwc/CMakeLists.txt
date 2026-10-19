@@ -75,6 +75,10 @@ foreach(case IN ITEMS calls lifetimes virtuals)
   add_cwc_driver_case("stable_link_${case}" stable_link
     "${linking_driver_case_dir}/${case}_provider.cw" "${linking_driver_case_dir}/${case}_consumer.cw")
 endforeach()
+add_cwc_driver_case(stable_link_increment stable_link
+  "${linking_driver_case_dir}/increment_provider.cw" "${linking_driver_case_dir}/increment_consumer.cw")
+add_cwc_driver_case(stable_link_assignment stable_link
+  "${linking_driver_case_dir}/assignment_provider.cw" "${linking_driver_case_dir}/assignment_consumer.cw")
 add_cwc_driver_case(stable_object_symbols stable_symbols "${linking_driver_case_dir}/calls_provider.cw")
 set_tests_properties("cwc.driver.stable_object_symbols" PROPERTIES
   SKIP_REGULAR_EXPRESSION "^-- cannot locate llvm-nm")
@@ -88,6 +92,18 @@ add_cwc_program_case(namespace_operations 42)
 add_cwc_program_case(return_constant 7)
 add_cwc_program_case(local_value 7)
 add_cwc_program_case(arithmetic_result 42)
+add_cwc_program_case(bitwise_result 0)
+add_cwc_program_case(bitwise_evaluation 0)
+add_cwc_program_case(shift_result 0)
+add_cwc_program_case(shift_evaluation 0)
+add_cwc_program_case(compound_result 0)
+add_cwc_program_case(compound_evaluation 0)
+add_cwc_program_case(compound_operators 0)
+add_cwc_program_case(increment_result 0)
+add_cwc_program_case(increment_evaluation 0)
+add_cwc_program_case(increment_operators 0)
+add_cwc_program_case(assignment_overloads 0)
+add_cwc_program_case(assignment_arrays 0)
 add_cwc_program_case(function_call 11)
 add_cwc_program_case(conditional_result 2)
 add_cwc_program_case(global_initialization 7)
@@ -156,6 +172,8 @@ add_cwc_driver_case(interface_virtual interface_contents
 add_cwc_driver_case(interface_namespaces interface_contents
   "${interface_driver_case_dir}/namespaces_first.cw"
   "${interface_driver_case_dir}/namespaces_second.cw")
+add_cwc_driver_case(interface_increment interface_contents
+  "${linking_driver_case_dir}/increment_provider.cw")
 add_cwc_driver_case(import_roundtrip import_roundtrip
   "${interface_driver_case_dir}/declarations.cw" "${interface_driver_case_dir}/consumer.cw")
 add_cwc_driver_case(import_object_output import_object_output

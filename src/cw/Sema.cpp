@@ -553,7 +553,9 @@ bool IsOrderedComparisonOperator(expr::ExprGrammarSymbol op) {
 
 bool IsEqualityOperator(expr::ExprGrammarSymbol op) { return op == expr::equalequal || op == expr::exclaimequal; }
 
-bool IsLogicalBinaryOperator(expr::ExprGrammarSymbol op) { return op == expr::ampamp || op == expr::pipepipe; }
+bool IsBitwiseBinaryOperator(expr::ExprGrammarSymbol op) {
+  return op == expr::amp || op == expr::pipe || op == expr::caret;
+}
 
 bool IsPointerValueType(QualType type) {
   return type && (type.GetTypePtr()->AsPointerType() || type.GetTypePtr()->AsVirtualSlotType());
@@ -575,11 +577,13 @@ QualType CommonPointerValueType(ASTContext& ast_context, QualType left, QualType
 }
 
 bool IsOverloadableUnaryOperator(expr::ExprGrammarSymbol op) {
-  return op == expr::plus || op == expr::minus || op == expr::exclaim;
+  return op == expr::plus || op == expr::minus || op == expr::exclaim || op == expr::tilde ||
+         IsIncrementDecrementOperator(op);
 }
 
 bool IsOverloadableBinaryOperator(expr::ExprGrammarSymbol op) {
-  return IsArithmeticBinaryOperator(op) || IsOrderedComparisonOperator(op) || IsEqualityOperator(op);
+  return IsArithmeticBinaryOperator(op) || IsBitwiseBinaryOperator(op) || IsShiftBinaryOperator(op) ||
+         IsOrderedComparisonOperator(op) || IsEqualityOperator(op) || IsCompoundAssignmentOperator(op);
 }
 
 bool IsStructObjectOperand(const Expr& expression) {
@@ -971,211 +975,6 @@ std::string FormatObjectFormationFailure(const ObjectFormationFailure& failure) 
   }
   BOOST_ASSERT(false && "unsupported object formation failure");
   return "object construction failed";
-}
-
-/// \brief The fixed same-type assignment operation.
-enum class ObjectAssignmentKind {
-  Builtin,
-  OperatorCall,
-  ArrayAssign,
-};
-
-/// \brief The already selected special assignment slot, if one is required.
-struct ObjectAssignmentPlan {
-  ObjectAssignmentKind kind{ObjectAssignmentKind::Builtin};
-  const FunctionDecl* selected_assignment{};
-};
-
-/// \brief A reason the dedicated object assignment operation is unavailable.
-enum class ObjectAssignmentFailureKind {
-  InvalidObjectType,
-  NotObjectValue,
-  ConstArrayElement,
-  CopyUnavailable,
-  MoveAndCopyUnavailable,
-  SelectedAssignmentNotUsable,
-};
-
-/// \brief Assignment-specific facts used by outer diagnostics.
-struct ObjectAssignmentFailure {
-  ObjectAssignmentFailureKind kind{ObjectAssignmentFailureKind::InvalidObjectType};
-  QualType source_type{};
-  QualType target_type{};
-  QualType operation_type{};
-  ValueCategory source_category{ValueCategory::None};
-  bool is_array{};
-  std::size_t parameter_index{};
-  std::optional<ReferenceBindingFailure> binding_failure{};
-};
-
-using ObjectAssignmentResult = std::variant<ObjectAssignmentPlan, ObjectAssignmentFailure>;
-
-const StructDecl* StructForObjectType(QualType type) {
-  if (!type || type.GetTypePtr()->GetKind() != TypeKind::Struct) {
-    return nullptr;
-  }
-  const StructDecl* declaration = static_cast<const StructType*>(type.GetTypePtr())->GetDeclaration();
-  if (!declaration) {
-    return nullptr;
-  }
-  return declaration;
-}
-
-/// \brief Leaf types and const restrictions for ordinary or array assignment.
-struct ObjectOperationTypes {
-  QualType source_leaf_type{};
-  QualType target_leaf_type{};
-  QualType const_target_element_type{};
-  bool is_array{};
-};
-
-std::optional<ObjectOperationTypes> DecomposeObjectOperationTypes(QualType source_type, QualType target_type) {
-  ObjectOperationTypes result{source_type, target_type};
-  while (result.target_leaf_type && result.target_leaf_type.GetTypePtr()->GetKind() == TypeKind::Array) {
-    result.is_array = true;
-    if (!result.source_leaf_type || result.source_leaf_type.GetTypePtr()->GetKind() != TypeKind::Array) {
-      return std::nullopt;
-    }
-
-    const auto* source_array = static_cast<const ArrayType*>(result.source_leaf_type.GetTypePtr());
-    const auto* target_array = static_cast<const ArrayType*>(result.target_leaf_type.GetTypePtr());
-    QualType source_element_type = source_array->GetElementType();
-    if (result.source_leaf_type.IsConstQualified()) {
-      source_element_type = source_element_type.WithConst();
-    }
-    result.source_leaf_type = source_element_type;
-    result.target_leaf_type = target_array->GetElementType();
-    if (!result.const_target_element_type && result.target_leaf_type.IsConstQualified()) {
-      result.const_target_element_type = result.target_leaf_type;
-    }
-  }
-  if (result.source_leaf_type && result.source_leaf_type.GetTypePtr()->GetKind() == TypeKind::Array) {
-    return std::nullopt;
-  }
-  return result;
-}
-
-ObjectAssignmentResult ClassifyObjectAssignment(const Expr& destination, const Expr& source) {
-  BOOST_ASSERT(destination.type && source.type);
-  BOOST_ASSERT(destination.type.WithoutConst() == source.type.WithoutConst());
-  BOOST_ASSERT((destination.type && destination.type.GetTypePtr()->IsObject()));
-
-  ObjectAssignmentFailure failure;
-  failure.source_type = source.type;
-  failure.target_type = destination.type;
-  failure.source_category = source.value_category;
-  if (source.value_category != ValueCategory::LValue && source.value_category != ValueCategory::MoveLValue &&
-      source.value_category != ValueCategory::PureRValue) {
-    failure.kind = ObjectAssignmentFailureKind::NotObjectValue;
-    return failure;
-  }
-
-  const TypeTriviality triviality = destination.type.GetTypePtr()->GetTriviality();
-  if (triviality == TypeTriviality::Unknown || triviality == TypeTriviality::Invalid) {
-    failure.kind = ObjectAssignmentFailureKind::InvalidObjectType;
-    return failure;
-  }
-
-  const auto operation_types = DecomposeObjectOperationTypes(source.type, destination.type);
-  if (!operation_types) {
-    failure.kind = ObjectAssignmentFailureKind::InvalidObjectType;
-    return failure;
-  }
-  failure.is_array = operation_types->is_array;
-  if (operation_types->const_target_element_type) {
-    failure.kind = ObjectAssignmentFailureKind::ConstArrayElement;
-    failure.operation_type = operation_types->const_target_element_type;
-    return failure;
-  }
-
-  if (triviality == TypeTriviality::Trivial) {
-    return ObjectAssignmentPlan{};
-  }
-  if (!operation_types->target_leaf_type ||
-      operation_types->target_leaf_type.GetTypePtr()->GetKind() != TypeKind::Struct) {
-    failure.kind = ObjectAssignmentFailureKind::InvalidObjectType;
-    return failure;
-  }
-  failure.operation_type = operation_types->target_leaf_type.WithoutConst();
-
-  const StructDecl* structure = StructForObjectType(failure.operation_type);
-  const bool prefers_move =
-      !operation_types->source_leaf_type.IsConstQualified() &&
-      (source.value_category == ValueCategory::MoveLValue || source.value_category == ValueCategory::PureRValue);
-  const FunctionDecl* selected = structure && prefers_move ? structure->move_assignment : nullptr;
-  if (!selected && structure) {
-    selected = structure->copy_assignment;
-  }
-  if (!selected) {
-    failure.kind = prefers_move ? ObjectAssignmentFailureKind::MoveAndCopyUnavailable
-                                : ObjectAssignmentFailureKind::CopyUnavailable;
-    return failure;
-  }
-
-  if (!selected->type || selected->type.GetTypePtr()->GetKind() != TypeKind::Function) {
-    failure.kind = ObjectAssignmentFailureKind::SelectedAssignmentNotUsable;
-    return failure;
-  }
-  const auto& parameter_types = static_cast<const FunctionType*>(selected->type.GetTypePtr())->GetParameterTypes();
-  if (parameter_types.size() != 2 || !parameter_types[0] || !parameter_types[1] ||
-      parameter_types[0]->GetKind() != TypeKind::Reference || parameter_types[1]->GetKind() != TypeKind::Reference) {
-    failure.kind = ObjectAssignmentFailureKind::SelectedAssignmentNotUsable;
-    return failure;
-  }
-
-  // Assignment slots were validated against these exact leaf types when
-  // declarations were bound. Arrays use the same operation for every leaf.
-  for (std::size_t index = 0; index < 2; ++index) {
-    const auto* reference = parameter_types[index]->AsReferenceType();
-    const QualType argument_type = index == 0 ? operation_types->target_leaf_type : operation_types->source_leaf_type;
-    const auto category = index == 0 ? ValueCategory::LValue : source.value_category;
-    const bool bindable = reference->GetMode() == ReferenceMode::Copy ||
-                          (!argument_type.IsConstQualified() &&
-                           (reference->GetMode() == ReferenceMode::Mut ? category == ValueCategory::LValue
-                                                                       : category != ValueCategory::LValue));
-    if (reference->GetReferentType() != argument_type.GetTypePtr() || !bindable) {
-      failure.kind = ObjectAssignmentFailureKind::SelectedAssignmentNotUsable;
-      failure.parameter_index = index + 1;
-      failure.binding_failure = ReferenceBindingFailure{reference->GetReferentType() != argument_type.GetTypePtr()
-                                                            ? ReferenceBindingFailureKind::ReferentTypeMismatch
-                                                            : ReferenceBindingFailureKind::ModeMismatch,
-                                                        argument_type, category, reference};
-      return failure;
-    }
-  }
-  return ObjectAssignmentPlan{failure.is_array ? ObjectAssignmentKind::ArrayAssign : ObjectAssignmentKind::OperatorCall,
-                              selected};
-}
-
-std::string FormatObjectAssignmentFailure(const ObjectAssignmentFailure& failure) {
-  switch (failure.kind) {
-    case ObjectAssignmentFailureKind::InvalidObjectType:
-      return fmt::format("cannot assign object of invalid type '{}'", TypeSpelling(failure.target_type));
-    case ObjectAssignmentFailureKind::NotObjectValue:
-      return fmt::format("{} does not produce an object value",
-                         DescribeExpressionType(failure.source_type, "expression of type "));
-    case ObjectAssignmentFailureKind::ConstArrayElement:
-      return fmt::format("cannot assign an array with const-qualified element type '{}'",
-                         TypeSpelling(failure.operation_type));
-    case ObjectAssignmentFailureKind::CopyUnavailable:
-      return fmt::format("no copy assignment declared for {} '{}'", failure.is_array ? "array element type" : "type",
-                         TypeSpelling(failure.operation_type));
-    case ObjectAssignmentFailureKind::MoveAndCopyUnavailable:
-      return fmt::format("no copy or move assignment declared for {} '{}'",
-                         failure.is_array ? "array element type" : "type", TypeSpelling(failure.operation_type));
-    case ObjectAssignmentFailureKind::SelectedAssignmentNotUsable:
-      if (failure.is_array) {
-        return fmt::format("array element assignment for type '{}' is not usable",
-                           TypeSpelling(failure.operation_type));
-      }
-      if (failure.binding_failure) {
-        return fmt::format("cannot initialize parameter {} of assignment operator '=': {}", failure.parameter_index,
-                           FormatReferenceBindingFailure(*failure.binding_failure));
-      }
-      return fmt::format("assignment operator '=' for type '{}' is not usable", TypeSpelling(failure.operation_type));
-  }
-  BOOST_ASSERT(false && "unsupported object assignment failure");
-  return "object assignment failed";
 }
 
 std::string AddressedFunctionSpelling(const OverloadSetSelectionFailure& failure) {
@@ -1748,8 +1547,13 @@ bool Sema::SelectAssignmentFunctionAddress(std::unique_ptr<Expr>& expression, Qu
 
 void Sema::DiagnoseConversionRisks(Node& owner, const Expr& source, QualType target,
                                    const ConversionSequence& conversion) {
-  for (const auto& fact : CollectConversionRisks(MakeConversionSource(source), target, conversion, *ast_context_)) {
-    DiagnoseImplicitConversionRisk(owner, source.range, fact.source_type, fact.target_type, fact.kind, fact.risk);
+  DiagnoseConversionRisks(owner, source.range, MakeConversionSource(source).state, target, conversion);
+}
+
+void Sema::DiagnoseConversionRisks(Node& owner, SourceRange range, ValueState source, QualType target,
+                                   const ConversionSequence& conversion) {
+  for (const auto& fact : CollectConversionRisks(source, target, conversion, *ast_context_)) {
+    DiagnoseImplicitConversionRisk(owner, range, fact.source_type, fact.target_type, fact.kind, fact.risk);
   }
 }
 
@@ -2236,7 +2040,7 @@ void Sema::BindFunctionDeclaration(FunctionDecl& declaration) {
     return;
   }
   if (IsOperatorFunctionName(declaration.name)) {
-    if (declaration.is_invalid || (declaration.name == "=" && !RegisterSpecialAssignment(declaration))) {
+    if (declaration.is_invalid) {
       // Retain invalid operator names in their actual scope for lookup and diagnostic recovery.
       declaration.is_invalid = true;
       const auto symbol = LookupDirectName(declaration.name, *declaration.owning_namespace);
@@ -2426,7 +2230,9 @@ void Sema::ValidateRequiredOverrideDeclarations(TranslationUnitDecl& translation
 bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
   BOOST_ASSERT(IsOperatorFunctionName(declaration.name));
   if (declaration.name == "[]") {
-    return true;
+    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+             fmt::format("operator '{}' cannot be overloaded", declaration.name));
+    return false;
   }
   if (declaration.name == "()") {
     if (declaration.ParmVars.empty()) {
@@ -2453,24 +2259,19 @@ bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
   }
 
   const expr::ExprGrammarSymbol op = expr::from_string(expr::ExprGrammarSymbol{}, declaration.name.c_str());
-  if (op == expr::colonequal) {
-    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-             fmt::format("operator '{}' cannot be overloaded", declaration.name));
-    return false;
-  }
   const std::size_t arity = declaration.ParmVars.size();
   bool valid_arity = true;
-  if (op == expr::plus || op == expr::minus) {
+  if (op == expr::plus || op == expr::minus || IsIncrementDecrementOperator(op)) {
     valid_arity = arity == 1 || arity == 2;
     if (!valid_arity) {
       Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
                fmt::format("operator '{}' requires one or two parameters", declaration.name));
     }
-  } else if (op == expr::exclaim) {
+  } else if (op == expr::exclaim || op == expr::tilde) {
     valid_arity = arity == 1;
     if (!valid_arity) {
       Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-               "operator '!' requires exactly one parameter");
+               fmt::format("operator '{}' requires exactly one parameter", declaration.name));
     }
   } else if (IsOverloadableBinaryOperator(op) || op == expr::equal) {
     valid_arity = arity == 2;
@@ -2479,7 +2280,9 @@ bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
                fmt::format("operator '{}' requires exactly two parameters", declaration.name));
     }
   } else {
-    return true;
+    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+             fmt::format("operator '{}' cannot be overloaded", declaration.name));
+    return false;
   }
   if (!valid_arity || !declaration.type || declaration.type.GetTypePtr()->GetKind() != TypeKind::Function) {
     return false;
@@ -2487,6 +2290,32 @@ bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
 
   const auto& function_type = static_cast<const FunctionType&>(*declaration.type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
+  if (IsIncrementDecrementOperator(op) && arity == 2 &&
+      parameter_types[1] != ast_context_->GetBuiltinType(BuiltinTypeKind::I32)) {
+    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+             fmt::format("second parameter of postfix operator '{}' must be 'i32', not '{}'", declaration.name,
+                         TypeSpelling(*parameter_types[1])));
+    return false;
+  }
+  if (op == expr::equal) {
+    const auto object_type = [](const Type* type) {
+      const auto* reference = type->AsReferenceType();
+      return reference ? reference->GetReferentType() : type;
+    };
+    const Type* target = object_type(parameter_types[0]);
+    if (!target->AsStructType()) {
+      Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+               fmt::format("first parameter of operator '=' must be a struct or reference to a struct, not '{}'",
+                           TypeSpelling(*parameter_types[0])));
+      return false;
+    }
+    if (target == object_type(parameter_types[1]) && target->GetTriviality() == TypeTriviality::Trivial) {
+      Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+               fmt::format("same-type assignment cannot be declared for trivial type '{}'", TypeSpelling(*target)));
+      return false;
+    }
+    return true;
+  }
   bool has_struct_parameter = false;
   for (const Type* parameter_type : parameter_types) {
     if (!parameter_type) {
@@ -2507,18 +2336,7 @@ bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
              fmt::format("operator '{}' requires a struct or reference-to-struct parameter", declaration.name));
     return false;
   }
-  if (declaration.name == "=" && parameter_types.size() == 2 && parameter_types[0]->GetKind() == TypeKind::Reference &&
-      parameter_types[1]->GetKind() == TypeKind::Reference) {
-    const auto& destination = static_cast<const ReferenceType&>(*parameter_types[0]);
-    const auto& source = static_cast<const ReferenceType&>(*parameter_types[1]);
-    if (destination.GetMode() == ReferenceMode::Mut && source.GetMode() == ReferenceMode::Mut &&
-        destination.GetReferentType()->GetKind() == TypeKind::Struct &&
-        source.GetReferentType() == destination.GetReferentType()) {
-      Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-               "same-type assignment cannot use a '&mut' source parameter");
-      return false;
-    }
-  }
+
   return true;
 }
 
@@ -2531,67 +2349,6 @@ bool Sema::ValidateTypeOperationIdentity(FunctionDecl& declaration, const Struct
                : fmt::format("operation for local struct '{}' cannot be imported", structure.QualifiedName()));
   declaration.is_invalid = true;
   return false;
-}
-
-bool Sema::RegisterSpecialAssignment(FunctionDecl& declaration) {
-  BOOST_ASSERT(declaration.name == "=");
-  if (!declaration.type || declaration.type.GetTypePtr()->GetKind() != TypeKind::Function) {
-    return false;
-  }
-
-  const auto& function_type = static_cast<const FunctionType&>(*declaration.type.GetTypePtr());
-  const auto& parameter_types = function_type.GetParameterTypes();
-  if (parameter_types.size() != 2) {
-    return false;
-  }
-
-  if (parameter_types[0]->GetKind() != TypeKind::Reference || parameter_types[1]->GetKind() != TypeKind::Reference) {
-    return true;
-  }
-  const auto& destination = static_cast<const ReferenceType&>(*parameter_types[0]);
-  const auto& source = static_cast<const ReferenceType&>(*parameter_types[1]);
-  if (destination.GetMode() != ReferenceMode::Mut || destination.GetReferentType()->GetKind() != TypeKind::Struct ||
-      source.GetReferentType() != destination.GetReferentType()) {
-    return true;
-  }
-
-  BOOST_ASSERT(source.GetMode() != ReferenceMode::Mut);
-  if (source.GetMode() != ReferenceMode::Copy && source.GetMode() != ReferenceMode::Move) {
-    return true;
-  }
-
-  const auto& target_type = static_cast<const StructType&>(*destination.GetReferentType());
-  StructDecl* target_declaration = const_cast<StructDecl*>(target_type.GetDeclaration());
-  BOOST_ASSERT(target_declaration);
-  if (declaration.owning_namespace != target_declaration->owning_namespace) {
-    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-             "copy or move assignment must be declared in the target type's namespace");
-    return false;
-  }
-  StructDecl* structure = target_declaration;
-  if (!ValidateTypeOperationIdentity(declaration, *structure)) return false;
-
-  const bool is_copy = source.GetMode() == ReferenceMode::Copy;
-  if (target_declaration->triviality == TypeTriviality::Trivial) {
-    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-             fmt::format("{} assignment cannot be declared for trivial type '{}'", is_copy ? "copy" : "move",
-                         target_declaration->name));
-    return false;
-  }
-  if (target_declaration->triviality != TypeTriviality::NonTrivial) {
-    return false;
-  }
-
-  const auto [stored, inserted] = is_copy ? BindUniqueOperation(structure->copy_assignment, &declaration)
-                                          : BindUniqueOperation(structure->move_assignment, &declaration);
-  if (!inserted) {
-    BOOST_ASSERT(stored);
-    DiagnoseConflict(declaration, NamedDeclarationRange(declaration),
-                     is_copy ? "redefinition of copy assignment" : "redefinition of move assignment",
-                     NamedDeclarationRange(*stored), "previous declaration is here");
-    return false;
-  }
-  return true;
 }
 
 void Sema::ResolveConstructorTarget(ConstructorDecl& declaration) {
@@ -3534,22 +3291,25 @@ std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> exp
     }
     case NodeKind::UnaryOperator: {
       auto& unary = static_cast<UnaryOperator&>(*expression);
-      supported = unary.op == expr::plus || unary.op == expr::minus;
-      analyze_child(unary.Operand, supported ? ComptimeIntMode::Preserve : ComptimeIntMode::Materialize);
+      const bool preserves_comptime_integer = unary.op == expr::plus || unary.op == expr::minus;
+      supported = preserves_comptime_integer || unary.op == expr::tilde;
+      analyze_child(unary.Operand,
+                    preserves_comptime_integer ? ComptimeIntMode::Preserve : ComptimeIntMode::Materialize);
       if (supported) AnalyzeBuiltinUnaryOperator(unary);
       unsupported_operator = !supported;
       break;
     }
     case NodeKind::BinaryOperator: {
       auto& binary = static_cast<BinaryOperator&>(*expression);
-      if (binary.IsSimpleAssignment()) {
+      if (binary.IsAssignment()) {
         analyze_child(binary.RHS);
         analyze_child(binary.LHS);
       } else {
         analyze_child(binary.LHS);
         analyze_child(binary.RHS);
       }
-      supported = binary.op == expr::plus || binary.op == expr::minus || binary.op == expr::star;
+      supported = IsArithmeticBinaryOperator(binary.op) || IsBitwiseBinaryOperator(binary.op) ||
+                  IsShiftBinaryOperator(binary.op);
       if (supported) AnalyzeBuiltinBinaryOperator(binary);
       unsupported_operator = !supported;
       break;
@@ -3626,7 +3386,8 @@ std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> exp
 
   if (!supported && !expression->ContainsErrors()) {
     Diagnose(*expression, kErrorDiagnostic, expression->range,
-             unsupported_operator ? "array length constant expression may use only '+', '-', and '*' arithmetic"
+             unsupported_operator ? "array length constant expression may use only '+', '-', '*', '/', '%', '~', "
+                                    "'&', '|', '^', '<<', and '>>' operators"
                                   : "array length is not a constant integer expression");
   }
   if (!expression->ContainsErrors() && expression->type && expression->type.GetTypePtr()->AsComptimeIntType() &&
@@ -3710,12 +3471,12 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
     }
     case NodeKind::BinaryOperator: {
       auto& binary_expression = static_cast<BinaryOperator&>(*expression);
-      if (binary_expression.IsSimpleAssignment()) {
+      if (binary_expression.IsAssignment()) {
         binary_expression.RHS = AnalyzeExpr(std::move(binary_expression.RHS));
         binary_expression.LHS = AnalyzeExpr(std::move(binary_expression.LHS));
         InheritErrors(binary_expression, binary_expression.RHS.get());
         InheritErrors(binary_expression, binary_expression.LHS.get());
-        expression = AnalyzeSimpleAssignment(std::move(expression));
+        expression = AnalyzeAssignment(std::move(expression));
       } else {
         binary_expression.LHS = AnalyzeExpr(std::move(binary_expression.LHS));
         binary_expression.RHS = AnalyzeExpr(std::move(binary_expression.RHS));
@@ -3890,6 +3651,17 @@ std::unique_ptr<Expr> Sema::AnalyzeUnaryOperator(std::unique_ptr<Expr> expressio
   auto& unary = static_cast<UnaryOperator&>(*expression);
   if (IsOverloadableUnaryOperator(unary.op) && unary.Operand && !unary.Operand->ContainsErrors() &&
       unary.Operand->type && IsStructObjectOperand(*unary.Operand)) {
+    if (IsIncrementDecrementOperator(unary.op) && unary.is_postfix) {
+      auto zero = std::make_unique<IntegerLiteral>();
+      zero->range = unary.operator_range;
+      zero->value = llvm::APSInt(32, false);
+      zero->type = QualType(ast_context_->GetComptimeIntType());
+      std::unique_ptr<Expr> marker = std::move(zero);
+      WrapInImplicitCast(marker, QualType(ast_context_->GetBuiltinType(BuiltinTypeKind::I32)),
+                         ImplicitConversionKind::ComptimeIntegerMaterialization);
+      return AnalyzeOverloadableOperator(std::move(expression), unary.op, unary.operator_range,
+                                         {&unary.Operand, &marker});
+    }
     return AnalyzeOverloadableOperator(std::move(expression), unary.op, unary.operator_range, {&unary.Operand});
   }
   AnalyzeBuiltinUnaryOperator(unary);
@@ -3936,11 +3708,33 @@ std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> ex
     function_declarations = CollectOperatorFunctionCandidates(*symbol, op_spelling, operands.size());
   }
 
-  OverloadResult resolution =
-      ResolveOverload(semantic_arguments, function_declarations, *ast_context_, *lookup_context_);
+  std::vector<OverloadCandidate> candidates(function_declarations.begin(), function_declarations.end());
+  if (op == expr::equal) {
+    const Type* type = operands.front()->type.GetTypePtr();
+    BOOST_ASSERT(type->AsStructType());
+    if (type->GetTriviality() == TypeTriviality::Trivial) {
+      const auto* target = ast_context_->GetReferenceType(ReferenceMode::Mut, type);
+      const auto* copy = ast_context_->GetReferenceType(ReferenceMode::Copy, type);
+      const auto* move = ast_context_->GetReferenceType(ReferenceMode::Move, type);
+      candidates.emplace_back(ast_context_->GetFunctionType({target, copy}, target));
+      candidates.emplace_back(ast_context_->GetFunctionType({target, move}, target));
+    }
+  }
+  const auto note_candidate = [&](const OverloadCandidate& candidate, const std::string& suffix) {
+    if (const auto* declaration = std::get_if<const FunctionDecl*>(&candidate)) {
+      EmitDiagnostic(kNoteDiagnostic, {(*declaration)->range.begin, (*declaration)->range.begin},
+                     "candidate function" + suffix);
+    } else {
+      EmitDiagnostic(
+          kNoteDiagnostic, {operator_range.begin, operator_range.begin},
+          fmt::format("candidate intrinsic assignment '{}'{}", TypeSpelling(CandidateType(candidate)), suffix));
+    }
+  };
+
+  OverloadResult resolution = ResolveOverload(semantic_arguments, candidates, *ast_context_, *lookup_context_);
   if (const auto* no_viable = std::get_if<NoViableOverload>(&resolution)) {
-    if (function_declarations.empty()) {
-      if (operands.size() == 1) {
+    if (candidates.empty()) {
+      if (expression->GetKind() == NodeKind::UnaryOperator) {
         Diagnose(*expression, kErrorDiagnostic, expression->range,
                  fmt::format("unary operator '{}' cannot be applied to {}", op_spelling,
                              DescribeExpressionType(operands.front()->type, "type ")));
@@ -3955,14 +3749,12 @@ std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> ex
     Diagnose(*expression, kErrorDiagnostic, expression->range,
              fmt::format("no matching overloaded operator '{}'", op_spelling));
     for (const auto& candidate : no_viable->candidates) {
-      BOOST_ASSERT(candidate.target);
       const auto* argument = std::get_if<CandidateArgumentFailure>(&candidate.failure);
       if (!argument) {
         continue;
       }
-      EmitDiagnostic(kNoteDiagnostic, {candidate.target->range.begin, candidate.target->range.begin},
-                     fmt::format("candidate function is not viable: {} for operand {}",
-                                 FormatConversionFailure(argument->failure), argument->index + 1));
+      note_candidate(candidate.target, fmt::format(" is not viable: {} for operand {}",
+                                                   FormatConversionFailure(argument->failure), argument->index + 1));
     }
     return expression;
   }
@@ -3970,19 +3762,28 @@ std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> ex
   if (const auto* ambiguous = std::get_if<AmbiguousOverload>(&resolution)) {
     Diagnose(*expression, kErrorDiagnostic, expression->range,
              fmt::format("use of overloaded operator '{}' is ambiguous", op_spelling));
-    for (const FunctionDecl* declaration : ambiguous->candidates) {
-      EmitDiagnostic(kNoteDiagnostic, {declaration->range.begin, declaration->range.begin}, "candidate function");
+    for (const auto& candidate : ambiguous->candidates) {
+      note_candidate(candidate, "");
     }
     return expression;
   }
 
   const auto& selected = std::get<SelectedOverload>(resolution);
-  const FunctionDecl* declaration = selected.target;
-  BOOST_ASSERT(declaration);
-  const auto& function_type = static_cast<const FunctionType&>(*declaration->type.GetTypePtr());
+  const auto& function_type = CandidateType(selected.target);
   const auto& parameter_types = function_type.GetParameterTypes();
-  auto formation = CompleteArguments(semantic_arguments, *declaration, selected.conversions);
+  auto formation = CompleteArguments(semantic_arguments, parameter_types, selected.conversions);
 
+  if (std::holds_alternative<const FunctionType*>(selected.target)) {
+    // Intrinsic assignment binds references and copies only after both operands have been evaluated.
+    BOOST_ASSERT(op == expr::equal && std::holds_alternative<std::vector<ConversionSequence>>(formation));
+    CommitArgumentConversions(operand_slots, parameter_types, std::get<std::vector<ConversionSequence>>(formation));
+    expression->type = QualType(parameter_types.front()->AsReferenceType()->GetReferentType());
+    expression->value_category = ValueCategory::LValue;
+    return expression;
+  }
+
+  const auto* declaration = std::get<const FunctionDecl*>(selected.target);
+  BOOST_ASSERT(declaration);
   auto call = std::make_unique<OperatorCallExpr>();
   call->range = expression->range;
   call->Args.reserve(operand_slots.size());
@@ -4018,6 +3819,25 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
   }
 
   const QualType operand_type = expression.Operand->type;
+  if (IsIncrementDecrementOperator(expression.op)) {
+    if (expression.Operand->value_category != ValueCategory::LValue || operand_type.IsConstQualified()) {
+      Diagnose(expression, kErrorDiagnostic, expression.Operand->range,
+               fmt::format("unary operator '{}' requires a modifiable lvalue operand, not {}",
+                           expr::to_string(expression.op), DescribeExpressionType(operand_type)));
+      return;
+    }
+    const BuiltinType* builtin_type = operand_type.GetTypePtr()->AsBuiltinType();
+    if (!builtin_type || !(builtin_type->IsInteger() || builtin_type->IsFloatingPoint())) {
+      Diagnose(expression, kErrorDiagnostic, expression.range,
+               fmt::format("unary operator '{}' cannot be applied to {}", expr::to_string(expression.op),
+                           DescribeExpressionType(operand_type, "type ")));
+      return;
+    }
+    expression.type = operand_type;
+    expression.value_category = expression.is_postfix ? ValueCategory::PureRValue : ValueCategory::LValue;
+    return;
+  }
+
   if (expression.op == expr::amp) {
     if (operand_type.GetTypePtr()->GetKind() == TypeKind::FunctionOverloadSet) {
       expression.type = QualType(ast_context_->GetAddressOfFunctionOverloadSetType());
@@ -4079,7 +3899,7 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
     return;
   }
 
-  if (expression.op != expr::plus && expression.op != expr::minus) {
+  if (expression.op != expr::plus && expression.op != expr::minus && expression.op != expr::tilde) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
              fmt::format("unary operator '{}' is not supported", expr::to_string(expression.op)));
     return;
@@ -4091,7 +3911,7 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
   }
 
   const BuiltinType* builtin_type = operand_type.GetTypePtr()->AsBuiltinType();
-  if (builtin_type && builtin_type->IsFloatingPoint()) {
+  if (expression.op != expr::tilde && builtin_type && builtin_type->IsFloatingPoint()) {
     ApplyDefaultValueConversion(expression.Operand);
     expression.type = operand_type.WithoutConst();
     expression.value_category = ValueCategory::PureRValue;
@@ -4106,7 +3926,7 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
     return;
   }
 
-  if (expression.op == expr::plus || integer_type->IsSignedInteger()) {
+  if (expression.op != expr::minus || integer_type->IsSignedInteger()) {
     ApplyDefaultValueConversion(expression.Operand);
     expression.type = operand_type.WithoutConst();
     expression.value_category = ValueCategory::PureRValue;
@@ -4128,11 +3948,15 @@ void Sema::AnalyzeBuiltinBinaryOperator(BinaryOperator& expression) {
     return;
   }
 
-  const bool is_arithmetic = IsArithmeticBinaryOperator(expression.op);
-  const bool is_ordered_comparison = IsOrderedComparisonOperator(expression.op);
-  const bool is_equality = IsEqualityOperator(expression.op);
-  const bool is_logical = IsLogicalBinaryOperator(expression.op);
-  if (!is_arithmetic && !is_ordered_comparison && !is_equality && !is_logical) {
+  const bool is_compound_assignment = expression.IsCompoundAssignment();
+  const auto op = GetComputationOp(expression.op);
+  const bool is_arithmetic = IsArithmeticBinaryOperator(op);
+  const bool is_bitwise = IsBitwiseBinaryOperator(op);
+  const bool is_shift = IsShiftBinaryOperator(op);
+  const bool is_ordered_comparison = IsOrderedComparisonOperator(op);
+  const bool is_equality = IsEqualityOperator(op);
+  const bool is_logical = IsLogicalBinaryOperator(op);
+  if (!is_arithmetic && !is_bitwise && !is_shift && !is_ordered_comparison && !is_equality && !is_logical) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
              fmt::format("binary operator '{}' is not supported", expr::to_string(expression.op)));
     return;
@@ -4172,10 +3996,19 @@ void Sema::AnalyzeBuiltinBinaryOperator(BinaryOperator& expression) {
 
   const auto* left_builtin = expression.LHS->type.GetTypePtr()->AsBuiltinType();
   const auto* right_builtin = expression.RHS->type.GetTypePtr()->AsBuiltinType();
-  const bool invalid_remainder_operands =
-      expression.op == expr::percent &&
+  const bool invalid_integer_operands =
+      (op == expr::percent || is_bitwise || is_shift) &&
       (!left_builtin || !left_builtin->IsInteger() || !right_builtin || !right_builtin->IsInteger());
-  QualType common_type(invalid_remainder_operands
+  if (is_shift && !invalid_integer_operands) {
+    if (!is_compound_assignment) {
+      ApplyDefaultValueConversion(expression.LHS);
+    }
+    ApplyDefaultValueConversion(expression.RHS);
+    expression.type = expression.LHS->type.WithoutConst();
+    expression.value_category = is_compound_assignment ? ValueCategory::LValue : ValueCategory::PureRValue;
+    return;
+  }
+  QualType common_type(invalid_integer_operands
                            ? nullptr
                            : CommonNumericType(*ast_context_, expression.LHS->type, expression.RHS->type));
   // Function and virtual interface pointers support null checks only. Raw
@@ -4202,12 +4035,27 @@ void Sema::AnalyzeBuiltinBinaryOperator(BinaryOperator& expression) {
   if (!lhs_plan || !rhs_plan) {
     return;
   }
-  expression.LHS =
-      CommitConversion(std::move(expression.LHS), common_type, *lhs_plan, ConstructionKind::CompleteObject);
+  if (is_compound_assignment) {
+    const ValueState result{common_type, ValueCategory::PureRValue};
+    auto writeback = BuildValueConversion(result, expression.LHS->type, *ast_context_);
+    if (const auto* failure = std::get_if<ImplicitConversionFailure>(&writeback)) {
+      Diagnose(expression, kErrorDiagnostic, expression.operator_range,
+               fmt::format("cannot assign to target: {}", FormatImplicitConversionFailure(*failure)));
+      return;
+    }
+    DiagnoseConversionRisks(expression, expression.operator_range, result, expression.LHS->type,
+                            std::get<ConversionSequence>(writeback));
+    // Keep the target intact. CodeGen reads and converts its value after locating it once.
+  } else {
+    expression.LHS =
+        CommitConversion(std::move(expression.LHS), common_type, *lhs_plan, ConstructionKind::CompleteObject);
+  }
   expression.RHS =
       CommitConversion(std::move(expression.RHS), common_type, *rhs_plan, ConstructionKind::CompleteObject);
-  expression.type = is_arithmetic ? common_type : bool_type;
-  expression.value_category = ValueCategory::PureRValue;
+  expression.type = is_compound_assignment        ? expression.LHS->type
+                    : is_arithmetic || is_bitwise ? common_type
+                                                  : bool_type;
+  expression.value_category = is_compound_assignment ? ValueCategory::LValue : ValueCategory::PureRValue;
 }
 
 void Sema::AnalyzeSubscriptExpr(SubscriptExpr& expression) {
@@ -4382,125 +4230,105 @@ void Sema::AnalyzeArrayValueElementsForRecovery(ArrayValueExpr& expression) {
   }
 }
 
-std::unique_ptr<Expr> Sema::AnalyzeSimpleAssignment(std::unique_ptr<Expr> expression_node) {
+std::unique_ptr<Expr> Sema::AnalyzeAssignment(std::unique_ptr<Expr> expression_node) {
   BOOST_ASSERT(expression_node && expression_node->GetKind() == NodeKind::BinaryOperator);
   auto& expression = static_cast<BinaryOperator&>(*expression_node);
-  BOOST_ASSERT(expression.IsSimpleAssignment());
+  BOOST_ASSERT(expression.IsAssignment());
   expression.type = QualType{};
   expression.value_category = ValueCategory::None;
 
-  if (!expression.LHS) {
+  if (!expression.LHS || !expression.RHS || !expression.LHS->type || !expression.RHS->type) {
     expression.contains_errors = true;
     return expression_node;
   }
-  if (expression.LHS->ContainsErrors()) {
-    return expression_node;
-  }
-  if (!expression.LHS->type) {
-    expression.contains_errors = true;
+  if (expression.LHS->ContainsErrors() || expression.RHS->ContainsErrors()) {
     return expression_node;
   }
 
   const QualType target_type = expression.LHS->type;
+  if (!expression.IsCompoundAssignment() && target_type.GetTypePtr()->AsStructType()) {
+    return AnalyzeOverloadableOperator(std::move(expression_node), expr::equal, expression.operator_range,
+                                       {&expression.LHS, &expression.RHS});
+  }
+
   if (expression.LHS->value_category != ValueCategory::LValue || target_type.IsConstQualified() ||
-      !(target_type && target_type.GetTypePtr()->IsObject())) {
+      !target_type.GetTypePtr()->IsObject()) {
     Diagnose(expression, kErrorDiagnostic, expression.LHS->range,
              fmt::format("assignment target must be a modifiable lvalue, not {}", DescribeExpressionType(target_type)));
     return expression_node;
   }
-
-  if (!expression.RHS) {
-    expression.contains_errors = true;
-    return expression_node;
-  }
-  if (expression.RHS->ContainsErrors()) {
-    return expression_node;
-  }
-  if (!expression.RHS->type) {
-    expression.contains_errors = true;
-    return expression_node;
+  if (expression.IsCompoundAssignment()) {
+    return AnalyzeBinaryOperator(std::move(expression_node));
   }
 
   if (!SelectAssignmentFunctionAddress(expression.RHS, target_type, expression)) {
     return expression_node;
   }
-
   const QualType source_type = expression.RHS->type;
-  const SourceRange source_range = expression.RHS->range;
-  if (target_type.WithoutConst() == source_type.WithoutConst()) {
-    auto assignment_result = ClassifyObjectAssignment(*expression.LHS, *expression.RHS);
-    if (const auto* failure = std::get_if<ObjectAssignmentFailure>(&assignment_result)) {
-      const SourceRange range =
-          failure->kind == ObjectAssignmentFailureKind::ConstArrayElement ? expression.LHS->range : expression.range;
-      Diagnose(expression, kErrorDiagnostic, range, FormatObjectAssignmentFailure(*failure));
+  if (target_type.GetTypePtr()->AsArrayType() && target_type.WithoutConst() == source_type.WithoutConst()) {
+    QualType target_element_type = target_type;
+    QualType source_element_type = source_type;
+    while (const auto* target_array = target_element_type.GetTypePtr()->AsArrayType()) {
+      const auto* source_array = source_element_type.GetTypePtr()->AsArrayType();
+      BOOST_ASSERT(source_array);
+      const bool source_const = source_element_type.IsConstQualified();
+      source_element_type = source_array->GetElementType();
+      if (source_const) source_element_type = source_element_type.WithConst();
+      target_element_type = target_array->GetElementType();
+      if (target_element_type.IsConstQualified()) {
+        Diagnose(expression, kErrorDiagnostic, expression.LHS->range,
+                 fmt::format("cannot assign an array with const-qualified element type '{}'",
+                             TypeSpelling(target_element_type)));
+        return expression_node;
+      }
+    }
+    if (expression.RHS->value_category == ValueCategory::PureRValue) {
+      MaterializeObject(expression.RHS);
+    }
+    // Array elements are existing subobjects, including elements of a materialized array result.
+    auto target = std::make_unique<OpaqueValueExpr>();
+    target->range = expression.LHS->range;
+    target->type = target_element_type;
+    target->value_category = ValueCategory::LValue;
+    auto source = std::make_unique<OpaqueValueExpr>();
+    source->range = expression.RHS->range;
+    source->type = source_element_type;
+    source->value_category = expression.RHS->value_category;
+    const auto* target_element = target.get();
+    const auto* source_element = source.get();
+    auto element = std::make_unique<BinaryOperator>();
+    element->range = expression.range;
+    element->operator_range = expression.operator_range;
+    element->op = expr::equal;
+    element->LHS = std::move(target);
+    element->RHS = std::move(source);
+    auto operation = AnalyzeAssignment(std::move(element));
+    if (operation->ContainsErrors() || !operation->type) {
+      expression.contains_errors = true;
       return expression_node;
     }
-
-    const auto& assignment_plan = std::get<ObjectAssignmentPlan>(assignment_result);
-    switch (assignment_plan.kind) {
-      case ObjectAssignmentKind::Builtin:
-        if (!target_type.GetTypePtr()->IsScalar()) {
-          // Aggregate assignment consumes a source object, not an early copy of its contents.
-          if (expression.RHS->value_category == ValueCategory::PureRValue) {
-            MaterializeObject(expression.RHS);
-          }
-          expression.type = target_type;
-          expression.value_category = ValueCategory::LValue;
-          return expression_node;
-        }
-        break;
-      case ObjectAssignmentKind::OperatorCall: {
-        BOOST_ASSERT(assignment_plan.selected_assignment);
-        auto call = std::make_unique<OperatorCallExpr>();
-        call->range = expression.range;
-        call->Args.reserve(2);
-        call->Args.push_back(std::move(expression.LHS));
-        call->Args.push_back(std::move(expression.RHS));
-        const auto& parameters = FunctionParameterTypes(*assignment_plan.selected_assignment);
-        const auto sources = MakeConversionSources(ExpressionPointers(call->Args));
-        auto matched = MatchArguments(sources, parameters, *ast_context_, *lookup_context_);
-        auto* conversions = std::get_if<std::vector<ConversionSequence>>(&matched);
-        BOOST_ASSERT(conversions);
-        if (!conversions) {
-          call->contains_errors = true;
-          return call;
-        }
-        // Both fixed-slot operands bind references, so no formation is pending.
-        auto completed = CompleteArguments(sources, parameters, std::move(*conversions));
-        BOOST_ASSERT(std::holds_alternative<std::vector<ConversionSequence>>(completed));
-        CommitArgumentConversions(ExpressionSlots(call->Args), parameters,
-                                  std::get<std::vector<ConversionSequence>>(completed));
-
-        auto callee = std::make_unique<DeclRefExpr>();
-        callee->range = expression.operator_range;
-        callee->name = NameSyntax::Operator("=", callee->range);
-        call->Callee = std::move(callee);
-        FormDirectCallResult(*call, static_cast<DeclRefExpr&>(*call->Callee), *assignment_plan.selected_assignment);
-        return call;
-      }
-      case ObjectAssignmentKind::ArrayAssign: {
-        BOOST_ASSERT(assignment_plan.selected_assignment);
-        if (expression.RHS->value_category == ValueCategory::PureRValue) {
-          MaterializeObject(expression.RHS);
-        }
-        auto assignment = std::make_unique<ArrayAssignmentExpr>();
-        assignment->range = expression.range;
-        assignment->operator_range = expression.operator_range;
-        assignment->element_assignment = assignment_plan.selected_assignment;
-        assignment->type = target_type;
-        assignment->value_category = ValueCategory::LValue;
-        assignment->LHS = std::move(expression.LHS);
-        assignment->RHS = std::move(expression.RHS);
-        return assignment;
-      }
+    if (operation->GetKind() == NodeKind::BinaryOperator) {
+      // The selected leaf operation is intrinsic; same-type array copying is equivalent.
+      expression.type = target_type;
+      expression.value_category = ValueCategory::LValue;
+      return expression_node;
     }
+    auto assignment = std::make_unique<ArrayAssignmentExpr>();
+    assignment->range = expression.range;
+    assignment->operator_range = expression.operator_range;
+    assignment->type = target_type;
+    assignment->value_category = ValueCategory::LValue;
+    assignment->LHS = std::move(expression.LHS);
+    assignment->RHS = std::move(expression.RHS);
+    assignment->ElementAssignment = std::move(operation);
+    assignment->target_element = target_element;
+    assignment->source_element = source_element;
+    return assignment;
   }
 
-  // Ordinary assignment does not perform derived-to-base value slicing or
-  // initialize an object through a constructor.
-  const bool same_type = source_type.WithoutConst() == target_type.WithoutConst();
-  if (!same_type && ((!source_type.GetTypePtr()->IsScalar() && !source_type.GetTypePtr()->AsNullType()) ||
-                     !target_type.GetTypePtr()->IsScalar())) {
+  const SourceRange source_range = expression.RHS->range;
+  if ((!source_type.GetTypePtr()->IsScalar() && !source_type.GetTypePtr()->AsNullType()) ||
+      !target_type.GetTypePtr()->IsScalar()) {
     Diagnose(expression, kErrorDiagnostic, source_range,
              fmt::format("cannot assign to target: {}",
                          FormatImplicitConversionFailure({ImplicitConversionFailureKind::NoConversion,
@@ -5270,8 +5098,9 @@ std::unique_ptr<Expr> Sema::AnalyzeCallableObjectCall(std::unique_ptr<Expr> expr
         expression, kErrorDiagnostic, expression.range,
         fmt::format("no matching function for call to object of type '{}'", TypeSpelling(expression.Callee->type)));
     for (const auto& candidate : no_viable->candidates) {
-      BOOST_ASSERT(candidate.target);
-      const SourceRange candidate_range{candidate.target->range.begin, candidate.target->range.begin};
+      const auto* target = std::get<const FunctionDecl*>(candidate.target);
+      BOOST_ASSERT(target);
+      const SourceRange candidate_range{target->range.begin, target->range.begin};
       if (const auto* arity = std::get_if<CandidateArityFailure>(&candidate.failure)) {
         BOOST_ASSERT(arity->required > 0 && arity->provided > 0);
         const std::size_t required = arity->required - 1;
@@ -5302,14 +5131,15 @@ std::unique_ptr<Expr> Sema::AnalyzeCallableObjectCall(std::unique_ptr<Expr> expr
   if (const auto* ambiguous = std::get_if<AmbiguousOverload>(&resolution)) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
              fmt::format("call to object of type '{}' is ambiguous", TypeSpelling(expression.Callee->type)));
-    for (const FunctionDecl* declaration : ambiguous->candidates) {
+    for (const auto& candidate : ambiguous->candidates) {
+      const auto* declaration = std::get<const FunctionDecl*>(candidate);
       EmitDiagnostic(kNoteDiagnostic, {declaration->range.begin, declaration->range.begin}, "candidate function");
     }
     return expression_node;
   }
 
   const auto& selected = std::get<SelectedOverload>(resolution);
-  const FunctionDecl* declaration = selected.target;
+  const FunctionDecl* declaration = std::get<const FunctionDecl*>(selected.target);
   BOOST_ASSERT(declaration);
   const auto& function_type = static_cast<const FunctionType&>(*declaration->type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
@@ -5438,8 +5268,9 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
                    : fmt::format("no matching function for call to '{}'", callee.name.Spelling()));
       callee.contains_errors = true;
       for (const auto& candidate : no_viable->candidates) {
-        BOOST_ASSERT(candidate.target);
-        const SourceRange candidate_range{candidate.target->range.begin, candidate.target->range.begin};
+        const auto* target = std::get<const FunctionDecl*>(candidate.target);
+        BOOST_ASSERT(target);
+        const SourceRange candidate_range{target->range.begin, target->range.begin};
         if (const auto* arity = std::get_if<CandidateArityFailure>(&candidate.failure)) {
           EmitDiagnostic(kNoteDiagnostic, candidate_range,
                          fmt::format("candidate function requires {} {}, but {} {} provided", arity->required,
@@ -5458,7 +5289,8 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
                is_operator ? fmt::format("call to operator '{}' is ambiguous", callee.name.Spelling())
                            : fmt::format("call to '{}' is ambiguous", callee.name.Spelling()));
       callee.contains_errors = true;
-      for (const FunctionDecl* declaration : ambiguous->candidates) {
+      for (const auto& candidate : ambiguous->candidates) {
+        const auto* declaration = std::get<const FunctionDecl*>(candidate);
         EmitDiagnostic(kNoteDiagnostic, {declaration->range.begin, declaration->range.begin}, "candidate function");
       }
       return;
@@ -5467,7 +5299,7 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
     // Complete only the winning candidate. A formation failure does not reopen overload resolution;
     // retain the selected declaration for recovery while leaving argument conversions uncommitted.
     const auto& selected = std::get<SelectedOverload>(resolution);
-    const FunctionDecl* declaration = selected.target;
+    const FunctionDecl* declaration = std::get<const FunctionDecl*>(selected.target);
     BOOST_ASSERT(declaration);
     const auto& function_type = static_cast<const FunctionType&>(*declaration->type.GetTypePtr());
     const auto& parameter_types = function_type.GetParameterTypes();
@@ -5551,8 +5383,9 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
              fmt::format("no matching constructor for type '{}'", callee.name.Spelling()));
     callee.contains_errors = true;
     for (const auto& candidate : no_viable->candidates) {
-      BOOST_ASSERT(candidate.target);
-      const SourceRange candidate_range{candidate.target->range.begin, candidate.target->range.begin};
+      const auto* target = std::get<const FunctionDecl*>(candidate.target);
+      BOOST_ASSERT(target);
+      const SourceRange candidate_range{target->range.begin, target->range.begin};
       if (const auto* arity = std::get_if<CandidateArityFailure>(&candidate.failure)) {
         EmitDiagnostic(kNoteDiagnostic, candidate_range,
                        fmt::format("candidate constructor requires {} {}, but {} {} provided", arity->required,
@@ -5570,7 +5403,8 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
     Diagnose(expression, kErrorDiagnostic, expression.range,
              fmt::format("construction of '{}' is ambiguous", callee.name.Spelling()));
     callee.contains_errors = true;
-    for (const FunctionDecl* declaration : ambiguous->candidates) {
+    for (const auto& candidate : ambiguous->candidates) {
+      const auto* declaration = std::get<const FunctionDecl*>(candidate);
       EmitDiagnostic(kNoteDiagnostic, {declaration->range.begin, declaration->range.begin}, "candidate constructor");
     }
     return;
@@ -5578,8 +5412,9 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
 
   // Bind the selected constructor before reporting formation errors, but commit no partial argument plan.
   const auto& selected = std::get<SelectedOverload>(resolution);
-  BOOST_ASSERT(selected.target && selected.target->GetKind() == NodeKind::ConstructorDecl);
-  const auto& declaration = static_cast<const ConstructorDecl&>(*selected.target);
+  const auto* target = std::get<const FunctionDecl*>(selected.target);
+  BOOST_ASSERT(target && target->GetKind() == NodeKind::ConstructorDecl);
+  const auto& declaration = static_cast<const ConstructorDecl&>(*target);
   const auto& function_type = static_cast<const FunctionType&>(*declaration.type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
   auto formation = CompleteArguments(semantic_arguments, declaration, selected.conversions);
@@ -5735,8 +5570,9 @@ void Sema::AnalyzeConstructionExpr(ConstructionExpr& expression) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
              fmt::format("no matching constructor for type '{}'", expression.target_name.Spelling()));
     for (const auto& candidate : no_viable->candidates) {
-      BOOST_ASSERT(candidate.target);
-      const SourceRange candidate_range{candidate.target->range.begin, candidate.target->range.begin};
+      const auto* target = std::get<const FunctionDecl*>(candidate.target);
+      BOOST_ASSERT(target);
+      const SourceRange candidate_range{target->range.begin, target->range.begin};
       if (const auto* arity = std::get_if<CandidateArityFailure>(&candidate.failure)) {
         EmitDiagnostic(kNoteDiagnostic, candidate_range,
                        fmt::format("candidate constructor requires {} {}, but {} {} provided", arity->required,
@@ -5753,7 +5589,8 @@ void Sema::AnalyzeConstructionExpr(ConstructionExpr& expression) {
   if (const auto* ambiguous = std::get_if<AmbiguousOverload>(&resolution)) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
              fmt::format("construction of '{}' is ambiguous", expression.target_name.Spelling()));
-    for (const FunctionDecl* declaration : ambiguous->candidates) {
+    for (const auto& candidate : ambiguous->candidates) {
+      const auto* declaration = std::get<const FunctionDecl*>(candidate);
       EmitDiagnostic(kNoteDiagnostic, {declaration->range.begin, declaration->range.begin}, "candidate constructor");
     }
     return;
@@ -5761,7 +5598,7 @@ void Sema::AnalyzeConstructionExpr(ConstructionExpr& expression) {
 
   // Finish the winning constructor's parameter formations before converting arguments or the address.
   const auto& selected_overload = std::get<SelectedOverload>(resolution);
-  const auto* selected = static_cast<const ConstructorDecl*>(selected_overload.target);
+  const auto* selected = static_cast<const ConstructorDecl*>(std::get<const FunctionDecl*>(selected_overload.target));
   BOOST_ASSERT(selected);
   const auto& function_type = static_cast<const FunctionType&>(*selected->type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
@@ -5969,8 +5806,9 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
     callee->contains_errors = true;
 
     for (const auto& candidate : no_viable->candidates) {
-      BOOST_ASSERT(candidate.target);
-      const SourceRange candidate_range{candidate.target->range.begin, candidate.target->range.begin};
+      const auto* target = std::get<const FunctionDecl*>(candidate.target);
+      BOOST_ASSERT(target);
+      const SourceRange candidate_range{target->range.begin, target->range.begin};
       if (const auto* arity = std::get_if<CandidateArityFailure>(&candidate.failure)) {
         if (arity->required == 0) {
           EmitDiagnostic(kNoteDiagnostic, candidate_range,
@@ -6009,7 +5847,8 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
              fmt::format("call to '{}' is ambiguous", callee->name.Spelling()));
     callee->contains_errors = true;
-    for (const FunctionDecl* declaration : ambiguous->candidates) {
+    for (const auto& candidate : ambiguous->candidates) {
+      const auto* declaration = std::get<const FunctionDecl*>(candidate);
       EmitDiagnostic(kNoteDiagnostic, {declaration->range.begin, declaration->range.begin}, "candidate function");
     }
     return;
@@ -6017,7 +5856,7 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
 
   // Complete receiver and explicit-argument formation together before committing either.
   const auto& selected = std::get<SelectedOverload>(resolution);
-  const FunctionDecl& declaration = *selected.target;
+  const FunctionDecl& declaration = *std::get<const FunctionDecl*>(selected.target);
   const auto& function_type = static_cast<const FunctionType&>(*declaration.type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
   auto formation = CompleteArguments(semantic_arguments, declaration, selected.conversions);
@@ -6864,11 +6703,19 @@ QualType Sema::ResolveTypeImpl(TypeSyntax& type_syntax) {
             break;
           case ConstantIntegerFailureKind::UnsupportedOperation:
             Diagnose(array_syntax, kErrorDiagnostic, failure_range,
-                     "array length constant expression may use only '+', '-', and '*' arithmetic");
+                     "array length constant expression may use only '+', '-', '*', '/', '%', '~', '&', '|', '^', "
+                     "'<<', and '>>' operators");
             break;
           case ConstantIntegerFailureKind::NotRepresentable:
             Diagnose(array_syntax, kErrorDiagnostic, failure_range,
                      "array length constant expression overflows its integer type");
+            break;
+          case ConstantIntegerFailureKind::ZeroDivisor:
+            Diagnose(array_syntax, kErrorDiagnostic, failure_range, "array length divisor must be non-zero");
+            break;
+          case ConstantIntegerFailureKind::InvalidShiftCount:
+            Diagnose(array_syntax, kErrorDiagnostic, failure_range,
+                     "array length shift count must be non-negative and less than the left operand's bit width");
             break;
         }
         return QualType{};

@@ -12,21 +12,16 @@
 namespace cw::sema_detail {
 namespace {
 
-/// \brief A function match retained for comparison during this resolution.
+/// \brief A match retained for comparison during this resolution.
 struct ViableCandidate {
-  const FunctionDecl* target{};                 ///< Borrowed declaration with a viable match.
+  OverloadCandidate target{};                   ///< Candidate with a viable match.
   std::vector<ConversionSequence> conversions;  ///< Owned matches without completed object formation.
 };
 
-const std::vector<const Type*>& FunctionParameterTypes(const FunctionDecl& declaration) {
-  BOOST_ASSERT(declaration.type && declaration.type.GetTypePtr()->AsFunctionType());
-  return declaration.type.GetTypePtr()->AsFunctionType()->GetParameterTypes();
-}
-
 bool IsBetterCandidate(const std::vector<ConversionSource>& arguments, const ViableCandidate& left,
                        const ViableCandidate& right) {
-  const auto& left_parameters = FunctionParameterTypes(*left.target);
-  const auto& right_parameters = FunctionParameterTypes(*right.target);
+  const auto& left_parameters = CandidateType(left.target).GetParameterTypes();
+  const auto& right_parameters = CandidateType(right.target).GetParameterTypes();
   BOOST_ASSERT(left.conversions.size() == arguments.size() && left_parameters.size() == arguments.size());
   BOOST_ASSERT(right.conversions.size() == arguments.size() && right_parameters.size() == arguments.size());
   // A candidate must be no worse for every argument and better for at least one.
@@ -48,6 +43,16 @@ bool IsBetterCandidate(const std::vector<ConversionSource>& arguments, const Via
 
 }  // namespace
 
+const FunctionType& CandidateType(const OverloadCandidate& candidate) {
+  if (const auto* declaration = std::get_if<const FunctionDecl*>(&candidate)) {
+    BOOST_ASSERT(*declaration && (*declaration)->type && (*declaration)->type.GetTypePtr()->AsFunctionType());
+    return *(*declaration)->type.GetTypePtr()->AsFunctionType();
+  }
+  const auto* signature = std::get<const FunctionType*>(candidate);
+  BOOST_ASSERT(signature);
+  return *signature;
+}
+
 MatchArgumentsResult MatchArguments(const std::vector<ConversionSource>& arguments,
                                     const std::vector<const Type*>& parameter_types, ASTContext& ast_context,
                                     const LookupContext& lookup_context) {
@@ -67,19 +72,18 @@ MatchArgumentsResult MatchArguments(const std::vector<ConversionSource>& argumen
 }
 
 OverloadResult ResolveOverload(const std::vector<ConversionSource>& arguments,
-                               const std::vector<const FunctionDecl*>& functions, ASTContext& ast_context,
+                               const std::vector<OverloadCandidate>& candidates, ASTContext& ast_context,
                                const LookupContext& lookup_context) {
   // Retain failed matches for diagnostics while collecting candidates eligible for ranking.
   std::vector<ViableCandidate> viable;
-  viable.reserve(functions.size());
+  viable.reserve(candidates.size());
   NoViableOverload no_viable;
-  for (const FunctionDecl* declaration : functions) {
-    BOOST_ASSERT(declaration);
-    auto match = MatchArguments(arguments, FunctionParameterTypes(*declaration), ast_context, lookup_context);
+  for (const auto& candidate : candidates) {
+    auto match = MatchArguments(arguments, CandidateType(candidate).GetParameterTypes(), ast_context, lookup_context);
     if (const auto* failure = std::get_if<CandidateFailure>(&match)) {
-      no_viable.candidates.push_back({declaration, *failure});
+      no_viable.candidates.push_back({candidate, *failure});
     } else {
-      viable.push_back({declaration, std::get<std::vector<ConversionSequence>>(std::move(match))});
+      viable.push_back({candidate, std::get<std::vector<ConversionSequence>>(std::move(match))});
     }
   }
   if (viable.empty()) {
@@ -105,6 +109,13 @@ OverloadResult ResolveOverload(const std::vector<ConversionSource>& arguments,
   ambiguous.candidates.reserve(viable.size());
   for (const auto& candidate : viable) ambiguous.candidates.push_back(candidate.target);
   return ambiguous;
+}
+
+OverloadResult ResolveOverload(const std::vector<ConversionSource>& arguments,
+                               const std::vector<const FunctionDecl*>& functions, ASTContext& ast_context,
+                               const LookupContext& lookup_context) {
+  return ResolveOverload(arguments, std::vector<OverloadCandidate>(functions.begin(), functions.end()), ast_context,
+                         lookup_context);
 }
 
 }  // namespace cw::sema_detail

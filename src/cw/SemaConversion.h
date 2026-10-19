@@ -198,8 +198,8 @@ ConversionComparison CompareConversion(const ValueState& source, QualType left_t
 ConversionCompletionResult CompleteConversion(const ConversionSource& source, QualType target,
                                               ConversionSequence& sequence);
 /// \brief Reads warning facts only after every required conversion has completed.
-ConversionRiskFacts CollectConversionRisks(const ConversionSource& source, QualType target,
-                                           const ConversionSequence& sequence, const ASTContext& ast_context);
+ConversionRiskFacts CollectConversionRisks(ValueState source, QualType target, const ConversionSequence& sequence,
+                                           const ASTContext& ast_context);
 /// \brief Mechanically commits a completed conversion, transferring expression ownership.
 std::unique_ptr<Expr> CommitConversion(std::unique_ptr<Expr> expression, QualType target,
                                        const ConversionSequence& sequence, ConstructionKind result_kind);

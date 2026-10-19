@@ -80,6 +80,7 @@ void ASTVisitor::Visit(CallExpr& n) { Visit(static_cast<Expr&>(n)); }
 void ASTVisitor::Visit(OperatorCallExpr& n) { Visit(static_cast<CallExpr&>(n)); }
 void ASTVisitor::Visit(ConstructionExpr& n) { Visit(static_cast<Expr&>(n)); }
 void ASTVisitor::Visit(ArrayConstructionExpr& n) { Visit(static_cast<Expr&>(n)); }
+void ASTVisitor::Visit(OpaqueValueExpr& n) { Visit(static_cast<Expr&>(n)); }
 void ASTVisitor::Visit(ArrayAssignmentExpr& n) { Visit(static_cast<Expr&>(n)); }
 void ASTVisitor::Visit(DestructorCallExpr& n) { Visit(static_cast<CallExpr&>(n)); }
 void ASTVisitor::Visit(ReceiverCallExpr& n) { Visit(static_cast<CallExpr&>(n)); }

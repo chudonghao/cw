@@ -14,6 +14,14 @@ namespace cw {
 
 namespace {
 
+constexpr std::pair<expr::ExprGrammarSymbol, expr::ExprGrammarSymbol> kCompoundAssignmentOperators[] = {
+    {expr::plusequal, expr::plus},         {expr::minusequal, expr::minus},
+    {expr::starequal, expr::star},         {expr::slashequal, expr::slash},
+    {expr::percentequal, expr::percent},   {expr::ampequal, expr::amp},
+    {expr::pipeequal, expr::pipe},         {expr::caretequal, expr::caret},
+    {expr::lesslessequal, expr::lessless}, {expr::greatergreaterequal, expr::greatergreater},
+};
+
 template <typename Declaration>
 void CollectFlattenedDecls(const std::vector<std::unique_ptr<Decl>>& declarations, std::vector<Declaration*>& result) {
   for (const auto& declaration : declarations) {
@@ -210,14 +218,37 @@ const char* to_string(ConstructionKind kind) {
   return "unknown";
 }
 
-bool IsOperatorFunctionName(const std::string& name) {
-  return name == "." || name == "->" || name == "&" || name == "&&" || name == "*" || name == "+" || name == "++" ||
-         name == "-" || name == "--" || name == "~" || name == "!" || name == "!=" || name == "/" || name == "%" ||
-         name == "<" || name == "<=" || name == "<<" || name == ">" || name == ">=" || name == ">>" || name == "^" ||
-         name == "|" || name == "||" || name == "?" || name == ":" || name == "::" || name == ":=" || name == "=" ||
-         name == "+=" || name == "-=" || name == "*=" || name == "/=" || name == "%=" || name == "<<=" ||
-         name == ">>=" || name == "&=" || name == "^=" || name == "|=" || name == "==" || name == "," || name == "[]" ||
-         name == "()";
+bool IsOperatorFunctionName(std::string_view name) {
+  return IsAssignmentOperator(name) || name == "." || name == "->" || name == "&" || name == "&&" || name == "*" ||
+         name == "+" || name == "++" || name == "-" || name == "--" || name == "~" || name == "!" || name == "!=" ||
+         name == "/" || name == "%" || name == "<" || name == "<=" || name == "<<" || name == ">" || name == ">=" ||
+         name == ">>" || name == "^" || name == "|" || name == "||" || name == "?" || name == ":" || name == "::" ||
+         name == ":=" || name == "==" || name == "," || name == "[]" || name == "()";
+}
+
+bool IsIncrementDecrementOperator(expr::ExprGrammarSymbol op) { return op == expr::plusplus || op == expr::minusminus; }
+
+bool IsLogicalBinaryOperator(expr::ExprGrammarSymbol op) { return op == expr::ampamp || op == expr::pipepipe; }
+
+bool IsShiftBinaryOperator(expr::ExprGrammarSymbol op) { return op == expr::lessless || op == expr::greatergreater; }
+
+bool IsCompoundAssignmentOperator(expr::ExprGrammarSymbol op) { return GetComputationOp(op) != op; }
+
+bool IsAssignmentOperator(expr::ExprGrammarSymbol op) { return op == expr::equal || IsCompoundAssignmentOperator(op); }
+
+bool IsAssignmentOperator(std::string_view name) {
+  if (name == "=") return true;
+  for (const auto& assignment : kCompoundAssignmentOperators) {
+    if (name == expr::to_string(assignment.first)) return true;
+  }
+  return false;
+}
+
+expr::ExprGrammarSymbol GetComputationOp(expr::ExprGrammarSymbol op) {
+  for (const auto& [assignment, computation] : kCompoundAssignmentOperators) {
+    if (op == assignment) return computation;
+  }
+  return op;
 }
 
 // Type Accept and Traverse implementations.
@@ -633,7 +664,7 @@ void CallExpr::Traverse(ASTVisitor& visitor) {
 
 void OperatorCallExpr::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
 
-bool OperatorCallExpr::IsSimpleAssignment() const {
+bool OperatorCallExpr::IsAssignment() const {
   if (Args.size() != 2 || !Args[0] || !Args[1] || !Callee || Callee->GetKind() != NodeKind::DeclRefExpr) {
     return false;
   }
@@ -644,7 +675,7 @@ bool OperatorCallExpr::IsSimpleAssignment() const {
   switch (declaration->GetKind()) {
     case NodeKind::FunctionDecl:
     case NodeKind::VirtualFunctionDecl:
-      return static_cast<const FunctionDecl*>(declaration)->name == "=";
+      return IsAssignmentOperator(static_cast<const FunctionDecl*>(declaration)->name);
     default:
       return false;
   }
@@ -669,6 +700,9 @@ void ArrayConstructionExpr::Traverse(ASTVisitor& visitor) {
   }
 }
 
+void OpaqueValueExpr::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+void OpaqueValueExpr::Traverse(ASTVisitor& visitor) {}
+
 void ArrayAssignmentExpr::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
 void ArrayAssignmentExpr::Traverse(ASTVisitor& visitor) {
   if (LHS) {
@@ -676,6 +710,9 @@ void ArrayAssignmentExpr::Traverse(ASTVisitor& visitor) {
   }
   if (RHS) {
     RHS->Accept(visitor);
+  }
+  if (ElementAssignment) {
+    ElementAssignment->Accept(visitor);
   }
 }
 

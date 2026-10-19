@@ -90,6 +90,7 @@ class ASTVisitor {
   virtual void Visit(OperatorCallExpr& n);
   virtual void Visit(ConstructionExpr& n);
   virtual void Visit(ArrayConstructionExpr& n);
+  virtual void Visit(OpaqueValueExpr& n);
   virtual void Visit(ArrayAssignmentExpr& n);
   virtual void Visit(DestructorCallExpr& n);
   virtual void Visit(ReceiverCallExpr& n);

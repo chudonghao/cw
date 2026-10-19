@@ -1030,16 +1030,21 @@ void ASTDumper::Visit(ArrayConstructionExpr& n) {
   VisitChild(n.Source.get(), true);
 }
 
+void ASTDumper::Visit(OpaqueValueExpr& n) {
+  PrintNode("OpaqueValueExpr", n);
+  PrintExprType(n);
+  PrintErrorMark(n);
+  os_ << "\n";
+}
+
 void ASTDumper::Visit(ArrayAssignmentExpr& n) {
   PrintNode("ArrayAssignmentExpr", n);
   PrintExprType(n);
-  if (n.element_assignment) {
-    PrintDeclReference(*n.element_assignment);
-  }
   PrintErrorMark(n);
   os_ << "\n";
   VisitChild(n.LHS.get(), false);
-  VisitChild(n.RHS.get(), true);
+  VisitChild(n.RHS.get(), false);
+  VisitChild(n.ElementAssignment.get(), true);
 }
 
 void ASTDumper::Visit(DestructorCallExpr& n) {

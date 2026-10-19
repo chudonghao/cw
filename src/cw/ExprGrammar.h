@@ -632,7 +632,15 @@ inline lang::ProductionVec<expr::ExprGrammarSymbol> ExprGrammarProductions() {
 
   P("UnqualifiedOperatorFunctionName", "operator", "+");
   P("UnqualifiedOperatorFunctionName", "operator", "-");
+  P("UnqualifiedOperatorFunctionName", "operator", "++");
+  P("UnqualifiedOperatorFunctionName", "operator", "--");
   P("UnqualifiedOperatorFunctionName", "operator", "!");
+  P("UnqualifiedOperatorFunctionName", "operator", "~");
+  P("UnqualifiedOperatorFunctionName", "operator", "&");
+  P("UnqualifiedOperatorFunctionName", "operator", "|");
+  P("UnqualifiedOperatorFunctionName", "operator", "^");
+  P("UnqualifiedOperatorFunctionName", "operator", "<<");
+  P("UnqualifiedOperatorFunctionName", "operator", ">>");
   P("UnqualifiedOperatorFunctionName", "operator", "*");
   P("UnqualifiedOperatorFunctionName", "operator", "/");
   P("UnqualifiedOperatorFunctionName", "operator", "%");
@@ -643,6 +651,16 @@ inline lang::ProductionVec<expr::ExprGrammarSymbol> ExprGrammarProductions() {
   P("UnqualifiedOperatorFunctionName", "operator", "==");
   P("UnqualifiedOperatorFunctionName", "operator", "!=");
   P("UnqualifiedOperatorFunctionName", "operator", "=");
+  P("UnqualifiedOperatorFunctionName", "operator", "+=");
+  P("UnqualifiedOperatorFunctionName", "operator", "-=");
+  P("UnqualifiedOperatorFunctionName", "operator", "*=");
+  P("UnqualifiedOperatorFunctionName", "operator", "/=");
+  P("UnqualifiedOperatorFunctionName", "operator", "%=");
+  P("UnqualifiedOperatorFunctionName", "operator", "&=");
+  P("UnqualifiedOperatorFunctionName", "operator", "|=");
+  P("UnqualifiedOperatorFunctionName", "operator", "^=");
+  P("UnqualifiedOperatorFunctionName", "operator", "<<=");
+  P("UnqualifiedOperatorFunctionName", "operator", ">>=");
   P("UnqualifiedOperatorFunctionName", "operator", "(", ")");
 
   P("OperatorFunctionName", "UnqualifiedOperatorFunctionName");

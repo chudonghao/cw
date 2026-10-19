@@ -21,6 +21,8 @@ enum class ConstantIntegerFailureKind {
   NotConstant,
   UnsupportedOperation,
   NotRepresentable,
+  ZeroDivisor,
+  InvalidShiftCount,
 };
 
 struct ConstantIntegerFailure {

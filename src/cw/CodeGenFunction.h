@@ -92,6 +92,7 @@ class CodeGenFunction {
   // Static allocas stay in place throughout function emission.
   llvm::AllocaInst* last_alloca_{};
   std::unordered_map<const VarDecl*, Address> locals_;
+  std::unordered_map<const OpaqueValueExpr*, Address> opaque_values_;
   std::vector<BreakContinue> break_continue_stack_;
   std::vector<LocalCleanup> local_cleanups_;
   std::vector<Cleanup> temporary_cleanups_;
@@ -171,13 +172,18 @@ class CodeGenFunction {
   bool EmitConstruction(const ConstructionExpr& expression, Address destination);
   bool EmitArrayConstruction(Address destination, Address source, const ArrayType& type,
                              const ConstructorDecl& constructor);
-  bool EmitArrayAssignment(Address destination, Address source, const ArrayType& type, const FunctionDecl& assignment);
+  bool EmitArrayAssignment(Address destination, Address source, const ArrayType& type,
+                           const ArrayAssignmentExpr& assignment);
   bool EmitStructorCall(const FunctionDecl& declaration, Address target, llvm::ArrayRef<const Expr*> sources,
                         CodeGen::StructorKind kind = CodeGen::StructorKind::Complete);
   bool EmitCallArguments(const FunctionType& signature, const CodeGen::FunctionInfo& info,
                          llvm::ArrayRef<const Expr*> sources, EvaluationOrder order,
                          std::vector<llvm::Value*>& arguments);
   llvm::Value* EmitScalarExpr(const Expr& expression);
+  llvm::Value* EmitScalarIncrementDecrement(const UnaryOperator& expression, Address target);
+  llvm::Value* EmitNumericConversion(llvm::Value* value, const BuiltinType& source, const BuiltinType& target);
+  llvm::Value* EmitNumericBinaryOperator(const Expr& expression, expr::ExprGrammarSymbol op, llvm::Value* lhs,
+                                         llvm::Value* rhs, const BuiltinType& type);
   llvm::Value* EmitIntegerDivRem(llvm::Value* lhs, llvm::Value* rhs, bool is_division, bool is_signed);
   llvm::Value* EmitLogicalExpr(const BinaryOperator& expression);
   llvm::Value* EmitConditionalExpr(const ConditionalOperator& expression);
