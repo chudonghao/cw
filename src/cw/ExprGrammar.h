@@ -48,7 +48,7 @@ enum ExprGrammarSymbol : int {
   bool_literal,       // true, false
   integer_literal,    // 123, 0xFF, etc.
   character_literal,  // 'a', '\n', etc.
-  float_literal,      // 1.23f, 0.0, etc.
+  float_literal,      // 1.23f32, 0.0, etc.
   string_literal,     // "abc", etc.
 
   // Keyword operators
@@ -56,6 +56,9 @@ enum ExprGrammarSymbol : int {
 
   // Function names accepted only by dedicated expression productions.
   operator_,  // operator
+
+  // Type keywords
+  builtin_type,  // void, bool, i8, etc.
 
   // Reserved object expression
   this_,  // current object
@@ -188,6 +191,8 @@ inline const char* to_string(ExprGrammarSymbol symbol) {
       return "T16";
     case identifier:
       return "identifier";
+    case builtin_type:
+      return "builtin_type";
     case null_literal:
       return "null";
     case bool_literal:
@@ -402,6 +407,9 @@ inline ExprGrammarSymbol from_string(ExprGrammarSymbol tag, const char* str) {
   }
   if (strcmp(str, to_string(identifier)) == 0) {
     return identifier;
+  }
+  if (strcmp(str, to_string(builtin_type)) == 0) {
+    return builtin_type;
   }
   if (strcmp(str, to_string(null_literal)) == 0) {
     return null_literal;
@@ -667,6 +675,7 @@ inline lang::ProductionVec<expr::ExprGrammarSymbol> ExprGrammarProductions() {
   P("OperatorFunctionName", "NamePrefix", "UnqualifiedOperatorFunctionName");
 
   P("PrimaryExpr", "ID");
+  P("PrimaryExpr", "builtin_type");
   P("PrimaryExpr", "null");
   P("PrimaryExpr", "integer_literal");
   P("PrimaryExpr", "character_literal");

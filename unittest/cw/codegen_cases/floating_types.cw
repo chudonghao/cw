@@ -31,6 +31,6 @@ func ReadMove(value &move f32) f32 {
 }
 
 func MoveLocal() f32 {
-  var value f32 := 2.5f;
+  var value f32 := 2.5f32;
   ReadMove(move value)
 }

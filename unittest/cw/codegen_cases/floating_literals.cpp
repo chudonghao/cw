@@ -13,3 +13,9 @@ float NegativeZero() { return -0.0f; }
 double NegatedZero() { return -(-0.0); }
 
 double WidenedSingle() { return 0.1f; }
+
+double ExplicitDouble() { return .5e3; }
+
+float DirectSingleRounding() { return 1.000000059604644775390626f; }
+
+double DoubleNegativeZero() { return -0.; }

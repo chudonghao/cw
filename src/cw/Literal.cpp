@@ -55,15 +55,37 @@ std::optional<IntegerProperty> ParseIntegerLiteral(std::string_view spelling) {
     }
   }
 
-  if (spelling.empty()) {
-    return std::nullopt;
-  }
-
+  std::size_t digit_count = 0;
   for (char c : spelling) {
     const auto digit = DigitValue(c);
     if (!digit || *digit >= base) {
-      return std::nullopt;
+      break;
     }
+    ++digit_count;
+  }
+  if (digit_count == 0) {
+    return std::nullopt;
+  }
+
+  BuiltinTypeKind suffix{};
+  if (digit_count != spelling.size()) {
+    suffix = from_string(spelling.substr(digit_count));
+    switch (suffix) {
+      case BuiltinTypeKind::I8:
+      case BuiltinTypeKind::I16:
+      case BuiltinTypeKind::I32:
+      case BuiltinTypeKind::I64:
+      case BuiltinTypeKind::ISize:
+      case BuiltinTypeKind::U8:
+      case BuiltinTypeKind::U16:
+      case BuiltinTypeKind::U32:
+      case BuiltinTypeKind::U64:
+      case BuiltinTypeKind::USize:
+        break;
+      default:
+        return std::nullopt;
+    }
+    spelling = spelling.substr(0, digit_count);
   }
 
   // Grow to preserve the complete source value; language typing happens in Sema.
@@ -72,7 +94,7 @@ std::optional<IntegerProperty> ParseIntegerLiteral(std::string_view spelling) {
     return std::nullopt;
   }
   value = value.trunc(std::max(1u, value.getActiveBits()));
-  return IntegerProperty{std::move(value)};
+  return IntegerProperty{std::move(value), suffix};
 }
 
 std::optional<CharacterProperty> ParseCharacterLiteral(std::string_view spelling) {
@@ -130,11 +152,13 @@ std::optional<CharacterProperty> ParseCharacterLiteral(std::string_view spelling
 }
 
 std::optional<FloatProperty> ParseFloatLiteral(std::string_view spelling) {
-  const bool single = !spelling.empty() && (spelling.back() == 'f' || spelling.back() == 'F');
-  if (single) {
-    spelling.remove_suffix(1);
+  const bool single = spelling.size() >= 3 && spelling.substr(spelling.size() - 3) == "f32";
+  if (single || (spelling.size() >= 3 && spelling.substr(spelling.size() - 3) == "f64")) {
+    spelling.remove_suffix(3);
   }
-  if (spelling.empty() || spelling.find_first_not_of("0123456789.eE+-") != std::string_view::npos) {
+  if (spelling.empty() || spelling.front() == '+' || spelling.front() == '-' ||
+      spelling.find_first_of(".eE") == std::string_view::npos ||
+      spelling.find_first_not_of("0123456789.eE+-") != std::string_view::npos) {
     return std::nullopt;
   }
 

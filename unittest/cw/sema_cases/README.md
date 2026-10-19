@@ -15,6 +15,10 @@ Each case uses one snake_case stem and four tracked files:
 
 C++ and CW ASTs preserve their real node structures. They are reviewed for equivalent language intent, not textual or structural equality.
 
+`explicit_numeric_conversion` compares zero initialization, explicit numeric conversions, same-type reads,
+and nested size-integer conversions. CW's `FunctionalCastExpr` owns the numeric conversion directly;
+Clang may represent it with an additional implicit conversion child.
+
 ## Normative Boundary
 
 The CW source and expected AST are authored and reviewed before the implementation they specify. Never generate, copy, or update `<name>.cw.ast.txt` from the current CW compiler output. Change it only when the language design changes.
@@ -32,39 +36,40 @@ The cases, in registration order, are:
 1. `variable_declaration`
 2. `local_integer_initialization`
 3. `numeric_arithmetic`
-4. `builtin_comparison`
-5. `boolean_logic`
-6. `boolean_control_flow`
-7. `conditional_expression`
-8. `reference_binding`
-9. `struct_fields`
-10. `member_access`
-11. `receiver_call`
-12. `function_definition`
-13. `function_type`
-14. `function_pointer_call`
-15. `function_address`
-16. `object_address`
-17. `lexical_scope`
-18. `single_inheritance`
-19. `derived_to_base_reference_binding`
-20. `object_pointer_conversion`
-21. `function_overloading`
-22. `named_type_parameter`
-23. `construction`
-24. `copy_move_construction`
-25. `explicit_destruction`
-26. `constructor_this`
-27. `base_result_initialization`
-28. `operator_expression`
-29. `operator_function_address`
-30. `operator_function_call`
-31. `virtual_functions`
-32. `covariant_return`
-33. `virtual_interface_pointer`
-34. `nonvirtual_call`
-35. `callable_object`
-36. `fixed_array`
+4. `explicit_numeric_conversion`
+5. `builtin_comparison`
+6. `boolean_logic`
+7. `boolean_control_flow`
+8. `conditional_expression`
+9. `reference_binding`
+10. `struct_fields`
+11. `member_access`
+12. `receiver_call`
+13. `function_definition`
+14. `function_type`
+15. `function_pointer_call`
+16. `function_address`
+17. `object_address`
+18. `lexical_scope`
+19. `single_inheritance`
+20. `derived_to_base_reference_binding`
+21. `object_pointer_conversion`
+22. `function_overloading`
+23. `named_type_parameter`
+24. `construction`
+25. `copy_move_construction`
+26. `explicit_destruction`
+27. `constructor_this`
+28. `base_result_initialization`
+29. `operator_expression`
+30. `operator_function_address`
+31. `operator_function_call`
+32. `virtual_functions`
+33. `covariant_return`
+34. `virtual_interface_pointer`
+35. `nonvirtual_call`
+36. `callable_object`
+37. `fixed_array`
 
 ## Generating Clang References
 

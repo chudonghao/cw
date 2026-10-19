@@ -56,6 +56,52 @@ entry:
   ret i64 %0
 }
 
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef signext i8 @_Z11ByteMinimumv() #0 {
+entry:
+  ret i8 -128
+}
+
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef signext i8 @_Z13TypedNegationv() #0 {
+entry:
+  ret i8 -128
+}
+
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef zeroext i16 @_Z17HexadecimalSuffixv() #0 {
+entry:
+  ret i16 7986
+}
+
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef i64 @_Z16ExplicitUnsignedv() #0 {
+entry:
+  ret i64 -1
+}
+
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef i64 @_Z11WidenedBytev() #0 {
+entry:
+  ret i64 -128
+}
+
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef i64 @_Z9NextIndexm(i64 noundef %index) #0 {
+entry:
+  %index.addr = alloca i64, align 8
+  store i64 %index, ptr %index.addr, align 8
+  %0 = load i64, ptr %index.addr, align 8
+  %add = add i64 %0, 1
+  ret i64 %add
+}
+
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef i64 @_Z11MinimumSizev() #0 {
+entry:
+  ret i64 -9223372036854775808
+}
+
 attributes #0 = { mustprogress noinline nounwind optnone ssp uwtable(sync) "frame-pointer"="non-leaf-no-reserve" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="apple-m1" "target-features"="+aes,+altnzcv,+ccdp,+ccidx,+ccpp,+complxnum,+crc,+dit,+dotprod,+flagm,+fp-armv8,+fp16fml,+fptoint,+fullfp16,+jsconv,+lse,+neon,+pauth,+perfmon,+predres,+ras,+rcpc,+rdm,+sb,+sha2,+sha3,+specrestrict,+ssbs,+v8.1a,+v8.2a,+v8.3a,+v8.4a,+v8a" "tune-cpu"="apple-m5" }
 
 !llvm.module.flags = !{!0, !1, !2, !3}

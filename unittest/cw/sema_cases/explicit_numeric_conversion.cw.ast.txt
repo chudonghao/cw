@@ -1,0 +1,22 @@
+TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <explicit_numeric_conversion.cw:1:1, line:7:2> ExplicitNumericConversion 'func (i64) void'
+  |-ParmVarDecl {{address:value}} <line:1:32, col:41> value 'i64'
+  | `-BuiltinType {{address}} <col:38, col:41> 'i64'
+  `-CompoundStmt {{address}} <col:43, line:7:2>
+    |-ExprStmt {{address}} <line:2:3, col:9>
+    | `-ScalarValueInitExpr {{address}} <col:3, col:8> 'i32' pure-rvalue target <col:3, col:6> 'i32'
+    |-ExprStmt {{address}} <line:3:3, col:9>
+    | `-ScalarValueInitExpr {{address}} <col:3, col:8> 'f32' pure-rvalue target <col:3, col:6> 'f32'
+    |-ExprStmt {{address}} <line:4:3, col:13>
+    | `-FunctionalCastExpr {{address}} <col:3, col:12> 'u8' pure-rvalue target <col:3, col:5> 'u8'
+    |   `-ImplicitCastExpr {{address}} <col:6, col:11> 'i64' pure-rvalue <LValueToRValue>
+    |     `-DeclRefExpr {{address}} <col:6, col:11> 'i64' lvalue ParmVar {{address:value}} 'value' 'i64'
+    |-ExprStmt {{address}} <line:5:3, col:14>
+    | `-FunctionalCastExpr {{address}} <col:3, col:13> 'i64' pure-rvalue target <col:3, col:6> 'i64'
+    |   `-ImplicitCastExpr {{address}} <col:7, col:12> 'i64' pure-rvalue <LValueToRValue>
+    |     `-DeclRefExpr {{address}} <col:7, col:12> 'i64' lvalue ParmVar {{address:value}} 'value' 'i64'
+    `-ExprStmt {{address}} <line:6:3, col:21>
+      `-FunctionalCastExpr {{address}} <col:3, col:20> 'f64' pure-rvalue target <col:3, col:6> 'f64'
+        `-FunctionalCastExpr {{address}} <col:7, col:19> 'usize' pure-rvalue target <col:7, col:12> 'usize'
+          `-ImplicitCastExpr {{address}} <col:13, col:18> 'i64' pure-rvalue <LValueToRValue>
+            `-DeclRefExpr {{address}} <col:13, col:18> 'i64' lvalue ParmVar {{address:value}} 'value' 'i64'

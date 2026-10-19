@@ -19,7 +19,7 @@ func PositiveInfinity() f64 {
 }
 
 func NegativeInfinity() f32 {
-  1.0f / -0.0f
+  1.0f32 / -0.0f32
 }
 
 func Overflow() f64 {
@@ -31,9 +31,9 @@ func NegativeUnderflow() f64 {
 }
 
 func GradualUnderflow() f32 {
-  1.1754943508222875e-38f * 0.5f
+  1.1754943508222875e-38f32 * 0.5f32
 }
 
 func RoundEachStep() f32 {
-  (16777216.0f + 1.0f) - 16777216.0f
+  (16777216.0f32 + 1.0f32) - 16777216.0f32
 }

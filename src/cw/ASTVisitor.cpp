@@ -76,6 +76,9 @@ void ASTVisitor::Visit(MemberExpr& n) { Visit(static_cast<Expr&>(n)); }
 void ASTVisitor::Visit(BaseSubobjectExpr& n) { Visit(static_cast<Expr&>(n)); }
 void ASTVisitor::Visit(SubscriptExpr& n) { Visit(static_cast<Expr&>(n)); }
 void ASTVisitor::Visit(ArrayValueExpr& n) { Visit(static_cast<Expr&>(n)); }
+void ASTVisitor::Visit(BuiltinTypeExpr& n) { Visit(static_cast<Expr&>(n)); }
+void ASTVisitor::Visit(ScalarValueInitExpr& n) { Visit(static_cast<Expr&>(n)); }
+void ASTVisitor::Visit(FunctionalCastExpr& n) { Visit(static_cast<Expr&>(n)); }
 void ASTVisitor::Visit(CallExpr& n) { Visit(static_cast<Expr&>(n)); }
 void ASTVisitor::Visit(OperatorCallExpr& n) { Visit(static_cast<CallExpr&>(n)); }
 void ASTVisitor::Visit(ConstructionExpr& n) { Visit(static_cast<Expr&>(n)); }

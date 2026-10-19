@@ -650,6 +650,19 @@ void ArrayValueExpr::Traverse(ASTVisitor& visitor) {
   }
 }
 
+void BuiltinTypeExpr::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+void BuiltinTypeExpr::Traverse(ASTVisitor& visitor) {}
+
+void ScalarValueInitExpr::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+void ScalarValueInitExpr::Traverse(ASTVisitor& visitor) {}
+
+void FunctionalCastExpr::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
+void FunctionalCastExpr::Traverse(ASTVisitor& visitor) {
+  if (SubExpr) {
+    SubExpr->Accept(visitor);
+  }
+}
+
 void CallExpr::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }
 void CallExpr::Traverse(ASTVisitor& visitor) {
   if (Callee) {

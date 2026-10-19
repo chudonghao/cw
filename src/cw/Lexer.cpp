@@ -146,12 +146,12 @@ struct MultiSourceLexer : lex::lexer<lex::lexertl::lexer<lex::lexertl::token<Cha
 
     // Literal spellings; decoding is deferred until a token is selected.
     rules.add(R"(true|false)", tok::bool_literal);
-    rules.add(R"(0[bB][01]+)", tok::integer_literal);         // Binary: 0b1010
-    rules.add(R"(0[oO][0-7]+)", tok::integer_literal);        // Octal: 0o755
-    rules.add(R"(0[xX][0-9a-fA-F]+)", tok::integer_literal);  // Hex: 0xFF
-    rules.add(R"([0-9]+)", tok::integer_literal);             // Decimal: 123
+    rules.add(R"(0[bB][01]+([iu](8|16|32|64)|isize|usize)?)", tok::integer_literal);         // Binary: 0b1010
+    rules.add(R"(0[oO][0-7]+([iu](8|16|32|64)|isize|usize)?)", tok::integer_literal);        // Octal: 0o755
+    rules.add(R"(0[xX][0-9a-fA-F]+([iu](8|16|32|64)|isize|usize)?)", tok::integer_literal);  // Hex: 0xFF
+    rules.add(R"([0-9]+([iu](8|16|32|64)|isize|usize)?)", tok::integer_literal);             // Decimal: 123
     rules.add(R"(\'([^'\\\0]|\\[^\n\0]+?)\')", tok::character_literal);
-    rules.add(R"((([0-9]*\.[0-9]+|[0-9]+\.[0-9]*)([eE][+\-]?[0-9]+)?|[0-9]+[eE][+\-]?[0-9]+)[fF]?)",
+    rules.add(R"((([0-9]*\.[0-9]+|[0-9]+\.[0-9]*)([eE][+\-]?[0-9]+)?|[0-9]+[eE][+\-]?[0-9]+)(f32|f64)?)",
               tok::float_literal);
     rules.add(R"(\"([^"\\\0]|\\[^\n\0])*\")", tok::string_literal);
 

@@ -30,6 +30,9 @@ std::vector<const Expr*> ExpressionChildren(const Expr& expression) {
     case NodeKind::ParenExpr:
       AppendChild(static_cast<const ParenExpr&>(expression).SubExpr, children);
       break;
+    case NodeKind::FunctionalCastExpr:
+      AppendChild(static_cast<const FunctionalCastExpr&>(expression).SubExpr, children);
+      break;
     case NodeKind::UnaryOperator:
       AppendChild(static_cast<const UnaryOperator&>(expression).Operand, children);
       break;

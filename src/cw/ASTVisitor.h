@@ -86,6 +86,9 @@ class ASTVisitor {
   virtual void Visit(BaseSubobjectExpr& n);
   virtual void Visit(SubscriptExpr& n);
   virtual void Visit(ArrayValueExpr& n);
+  virtual void Visit(BuiltinTypeExpr& n);
+  virtual void Visit(ScalarValueInitExpr& n);
+  virtual void Visit(FunctionalCastExpr& n);
   virtual void Visit(CallExpr& n);
   virtual void Visit(OperatorCallExpr& n);
   virtual void Visit(ConstructionExpr& n);

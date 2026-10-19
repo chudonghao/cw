@@ -765,6 +765,9 @@ void ASTDumper::Visit(IntegerLiteral& n) {
   llvm::SmallString<32> value;
   n.value.toString(value);
   os_ << " " << value.c_str();
+  if (n.suffix != BuiltinTypeKind::Invalid) {
+    os_ << to_string(n.suffix);
+  }
   PrintErrorMark(n);
   os_ << "\n";
 }
@@ -957,6 +960,38 @@ void ASTDumper::Visit(ArrayValueExpr& n) {
   for (const auto& element : n.Elements) {
     VisitChild(element.get(), ++child_index == total_children);
   }
+}
+
+void ASTDumper::Visit(BuiltinTypeExpr& n) {
+  PrintNode("BuiltinTypeExpr", n);
+  os_ << " '" << to_string(n.kind) << "'";
+  PrintErrorMark(n);
+  os_ << "\n";
+}
+
+void ASTDumper::Visit(ScalarValueInitExpr& n) {
+  PrintNode("ScalarValueInitExpr", n);
+  PrintExprType(n);
+  if (!n.target_name.empty()) {
+    os_ << " target ";
+    PrintSourceRange(n.target_name.Range());
+    os_ << " '" << n.target_name << "'";
+  }
+  PrintErrorMark(n);
+  os_ << "\n";
+}
+
+void ASTDumper::Visit(FunctionalCastExpr& n) {
+  PrintNode("FunctionalCastExpr", n);
+  PrintExprType(n);
+  if (!n.target_name.empty()) {
+    os_ << " target ";
+    PrintSourceRange(n.target_name.Range());
+    os_ << " '" << n.target_name << "'";
+  }
+  PrintErrorMark(n);
+  os_ << "\n";
+  VisitChild(n.SubExpr.get(), true);
 }
 
 void ASTDumper::Visit(CallExpr& n) {

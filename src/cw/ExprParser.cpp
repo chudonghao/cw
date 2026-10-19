@@ -229,6 +229,7 @@ void ExprParser::SetupRealReduceFunctions() {
   map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::greatergreaterequal})] = &ExprParser::Reduce_OperatorFunctionName__operator_operator;
   map[Production(expr::UnqualifiedOperatorFunctionName, {expr::operator_, expr::l_paren, expr::r_paren})] = &ExprParser::Reduce_OperatorFunctionName__operator_l_paren_r_paren;
   map[Production(expr::PrimaryExpr, {expr::ID})] = &ExprParser::Reduce_PassThrough;
+  map[Production(expr::PrimaryExpr, {expr::builtin_type})] = &ExprParser::Reduce_PrimaryExpr__builtin_type;
   map[Production(expr::PrimaryExpr, {expr::integer_literal})] = &ExprParser::Reduce_PrimaryExpr__integer_literal;
   map[Production(expr::PrimaryExpr, {expr::character_literal})] = &ExprParser::Reduce_PrimaryExpr__character_literal;
   map[Production(expr::PrimaryExpr, {expr::float_literal})] = &ExprParser::Reduce_PrimaryExpr__float_literal;
@@ -569,6 +570,16 @@ int ExprParser::Reduce_OperatorFunctionName__qualified() {
   return kHandleSymbolResultReduce;
 }
 
+int ExprParser::Reduce_PrimaryExpr__builtin_type() {
+  auto& symbol = real_symbol_stack_.back();
+  const auto& token = std::get<Token>(symbol.value);
+  auto type = std::make_unique<BuiltinTypeExpr>();
+  type->range = token.range;
+  type->kind = std::get<BuiltinTypeProperty>(token.property).kind;
+  symbol.value = std::unique_ptr<Expr>(std::move(type));
+  return kHandleSymbolResultReduce;
+}
+
 int ExprParser::Reduce_PrimaryExpr__null_literal() {
   auto& symbol = real_symbol_stack_.back();
   const auto& token = std::get<Token>(symbol.value);
@@ -588,6 +599,7 @@ int ExprParser::Reduce_PrimaryExpr__integer_literal() {
   auto literal = std::make_unique<IntegerLiteral>();
   literal->range = token.range;
   literal->value = std::move(std::get<IntegerProperty>(token.property).value);
+  literal->suffix = std::get<IntegerProperty>(token.property).suffix;
   symbol.value = std::unique_ptr<Expr>(std::move(literal));
   return kHandleSymbolResultReduce;
 }

@@ -60,13 +60,13 @@ TranslationUnitDecl {{address}}
     |     |   `-DeclRefExpr {{address}} <col:22, col:28> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32'
     |     `-ImplicitCastExpr {{address}} <col:31, col:35> 'f64' pure-rvalue <LValueToRValue>
     |       `-DeclRefExpr {{address}} <col:31, col:35> 'f64' lvalue ParmVar {{address:wide}} 'wide' 'f64'
-    |-DeclStmt {{address}} <line:8:3, col:35>
-    | `-VarGroupDecl {{address}} <col:3, col:35>
+    |-DeclStmt {{address}} <line:8:3, col:37>
+    | `-VarGroupDecl {{address}} <col:3, col:37>
     |   |-VarDecl {{address}} <col:7, col:20> literal_float 'f64'
-    |   `-BinaryOperator {{address}} <col:24, col:34> 'f64' pure-rvalue '+'
-    |     |-ImplicitCastExpr {{address}} <col:24, col:28> 'f64' pure-rvalue <FloatToFloat>
-    |     | `-FloatLiteral {{address}} <col:24, col:28> 'f32' pure-rvalue 1
-    |     `-FloatLiteral {{address}} <col:31, col:34> 'f64' pure-rvalue 2
+    |   `-BinaryOperator {{address}} <col:24, col:36> 'f64' pure-rvalue '+'
+    |     |-ImplicitCastExpr {{address}} <col:24, col:30> 'f64' pure-rvalue <FloatToFloat>
+    |     | `-FloatLiteral {{address}} <col:24, col:30> 'f32' pure-rvalue 1
+    |     `-FloatLiteral {{address}} <col:33, col:36> 'f64' pure-rvalue 2
     |-DeclStmt {{address}} <line:9:3, col:49>
     | `-VarGroupDecl {{address}} <col:3, col:49>
     |   |-VarDecl {{address}} <col:7, col:25> integer_difference 'i32'

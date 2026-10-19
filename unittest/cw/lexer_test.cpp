@@ -16,7 +16,7 @@ TEST(Lexer, TokenType) {
       // Literals.
       "true false null\n"
       "123 0b1010 0o755 0xFF 'a'\n"
-      "1. .33 1.0f\n"
+      "1. .33 1.0f32\n"
       R"("str" "\nstr")"
       "\n"
       // Keywords.
@@ -57,7 +57,7 @@ TEST(Lexer, TokenType) {
   lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::float_literal);  // .33
   lexer.Advance();
-  ASSERT_EQ(lexer.Token().type, cw::tok::float_literal);  // 1.0f
+  ASSERT_EQ(lexer.Token().type, cw::tok::float_literal);  // 1.0f32
   lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::string_literal);
   lexer.Advance();
@@ -232,10 +232,10 @@ TEST(Lexer, TokenRangeSourceView) {
   cw::Lexer lexer;
 
   const char* content =
-      "true false\n"  // line 0: true(0-4), false(5-10)
-      "123 0xFF\n"    // line 1: 123(0-3), 0xFF(4-8)
-      "3.14 1.0f\n"   // line 2: 3.14(0-4), 1.0f(5-9)
-      R"("hello")"    // line 3: "hello"(0-7)
+      "true false\n"   // line 0: true(0-4), false(5-10)
+      "123 0xFF\n"     // line 1: 123(0-3), 0xFF(4-8)
+      "3.14 1.0f32\n"  // line 2: 3.14(0-4), 1.0f32(5-11)
+      R"("hello")"     // line 3: "hello"(0-7)
       "\n"
       "foo\n"    // line 4: foo(0-3)
       "+ ++\n";  // line 5: +(0-1), ++(2-4)
@@ -298,15 +298,15 @@ TEST(Lexer, TokenRangeSourceView) {
     EXPECT_EQ(t.range.end.column, 4);
   }
 
-  // line 2: 1.0f
+  // line 2: 1.0f32
   lexer.Advance();
   {
     auto& t = lexer.Token();
-    EXPECT_EQ(t.source_view, "1.0f");
+    EXPECT_EQ(t.source_view, "1.0f32");
     EXPECT_EQ(t.range.begin.line, 2);
     EXPECT_EQ(t.range.begin.column, 5);
     EXPECT_EQ(t.range.end.line, 2);
-    EXPECT_EQ(t.range.end.column, 9);
+    EXPECT_EQ(t.range.end.column, 11);
   }
 
   // line 3: "hello"
@@ -357,6 +357,90 @@ TEST(Lexer, TokenRangeSourceView) {
   ASSERT_EQ(lexer.Token().type, cw::tok::eos);
 }
 
+TEST(Lexer, KeepsNumericSuffixesInOneTokenAndSignsSeparate) {
+  std::vector<cw::Source> sources = {{"test.cw", "-128i8 -(128i8) 0x1f32 0x1f32u16 .5f32 1.f64 1.e3f32 1e3f64"}};
+  cw::Lexer lexer;
+  lexer.Reset(&sources);
+
+  ASSERT_EQ(lexer.Token().type, cw::tok::minus);
+  EXPECT_EQ(lexer.Token().source_view, "-");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::integer_literal);
+  EXPECT_EQ(lexer.Token().source_view, "128i8");
+  EXPECT_EQ(lexer.Token().range.begin.column, 1);
+  EXPECT_EQ(lexer.Token().range.end.column, 6);
+  EXPECT_EQ(lexer.Token().get<cw::IntegerProperty>().suffix, cw::BuiltinTypeKind::I8);
+  EXPECT_EQ(lexer.Token().get<cw::IntegerProperty>().value.getZExtValue(), 128);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::minus);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::l_paren);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::integer_literal);
+  EXPECT_EQ(lexer.Token().source_view, "128i8");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::r_paren);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::integer_literal);
+  EXPECT_EQ(lexer.Token().source_view, "0x1f32");
+  EXPECT_EQ(lexer.Token().get<cw::IntegerProperty>().suffix, cw::BuiltinTypeKind::Invalid);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::integer_literal);
+  EXPECT_EQ(lexer.Token().source_view, "0x1f32u16");
+  EXPECT_EQ(lexer.Token().get<cw::IntegerProperty>().suffix, cw::BuiltinTypeKind::U16);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::float_literal);
+  EXPECT_EQ(lexer.Token().source_view, ".5f32");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::float_literal);
+  EXPECT_EQ(lexer.Token().source_view, "1.f64");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::float_literal);
+  EXPECT_EQ(lexer.Token().source_view, "1.e3f32");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::float_literal);
+  EXPECT_EQ(lexer.Token().source_view, "1e3f64");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eos);
+}
+
+TEST(Lexer, PreservesNumericDotAndSourceBoundaries) {
+  std::vector<cw::Source> sources = {{"first.cw", "1usize.Member 1.Member (1).Member 1"}, {"second.cw", "usize"}};
+  cw::Lexer lexer;
+  lexer.Reset(&sources);
+
+  ASSERT_EQ(lexer.Token().type, cw::tok::integer_literal);
+  EXPECT_EQ(lexer.Token().source_view, "1usize");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::period);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::identifier);
+  EXPECT_EQ(lexer.Token().source_view, "Member");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::float_literal);
+  EXPECT_EQ(lexer.Token().source_view, "1.");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::identifier);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::l_paren);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::integer_literal);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::r_paren);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::period);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::identifier);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::integer_literal);
+  EXPECT_EQ(lexer.Token().source_view, "1");
+  EXPECT_EQ(lexer.Token().get<cw::IntegerProperty>().suffix, cw::BuiltinTypeKind::Invalid);
+  lexer.Advance();
+  EXPECT_EQ(lexer.Token().source_view, "usize");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eos);
+}
+
 TEST(Lexer, TokenProperty) {
   cw::Lexer lexer;
 
@@ -366,7 +450,7 @@ TEST(Lexer, TokenProperty) {
       // Integer: decimal, binary, octal, hex; then character
       "123 0 0b1010 0B1111 0o755 0O17 0xFF 0XAB 0x10000000000000000 'a' '\\n' '\\x41'\n"
       // Float: double, float
-      "3.14 1.0f 2.5e10 1.5e-3F\n"
+      "3.14 1.0f32 2.5e10 1.5e-3f32\n"
       // String: basic, escapes
       R"("hello" "world\ntest" "tab\there" "quote\"inside" "backslash\\" "\x41\x42")"
       "\n"
@@ -430,7 +514,7 @@ TEST(Lexer, TokenProperty) {
     EXPECT_EQ(prop.value.bitcastToAPInt().getZExtValue(), 0x40091eb851eb851fULL);
   }
   lexer.Advance();
-  // 1.0f (float)
+  // 1.0f32 (float)
   {
     auto& prop = lexer.Token().get<cw::FloatProperty>();
     EXPECT_EQ(&prop.value.getSemantics(), &llvm::APFloat::IEEEsingle());
@@ -444,7 +528,7 @@ TEST(Lexer, TokenProperty) {
     EXPECT_EQ(prop.value.bitcastToAPInt().getZExtValue(), 0x42174876e8000000ULL);
   }
   lexer.Advance();
-  // 1.5e-3F (float with exponent)
+  // 1.5e-3f32 (float with exponent)
   {
     auto& prop = lexer.Token().get<cw::FloatProperty>();
     EXPECT_EQ(&prop.value.getSemantics(), &llvm::APFloat::IEEEsingle());

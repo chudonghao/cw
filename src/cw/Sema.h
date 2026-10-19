@@ -82,11 +82,6 @@ class Sema {
     ConstructorPrologue,
   };
 
-  enum class ComptimeIntMode {
-    Materialize,
-    Preserve,
-  };
-
   struct ConstructionResultContext {
     QualType target_type;
     ConstructionKind construction_kind{ConstructionKind::CompleteObject};
@@ -265,13 +260,19 @@ class Sema {
 
   // Expression preparation and operator-specific semantics.
   /// Forms the current integer constant subset without requiring callable interfaces.
-  [[nodiscard]] std::unique_ptr<Expr> AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> expression,
-                                                                 ComptimeIntMode mode = ComptimeIntMode::Preserve);
+  [[nodiscard]] std::unique_ptr<Expr> AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> expression);
+  [[nodiscard]] std::unique_ptr<Expr> AnalyzeConstantIntegerExprImpl(std::unique_ptr<Expr> expression);
+  /// Completes integer materialization before returning an ordinary expression.
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeExpr(std::unique_ptr<Expr> expression,
-                                                  ComptimeIntMode mode = ComptimeIntMode::Materialize,
                                                   ExpressionUse use = ExpressionUse::General,
                                                   const ConstructionResultContext* construction_context = nullptr);
+  /// Allows exact integers to remain unmaterialized at the root.
+  [[nodiscard]] std::unique_ptr<Expr> AnalyzeExprImpl(std::unique_ptr<Expr> expression,
+                                                      ExpressionUse use = ExpressionUse::General,
+                                                      const ConstructionResultContext* construction_context = nullptr);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeCalleeExpr(std::unique_ptr<Expr> expression);
+  /// Prepares the operand, returning a signed literal type to materialize after direct negation.
+  const BuiltinType* PrepareUnaryOperand(UnaryOperator& expression);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeUnaryOperator(std::unique_ptr<Expr> expression);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeBinaryOperator(std::unique_ptr<Expr> expression);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeOverloadableOperator(std::unique_ptr<Expr> expression,
@@ -290,9 +291,12 @@ class Sema {
   void AnalyzeThisExpr(ThisExpr& expression);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeDeclRefExpr(std::unique_ptr<Expr> expression, DeclRefRole role);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeMemberExpr(std::unique_ptr<Expr> expression);
-  bool MaterializeComptimeInteger(std::unique_ptr<Expr>& expression);
+  /// Materializes an exact integer when needed, respecting its suffix before selecting a default type.
+  bool MaterializeComptimeInteger(std::unique_ptr<Expr>& expression, const BuiltinType* explicit_type = nullptr);
 
   // Call discovery, receiver eligibility, argument conversion, and result formation.
+  /// Forms a numeric type call after its arguments have been analyzed in the enclosing context.
+  [[nodiscard]] std::unique_ptr<Expr> FormBuiltinTypeCall(std::unique_ptr<Expr> expression);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeCallableObjectCall(std::unique_ptr<Expr> expression);
   void AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext* construction_context);
   void AnalyzeIndirectCallExpr(CallExpr& expression, const FunctionType& function_type);

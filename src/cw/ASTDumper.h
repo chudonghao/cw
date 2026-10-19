@@ -87,6 +87,9 @@ class ASTDumper : public ASTVisitor {
   void Visit(BaseSubobjectExpr& n) override;
   void Visit(SubscriptExpr& n) override;
   void Visit(ArrayValueExpr& n) override;
+  void Visit(BuiltinTypeExpr& n) override;
+  void Visit(ScalarValueInitExpr& n) override;
+  void Visit(FunctionalCastExpr& n) override;
   void Visit(CallExpr& n) override;
   void Visit(OperatorCallExpr& n) override;
   void Visit(ConstructionExpr& n) override;

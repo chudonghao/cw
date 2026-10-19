@@ -71,6 +71,131 @@ class ParserTest : public ::testing::Test {
 
 TEST_F(ParserTest, ProducesNoDiagnosticsForEmptyTranslationUnit) { Parse(""); }
 
+TEST_F(ParserTest, PreservesBuiltinTypeCallSyntax) {
+  Parse(R"(func F() {
+  i32();
+  (f32(1));
+  bool(1, 2);
+})");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, line:5:2> F
+  `-CompoundStmt {{address}} <line:1:10, line:5:2>
+    |-ExprStmt {{address}} <line:2:3, col:9>
+    | `-CallExpr {{address}} <col:3, col:8>
+    |   `-BuiltinTypeExpr {{address}} <col:3, col:6> 'i32'
+    |-ExprStmt {{address}} <line:3:3, col:12>
+    | `-ParenExpr {{address}} <col:3, col:11>
+    |   `-CallExpr {{address}} <col:4, col:10>
+    |     |-BuiltinTypeExpr {{address}} <col:4, col:7> 'f32'
+    |     `-IntegerLiteral {{address}} <col:8, col:9> 1
+    `-ExprStmt {{address}} <line:4:3, col:14>
+      `-CallExpr {{address}} <col:3, col:13>
+        |-BuiltinTypeExpr {{address}} <col:3, col:7> 'bool'
+        |-IntegerLiteral {{address}} <col:8, col:9> 1
+        `-IntegerLiteral {{address}} <col:11, col:12> 2
+)");
+}
+
+TEST_F(ParserTest, PreservesBuiltinTypeExpressionsAndParentheses) {
+  Parse(R"(func F() {
+  i32;
+  f(i32);
+  (i32)(1);
+  i32();
+})");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, line:6:2> F
+  `-CompoundStmt {{address}} <line:1:10, line:6:2>
+    |-ExprStmt {{address}} <line:2:3, col:7>
+    | `-BuiltinTypeExpr {{address}} <col:3, col:6> 'i32'
+    |-ExprStmt {{address}} <line:3:3, col:10>
+    | `-CallExpr {{address}} <col:3, col:9>
+    |   |-DeclRefExpr {{address}} <col:3, col:4> 'f'
+    |   `-BuiltinTypeExpr {{address}} <col:5, col:8> 'i32'
+    |-ExprStmt {{address}} <line:4:3, col:12>
+    | `-CallExpr {{address}} <col:3, col:11>
+    |   |-ParenExpr {{address}} <col:3, col:8>
+    |   | `-BuiltinTypeExpr {{address}} <col:4, col:7> 'i32'
+    |   `-IntegerLiteral {{address}} <col:9, col:10> 1
+    `-ExprStmt {{address}} <line:5:3, col:9>
+      `-CallExpr {{address}} <col:3, col:8>
+        `-BuiltinTypeExpr {{address}} <col:3, col:6> 'i32'
+)");
+}
+
+TEST_F(ParserTest, RejectsQualifiedBuiltinTypeCallsAndRecovers) {
+  Parse(R"(namespace Types {}
+func F() {
+  ::i32(1);
+  Types::i32(1);
+  i32();
+})");
+  ExpectError(2, 4, "expected identifier or 'operator'");
+  ExpectError(3, 9, "expected identifier or 'operator'");
+}
+
+TEST_F(ParserTest, PreservesNumericSuffixesAndUnarySyntax) {
+  Parse(R"(func F() {
+  -(128i8);
+  1usize;
+  .5f32;
+  1.f64;
+})");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, line:6:2> F
+  `-CompoundStmt {{address}} <line:1:10, line:6:2>
+    |-ExprStmt {{address}} <line:2:3, col:12>
+    | `-UnaryOperator {{address}} <col:3, col:11> '-'
+    |   `-ParenExpr {{address}} <col:4, col:11>
+    |     `-IntegerLiteral {{address}} <col:5, col:10> 128i8
+    |-ExprStmt {{address}} <line:3:3, col:10>
+    | `-IntegerLiteral {{address}} <col:3, col:9> 1usize
+    |-ExprStmt {{address}} <line:4:3, col:9>
+    | `-FloatLiteral {{address}} <col:3, col:8> 0.5
+    `-ExprStmt {{address}} <line:5:3, col:9>
+      `-FloatLiteral {{address}} <col:3, col:8> 1)");
+}
+
+TEST_F(ParserTest, RejectsInvalidNumericSuffixSyntax) {
+  Parse(R"(func F() {
+  1f32;
+  1f64;
+  0b1f32;
+  0o1f64;
+  1.0i32;
+  1e3u64;
+  1.0f;
+  1.0F;
+  1.0F32;
+  1I8;
+  1_i8;
+  1 i8;
+  1u128;
+  0x1p0;
+  0x1.8p1f32;
+})");
+
+  constexpr std::string_view message =
+      "expected one of '.', '->', '&', '&&', '*', '+', '++', '-', '--', '!=', '/', '%', '<', '<=', '<<', "
+      "'>', '>=', '>>', '^', '|', '||', '?', ':', ':=', '=', '+=', '-=', '*=', '/=', '%=', '<<=', '>>=', "
+      "'&=', '^=', '|=', '==', ',', ';', '[', ']', '(', ')', '{', '}', end of source";
+  ExpectError(1, 3, message);
+  ExpectError(2, 3, message);
+  ExpectError(3, 5, message);
+  ExpectError(4, 5, message);
+  ExpectError(5, 5, message);
+  ExpectError(6, 5, message);
+  ExpectError(7, 5, message);
+  ExpectError(8, 5, message);
+  ExpectError(9, 5, message);
+  ExpectError(10, 3, message);
+  ExpectError(11, 3, message);
+  ExpectError(12, 4, message);
+  ExpectError(13, 3, message);
+  ExpectError(14, 5, message);
+  ExpectError(15, 5, message);
+}
+
 TEST_F(ParserTest, ParsesNullAsADedicatedLiteral) {
   Parse("var p *i32 := null;");
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
@@ -574,7 +699,7 @@ TEST_F(ParserTest, ReportsMissingVariableInitializer) {
   ExpectError(
       0, 9,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
 }
 
@@ -585,7 +710,7 @@ var x := return;
   ExpectError(
       1, 9,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
 }
 
@@ -594,7 +719,7 @@ TEST_F(ParserTest, ReportsMissingCondition) {
   ExpectError(
       0, 14,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
 }
 
@@ -603,7 +728,7 @@ TEST_F(ParserTest, ReportsMissingRightOperand) {
   ExpectError(
       0, 22,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
 }
 
@@ -617,7 +742,7 @@ TEST_F(ParserTest, ReportsMissingTailExpression) {
   ExpectError(
       0, 14,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
 }
 
@@ -631,17 +756,17 @@ var ;)");
   ExpectError(
       1, 9,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
   ExpectError(
       2, 11,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
   ExpectError(
       3, 0,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
   ExpectError(5, 4, "expected identifier");
 }
@@ -1148,7 +1273,7 @@ TEST_F(ParserTest, DumpsRecoveryAnchorAtExpressionStart) {
   ExpectError(
       0, 13,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
@@ -1162,7 +1287,7 @@ TEST_F(ParserTest, DumpsZeroWidthRecoveryRangeBeforeDelimiter) {
   ExpectError(
       0, 9,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
@@ -1176,7 +1301,7 @@ TEST_F(ParserTest, DumpsZeroWidthRecoveryRangeAtEndOfSource) {
   ExpectError(
       0, 8,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
@@ -1348,8 +1473,8 @@ TEST_F(ParserTest, RejectsNamespaceInsideFunction) {
   Parse("func F() { namespace A {} }");
   ExpectError(0, 11,
               "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating "
-              "literal, string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-              "'-', '--', '~', '!', '::', '(', '['");
+              "literal, string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', "
+              "'*', '+', '++', '-', '--', '~', '!', '::', '(', '['");
 }
 
 TEST_F(ParserTest, RejectsNamespaceInsideStruct) {
@@ -1478,8 +1603,8 @@ TEST_F(ParserTest, RecoversNextFileAfterIncompleteStringLiteral) {
   });
   ExpectError(0, 12,
               "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating "
-              "literal, string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-              "'-', '--', '~', '!', '::', '(', '['");
+              "literal, string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', "
+              "'*', '+', '++', '-', '--', '~', '!', '::', '(', '['");
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-VarGroupDecl {{address}} <broken:1:1, col:13> contains-errors
 | |-VarDecl {{address}} <col:5, col:9> text
@@ -1499,8 +1624,8 @@ TEST_F(ParserTest, RecoversNextFileAfterIncompleteCharacterLiteral) {
   });
   ExpectError(0, 10,
               "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating "
-              "literal, string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-              "'-', '--', '~', '!', '::', '(', '['");
+              "literal, string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', "
+              "'*', '+', '++', '-', '--', '~', '!', '::', '(', '['");
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-VarGroupDecl {{address}} <broken:1:1, col:11> contains-errors
 | |-VarDecl {{address}} <col:5, col:7> ch
@@ -1520,8 +1645,8 @@ TEST_F(ParserTest, RecoversNextFileAfterIncompleteParenthesizedExpression) {
   });
   ExpectError(0, 24,
               "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating "
-              "literal, string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-              "'-', '--', '~', '!', '::', '(', '['");
+              "literal, string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', "
+              "'*', '+', '++', '-', '--', '~', '!', '::', '(', '['");
   ExpectError(0, 24, "expected '}'");
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-NamespaceDecl {{address}} <broken:1:1, col:24> A contains-errors
@@ -1543,8 +1668,8 @@ TEST_F(ParserTest, RecoversNextFileAfterIncompleteArrayLiteral) {
   });
   ExpectError(0, 35,
               "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating "
-              "literal, string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
-              "'-', '--', '~', '!', '::', '(', '{', '['");
+              "literal, string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', "
+              "'*', '+', '++', '-', '--', '~', '!', '::', '(', '{', '['");
   ExpectError(0, 35, "expected '}'");
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-NamespaceDecl {{address}} <broken:1:1, col:24> A contains-errors

@@ -53,6 +53,24 @@ entry:
   ret double f0x3FB99999A0000000
 }
 
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef double @_Z14ExplicitDoublev() #0 {
+entry:
+  ret double 5.000000e+02
+}
+
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef float @_Z20DirectSingleRoundingv() #0 {
+entry:
+  ret float f0x3F800001
+}
+
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef double @_Z18DoubleNegativeZerov() #0 {
+entry:
+  ret double -0.000000e+00
+}
+
 attributes #0 = { mustprogress noinline nounwind optnone ssp uwtable(sync) "frame-pointer"="non-leaf-no-reserve" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="apple-m1" "target-features"="+aes,+altnzcv,+ccdp,+ccidx,+ccpp,+complxnum,+crc,+dit,+dotprod,+flagm,+fp-armv8,+fp16fml,+fptoint,+fullfp16,+jsconv,+lse,+neon,+pauth,+perfmon,+predres,+ras,+rcpc,+rdm,+sb,+sha2,+sha3,+specrestrict,+ssbs,+v8.1a,+v8.2a,+v8.3a,+v8.4a,+v8a" "tune-cpu"="apple-m5" }
 
 !llvm.module.flags = !{!0, !1, !2, !3}

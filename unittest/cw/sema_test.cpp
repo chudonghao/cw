@@ -26,7 +26,7 @@
 class SemaTest : public ::testing::Test {
   std::vector<cw::Source> sources_;
   cw::Lexer lexer_;
-  cw::ASTContext ast_context_{cw::TargetInfo::CreateNative().value()};
+  cw::ASTContext ast_context_;
   cw::Parser parser_;
   cw::Sema sema_;
   cw::DiagnosticEngine diagnostic_engine_;
@@ -34,6 +34,9 @@ class SemaTest : public ::testing::Test {
   bool analyzed_ = false;
 
  protected:
+  SemaTest() : SemaTest(cw::TargetInfo::CreateNative().value()) {}
+  explicit SemaTest(cw::TargetInfo target) : ast_context_(std::move(target)) {}
+
   void Analyze(std::string content, std::string path = "test.cw") {
     Analyze(std::vector<cw::Source>{{std::move(path), std::move(content)}});
   }
@@ -120,6 +123,11 @@ class SemaTest : public ::testing::Test {
   }
 };
 
+class WasmSemaTest : public SemaTest {
+ protected:
+  WasmSemaTest() : SemaTest(cw::TargetInfo::Create("wasm32-unknown-unknown").value()) {}
+};
+
 /// \brief Metadata for one external language feature case.
 struct LanguageFeatureCase {
   const char* file_stem;  ///< Shared snake_case file stem.
@@ -141,6 +149,7 @@ INSTANTIATE_TEST_SUITE_P(
         LanguageFeatureCase{"variable_declaration", "VariableDeclaration"},
         LanguageFeatureCase{"local_integer_initialization", "LocalIntegerInitialization"},
         LanguageFeatureCase{"numeric_arithmetic", "NumericArithmetic"},
+        LanguageFeatureCase{"explicit_numeric_conversion", "ExplicitNumericConversion"},
         LanguageFeatureCase{"builtin_comparison", "BuiltinComparison"},
         LanguageFeatureCase{"boolean_logic", "BooleanLogic"},
         LanguageFeatureCase{"boolean_control_flow", "BooleanControlFlow"},
@@ -3151,10 +3160,15 @@ func Make() {}
 func Use() {
   (Make)();
   (Value)();
+  (i32)(1);
+  ((f32))(1);
+  (i32(1));
 })");
 
   ExpectError(3, 3, "function 'Make' cannot be used as an object expression", 4);
   ExpectError(4, 3, "type 'Value' cannot be used as an object expression", 5);
+  ExpectError(5, 3, "type 'i32' cannot be used as an object expression", 3);
+  ExpectError(6, 4, "type 'f32' cannot be used as an object expression", 3);
 }
 
 TEST_F(SemaTest, RejectsUnconsumedFunctionOverloadSetsInExpressionStatements) {
@@ -7086,39 +7100,769 @@ TEST_F(SemaTest, PreservesExactIntegersThroughNestedSigns) {
             `-IntegerLiteral {{address}} <col:6, col:26> 'comptime_int' 18446744073709551615)");
 }
 
+TEST_F(SemaTest, TypesNumericLiteralsFromSuffixes) {
+  Analyze(R"(func Literals() {
+  1i8;
+  1i16;
+  1i32;
+  1i64;
+  1isize;
+  1u8;
+  1u16;
+  1u32;
+  1u64;
+  1usize;
+  1.0f32;
+  1.0f64;
+})");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, line:14:2> Literals 'func () void'
+  `-CompoundStmt {{address}} <line:1:17, line:14:2>
+    |-ExprStmt {{address}} <line:2:3, col:7>
+    | `-ImplicitCastExpr {{address}} <col:3, col:6> 'i8' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-IntegerLiteral {{address}} <col:3, col:6> 'comptime_int' 1i8
+    |-ExprStmt {{address}} <line:3:3, col:8>
+    | `-ImplicitCastExpr {{address}} <col:3, col:7> 'i16' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1i16
+    |-ExprStmt {{address}} <line:4:3, col:8>
+    | `-ImplicitCastExpr {{address}} <col:3, col:7> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1i32
+    |-ExprStmt {{address}} <line:5:3, col:8>
+    | `-ImplicitCastExpr {{address}} <col:3, col:7> 'i64' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1i64
+    |-ExprStmt {{address}} <line:6:3, col:10>
+    | `-ImplicitCastExpr {{address}} <col:3, col:9> 'isize' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-IntegerLiteral {{address}} <col:3, col:9> 'comptime_int' 1isize
+    |-ExprStmt {{address}} <line:7:3, col:7>
+    | `-ImplicitCastExpr {{address}} <col:3, col:6> 'u8' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-IntegerLiteral {{address}} <col:3, col:6> 'comptime_int' 1u8
+    |-ExprStmt {{address}} <line:8:3, col:8>
+    | `-ImplicitCastExpr {{address}} <col:3, col:7> 'u16' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1u16
+    |-ExprStmt {{address}} <line:9:3, col:8>
+    | `-ImplicitCastExpr {{address}} <col:3, col:7> 'u32' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1u32
+    |-ExprStmt {{address}} <line:10:3, col:8>
+    | `-ImplicitCastExpr {{address}} <col:3, col:7> 'u64' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1u64
+    |-ExprStmt {{address}} <line:11:3, col:10>
+    | `-ImplicitCastExpr {{address}} <col:3, col:9> 'usize' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-IntegerLiteral {{address}} <col:3, col:9> 'comptime_int' 1usize
+    |-ExprStmt {{address}} <line:12:3, col:10>
+    | `-FloatLiteral {{address}} <col:3, col:9> 'f32' pure-rvalue 1
+    `-ExprStmt {{address}} <line:13:3, col:10>
+      `-FloatLiteral {{address}} <col:3, col:9> 'f64' pure-rvalue 1)");
+}
+
+TEST_F(SemaTest, MaterializesSuffixedLiteralsAfterOnlyDirectNegation) {
+  Analyze(R"(func Signs() {
+  -(((128i8)));
+  -(-128i8);
+  +(1u8);
+  - 0x80i8;
+})");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, line:6:2> Signs 'func () void'
+  `-CompoundStmt {{address}} <line:1:14, line:6:2>
+    |-ExprStmt {{address}} <line:2:3, col:16>
+    | `-ImplicitCastExpr {{address}} <col:3, col:15> 'i8' pure-rvalue <ComptimeIntegerMaterialization>
+    |   `-UnaryOperator {{address}} <col:3, col:15> 'comptime_int' '-'
+    |     `-ParenExpr {{address}} <col:4, col:15> 'comptime_int'
+    |       `-ParenExpr {{address}} <col:5, col:14> 'comptime_int'
+    |         `-ParenExpr {{address}} <col:6, col:13> 'comptime_int'
+    |           `-IntegerLiteral {{address}} <col:7, col:12> 'comptime_int' 128i8
+    |-ExprStmt {{address}} <line:3:3, col:13>
+    | `-UnaryOperator {{address}} <col:3, col:12> 'i8' pure-rvalue '-'
+    |   `-ParenExpr {{address}} <col:4, col:12> 'i8' pure-rvalue
+    |     `-ImplicitCastExpr {{address}} <col:5, col:11> 'i8' pure-rvalue <ComptimeIntegerMaterialization>
+    |       `-UnaryOperator {{address}} <col:5, col:11> 'comptime_int' '-'
+    |         `-IntegerLiteral {{address}} <col:6, col:11> 'comptime_int' 128i8
+    |-ExprStmt {{address}} <line:4:3, col:10>
+    | `-UnaryOperator {{address}} <col:3, col:9> 'u8' pure-rvalue '+'
+    |   `-ImplicitCastExpr {{address}} <col:4, col:9> 'u8' pure-rvalue <ComptimeIntegerMaterialization>
+    |     `-ParenExpr {{address}} <col:4, col:9> 'comptime_int'
+    |       `-IntegerLiteral {{address}} <col:5, col:8> 'comptime_int' 1u8
+    `-ExprStmt {{address}} <line:5:3, col:12>
+      `-ImplicitCastExpr {{address}} <col:3, col:11> 'i8' pure-rvalue <ComptimeIntegerMaterialization>
+        `-UnaryOperator {{address}} <col:3, col:11> 'comptime_int' '-'
+          `-IntegerLiteral {{address}} <col:5, col:11> 'comptime_int' 128i8)");
+}
+
+TEST_F(SemaTest, AcceptsSuffixedIntegerBoundaryValues) {
+  Analyze(R"(func Bounds() {
+  127i8;
+  -128i8;
+  32767i16;
+  -32768i16;
+  2147483647i32;
+  -2147483648i32;
+  9223372036854775807i64;
+  -9223372036854775808i64;
+  0u8;
+  255u8;
+  65535u16;
+  4294967295u32;
+  18446744073709551615u64;
+  -0b10000000i8;
+  -0o200i8;
+  -0x80i8;
+  0b11111111u8;
+  0o377u8;
+  0xFFu8;
+  0x1f32;
+  0x1f32u16;
+})");
+}
+
+TEST_F(SemaTest, RejectsOutOfRangeSuffixedIntegerValues) {
+  Analyze(R"(func Bounds() {
+  128i8;
+  -129i8;
+  32768i16;
+  -32769i16;
+  2147483648i32;
+  -2147483649i32;
+  9223372036854775808i64;
+  -9223372036854775809i64;
+  256u8;
+  65536u16;
+  4294967296u32;
+  18446744073709551616u64;
+})");
+
+  ExpectError(1, 2, "integer literal is outside the range of 'i8'", 5);
+  ExpectError(2, 2, "integer literal is outside the range of 'i8'", 6);
+  ExpectError(3, 2, "integer literal is outside the range of 'i16'", 8);
+  ExpectError(4, 2, "integer literal is outside the range of 'i16'", 9);
+  ExpectError(5, 2, "integer literal is outside the range of 'i32'", 13);
+  ExpectError(6, 2, "integer literal is outside the range of 'i32'", 14);
+  ExpectError(7, 2, "integer literal is outside the range of 'i64'", 22);
+  ExpectError(8, 2, "integer literal is outside the range of 'i64'", 23);
+  ExpectError(9, 2, "integer literal is outside the range of 'u8'", 5);
+  ExpectError(10, 2, "integer literal is outside the range of 'u16'", 8);
+  ExpectError(11, 2, "integer literal is outside the range of 'u32'", 13);
+  ExpectError(12, 2, "integer literal is outside the range of 'u64'", 23);
+}
+
+TEST_F(SemaTest, RejectsSuffixRangeBypassesAndUnsignedNegation) {
+  Analyze(R"(func Bounds() {
+  +(128i8);
+  -(+128i8);
+  -(128i8 + 0);
+  0x80i8;
+  -0x81i8;
+  -0u8;
+  -1u8;
+  -(-1u8);
+  var wide i64 := 128i8;
+  ((128i8));
+  -((0u8));
+  ~((256u8));
+})");
+
+  ExpectError(1, 4, "integer literal is outside the range of 'i8'", 5);
+  ExpectError(2, 5, "integer literal is outside the range of 'i8'", 5);
+  ExpectError(3, 4, "integer literal is outside the range of 'i8'", 5);
+  ExpectError(4, 2, "integer literal is outside the range of 'i8'", 6);
+  ExpectError(5, 2, "integer literal is outside the range of 'i8'", 7);
+  ExpectError(6, 2, "unary '-' cannot be applied to unsigned integer type 'u8'", 4);
+  ExpectError(7, 2, "unary '-' cannot be applied to unsigned integer type 'u8'", 4);
+  ExpectError(8, 4, "unary '-' cannot be applied to unsigned integer type 'u8'", 4);
+  ExpectError(9, 18, "integer literal is outside the range of 'i8'", 5);
+  ExpectError(10, 4, "integer literal is outside the range of 'i8'", 5);
+  ExpectError(11, 2, "unary '-' cannot be applied to unsigned integer type 'u8'", 8);
+  ExpectError(12, 5, "integer literal is outside the range of 'u8'", 5);
+}
+
+TEST_F(SemaTest, ChecksSuffixedIntegersInArrayLengths) {
+  Analyze(R"(func Arrays() {
+  var valid [1u8 + 2u8] i32;
+  var minimum [-(((128i8))) + 129i16] i32;
+  var overflow [256u8] i32;
+  var parenthesized [(256u8)] i32;
+  var positive [128i8] i32;
+  var too_negative [-129i8] i32;
+  var negated [-(-128i8)] i32;
+  var added [127i8 + 1i8] i32;
+  var unsigned [-0u8] i32;
+})");
+
+  ExpectError(3, 16, "integer literal is outside the range of 'u8'", 5);
+  ExpectError(4, 22, "integer literal is outside the range of 'u8'", 5);
+  ExpectError(5, 16, "integer literal is outside the range of 'i8'", 5);
+  ExpectError(6, 20, "integer literal is outside the range of 'i8'", 6);
+  ExpectError(7, 15, "array length constant expression overflows its integer type", 9);
+  ExpectError(8, 13, "array length constant expression overflows its integer type", 11);
+  ExpectError(9, 16, "unary '-' cannot be applied to unsigned integer type 'u8'", 4);
+}
+
+TEST_F(SemaTest, ChecksSuffixedArrayLengthsBeforeFunctionBodies) {
+  Analyze(R"(trivial struct Value { items [((256u8))] i32; }
+func Take(values [((128i8))] i32) {})");
+
+  ExpectError(0, 32, "integer literal is outside the range of 'u8'", 5);
+  ExpectError(1, 20, "integer literal is outside the range of 'i8'", 5);
+}
+
+TEST_F(SemaTest, AcceptsNativeSizeIntegerLiteralBounds) {
+  Analyze(R"(func Bounds() {
+  2147483648isize;
+  -2147483649isize;
+  4294967296usize;
+  9223372036854775807isize;
+  -9223372036854775808isize;
+  18446744073709551615usize;
+})");
+}
+
+TEST_F(SemaTest, RejectsOutOfRangeNativeSizeIntegerLiterals) {
+  Analyze(R"(func Bounds() {
+  9223372036854775808isize;
+  -9223372036854775809isize;
+  18446744073709551616usize;
+})");
+  ExpectError(1, 2, "integer literal is outside the range of 'isize'", 24);
+  ExpectError(2, 2, "integer literal is outside the range of 'isize'", 25);
+  ExpectError(3, 2, "integer literal is outside the range of 'usize'", 25);
+}
+
+TEST_F(WasmSemaTest, UsesTargetWidthForSizeIntegerLiterals) {
+  Analyze(R"(func Bounds() {
+  2147483647isize;
+  -2147483648isize;
+  4294967295usize;
+  2147483648isize;
+  -2147483649isize;
+  4294967296usize;
+  var length [4294967296usize] u8;
+  9223372036854775807i64;
+  18446744073709551615u64;
+})");
+  ExpectError(4, 2, "integer literal is outside the range of 'isize'", 15);
+  ExpectError(5, 2, "integer literal is outside the range of 'isize'", 16);
+  ExpectError(6, 2, "integer literal is outside the range of 'usize'", 15);
+  ExpectError(7, 14, "integer literal is outside the range of 'usize'", 15);
+}
+
+TEST_F(SemaTest, AcceptsSuffixedLiteralsInInitializersCallsAndSubscripts) {
+  Analyze(R"(var index usize := 0usize;
+func Next(value usize) usize { value + 1usize }
+func Signed() isize { -1isize }
+func Select(value i8) usize { 0usize }
+func Select(value i32) i32 { 0 }
+func Selected() usize { Select(1i8) }
+func Use() i32 {
+  var values [2usize] i32 := [2usize] i32 { 10, 20 };
+  var local usize := Next(index);
+  values[local]
+})");
+}
+
+TEST_F(SemaTest, TypesParenthesizedSuffixedLiteralsBeforeUse) {
+  Analyze(R"(var index usize := ((0usize));
+func Select(value i8) usize { 0usize }
+func Select(value i32) i32 { 0 }
+func Selected() usize { return Select(((1i8))); }
+func Use(condition bool) u8 {
+  var values [((2usize))] u8 := [((2usize))] u8 { ((1u8)), ((2u8)) };
+  var inverted := ~((0u8));
+  var shifted := ((1u8)) << ((1usize));
+  var chosen := condition ? ((3u8)) : ((4u8));
+  var byte u8 := inverted + shifted + chosen + values[index] + values[((0usize))];
+  ((3i16));
+  byte
+})");
+}
+
+TEST_F(SemaTest, PreservesConversionRulesAfterExplicitLiteralTyping) {
+  Analyze(R"(func Convert(values &copy [1] i32) {
+  var small u8 := 257i16;
+  var fixed i32 := 1usize;
+  var size usize := 1i32;
+  values[0u64];
+})");
+
+  ExpectWarning(1, 18, "implicit integer conversion from 'i16' to 'u8' may truncate value", 6);
+  ExpectError(2, 19, "cannot initialize variable 'fixed': no implicit conversion from 'usize' to 'i32'", 6);
+  ExpectError(3, 20, "cannot initialize variable 'size': no implicit conversion from 'i32' to 'usize'", 4);
+  ExpectError(4, 9, "array subscript must have type 'usize', not 'u64'", 4);
+}
+
 TEST_F(SemaTest, AcceptsRoundedAndUnderflowedFloatingLiterals) {
   Analyze(R"(func Floats() {
-  var rounded := 1.000000059604644775390626f;
-  var subnormal := 1e-45f;
+  var rounded := 1.000000059604644775390626f32;
+  var subnormal := 1e-45f32;
   var double_subnormal := 5e-324;
   var zero := 1e-400;
   var negative_zero := -1e-400;
-  var exponent := 1E+2F;
+  var exponent := 1E+2f32;
+  var explicit_double := 0.1f64;
+  var explicit_subnormal := 5e-324f64;
+  var explicit_zero := 1e-400f64;
+  var leading_dot := .5f32;
+  var trailing_dot := 1.f64;
+  var trailing_exponent := 1.e3f32;
 })");
+}
+
+TEST_F(SemaTest, RejectsOverflowWithExplicitDoubleSuffix) {
+  Analyze("var value := 1e400f64;");
+  ExpectError(0, 13, "floating-point literal is outside the range of 'f64'", 8);
 }
 
 TEST_F(SemaTest, ReportsFloatingLiteralOverflowWithoutLosingAst) {
   Analyze(R"(func Floats() {
-  1e40f;
+  1e40f32;
   1e400;
-  var wide f64 := 1e40f;
+  var wide f64 := 1e40f32;
 })");
 
-  ExpectError(1, 2, "floating-point literal is outside the range of 'f32'", 5);
+  ExpectError(1, 2, "floating-point literal is outside the range of 'f32'", 7);
   ExpectError(2, 2, "floating-point literal is outside the range of 'f64'", 5);
-  ExpectError(3, 18, "floating-point literal is outside the range of 'f32'", 5);
+  ExpectError(3, 18, "floating-point literal is outside the range of 'f32'", 7);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-FunctionDecl {{address}} <test.cw:1:1, line:5:2> Floats 'func () void' contains-errors
   `-CompoundStmt {{address}} <line:1:15, line:5:2> contains-errors
-    |-ExprStmt {{address}} <line:2:3, col:9> contains-errors
-    | `-FloatLiteral {{address}} <col:3, col:8> 'f32' pure-rvalue +Inf contains-errors
+    |-ExprStmt {{address}} <line:2:3, col:11> contains-errors
+    | `-FloatLiteral {{address}} <col:3, col:10> 'f32' pure-rvalue +Inf contains-errors
     |-ExprStmt {{address}} <line:3:3, col:9> contains-errors
     | `-FloatLiteral {{address}} <col:3, col:8> 'f64' pure-rvalue +Inf contains-errors
-    `-DeclStmt {{address}} <line:4:3, col:25> contains-errors
-      `-VarGroupDecl {{address}} <col:3, col:25> contains-errors
+    `-DeclStmt {{address}} <line:4:3, col:27> contains-errors
+      `-VarGroupDecl {{address}} <col:3, col:27> contains-errors
         |-VarDecl {{address}} <col:7, col:15> wide 'f64'
         | `-BuiltinType {{address}} <col:12, col:15> 'f64'
-        `-FloatLiteral {{address}} <col:19, col:24> 'f32' pure-rvalue +Inf contains-errors)");
+        `-FloatLiteral {{address}} <col:19, col:26> 'f32' pure-rvalue +Inf contains-errors)");
+}
+
+TEST_F(SemaTest, AcceptsAllExplicitNumericTypePairs) {
+  Analyze(R"(func FromI8(x i8) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromI16(x i16) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromI32(x i32) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromI64(x i64) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromU8(x u8) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromU16(x u16) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromU32(x u32) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromU64(x u64) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromISize(x isize) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromUSize(x usize) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromF32(x f32) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func FromF64(x f64) {
+  i8(x);
+  i16(x);
+  i32(x);
+  i64(x);
+  u8(x);
+  u16(x);
+  u32(x);
+  u64(x);
+  isize(x);
+  usize(x);
+  f32(x);
+  f64(x);
+}
+
+func Zeros() {
+  i8();
+  i16();
+  i32();
+  i64();
+  u8();
+  u16();
+  u32();
+  u64();
+  isize();
+  usize();
+  f32();
+  f64();
+})");
+}
+
+TEST_F(SemaTest, RejectsNonNumericTypeCallsAndSources) {
+  Analyze(R"(trivial struct S {}
+func F(pointer *i32, array &mut [1] i32, object &mut S) {
+  bool();
+  bool(1);
+  void();
+  i32(true);
+  i32(pointer);
+  i32(array);
+  i32(object);
+  i32(null);
+})");
+  ExpectError(2, 2, "type call requires a numeric type", 4);
+  ExpectError(3, 2, "type call requires a numeric type", 4);
+  ExpectError(4, 2, "type call requires a numeric type", 4);
+  ExpectError(5, 6, "numeric conversion requires a numeric source", 4);
+  ExpectError(6, 6, "numeric conversion requires a numeric source", 7);
+  ExpectError(7, 6, "numeric conversion requires a numeric source", 5);
+  ExpectError(8, 6, "numeric conversion requires a numeric source", 6);
+  ExpectError(9, 6, "numeric conversion requires a numeric source", 4);
+}
+
+TEST_F(SemaTest, ResolvesNumericTypeCallsInNamespaces) {
+  Analyze(R"(namespace Values {
+trivial struct Item {}
+func I32(x i32) i32 { x }
+func Convert(x i32) u8 {
+  var item := Item();
+  var bounds [usize(u8(3))] i32;
+  return u8(I32(x));
+}
+}
+func Use(x i32) i64 { i64(Values::I32(x)) }
+)");
+}
+
+TEST_F(SemaTest, RejectsBuiltinTypeNamesAsObjectExpressions) {
+  Analyze(R"(func Consume(x i32) {}
+func F() {
+  i32;
+  Consume(i32);
+  i32(i32);
+  var x := i32;
+  var a [i32] u8;
+  var b [(i32)(1)] u8;
+  i32 + 1;
+  i32();
+})");
+  ExpectError(2, 2, "type 'i32' cannot be used as an object expression", 3);
+  ExpectError(3, 10, "type 'i32' cannot be used as an object expression", 3);
+  ExpectError(4, 6, "type 'i32' cannot be used as an object expression", 3);
+  ExpectError(5, 11, "type 'i32' cannot be used as an object expression", 3);
+  ExpectError(6, 9, "type 'i32' cannot be used as an object expression", 3);
+  ExpectError(7, 10, "type 'i32' cannot be used as an object expression", 3);
+  ExpectError(8, 2, "type 'i32' cannot be used as an object expression", 3);
+}
+
+TEST_F(SemaTest, ExplicitConversionDoesNotRetypeItsSource) {
+  Analyze(R"(func F() {
+  i64(128i8);
+  u64(18446744073709551616);
+  f64(1e40f32);
+  usize(1 + 2usize);
+})");
+  ExpectError(1, 6, "integer literal is outside the range of 'i8'", 5);
+  ExpectError(2, 6, "integer constant cannot be represented by any default integer type", 20);
+  ExpectError(3, 6, "floating-point literal is outside the range of 'f32'", 7);
+  ExpectError(4, 8, "binary operator '+' cannot be applied to types 'i32' and 'usize'", 10);
+}
+
+TEST_F(SemaTest, ExplicitConversionPreservesOnlyItsOwnWarningBoundary) {
+  Analyze(R"(func F(x i64, y f64) {
+  u8(x);
+  f32(x);
+  f32(y);
+  i8(y);
+  var a u8 := i32(x);
+  i32(Consume(x));
+}
+func Consume(value f32) f32 { value }
+)");
+  ExpectWarning(5, 14, "implicit integer conversion from 'i32' to 'u8' may truncate value", 6);
+  ExpectWarning(6, 14, "implicit conversion from 'i64' to 'f32' may lose integer precision", 1);
+}
+
+TEST_F(SemaTest, AcceptsIntegerTypeCallsInArrayLengths) {
+  Analyze(R"(func Bounds() {
+  var a [usize()] i32;
+  var b [usize(u8(3)) + 1usize] i32;
+  var c [i8(-((128i16))) + 129] i32;
+}
+func F() {
+  var ordinary const u8 := u8(300);
+  var negative := usize(-1);
+})");
+}
+
+TEST_F(SemaTest, RejectsLossyExplicitConversionsInArrayLengths) {
+  Analyze(R"(func Bounds() {
+  var a [u8(300)] i32;
+  var b [usize(-1)] i32;
+  var c [u16(u8(300))] i32;
+  var d [i64(2147483647 + 1)] i32;
+  var e [usize(1 << 32)] i32;
+})");
+  ExpectError(1, 9, "array length constant expression overflows its integer type", 7);
+  ExpectError(2, 9, "array length constant expression overflows its integer type", 9);
+  ExpectError(3, 13, "array length constant expression overflows its integer type", 7);
+  ExpectError(4, 13, "array length constant expression overflows its integer type", 14);
+  ExpectError(5, 20, "array length shift count must be non-negative and less than the left operand's bit width", 2);
+}
+
+TEST_F(SemaTest, ExplicitConversionDoesNotExpandConstantExpressionSources) {
+  Analyze(R"(func Value() i32 { 3 }
+func F(x i32) {
+  var a [usize(3.0)] i32;
+  var b [usize(f32(3))] i32;
+  var c [usize(x)] i32;
+  var d [usize(Value())] i32;
+})");
+  ExpectError(2, 15, "array length expression must have integer type, not 'f64'", 3);
+  ExpectError(3, 15, "array length expression must have integer type, not 'f32'", 6);
+  ExpectError(4, 15, "array length is not a constant integer expression", 1);
+  ExpectError(5, 15, "array length is not a constant integer expression", 7);
+}
+
+TEST_F(SemaTest, NativeExplicitSizeConversionsUseTargetRange) {
+  Analyze(R"(func Bounds() {
+  var a [usize(4294967296)] u8;
+  var b [isize(2147483648)] u8;
+})");
+}
+
+TEST_F(WasmSemaTest, ExplicitSizeConversionsUseTargetRange) {
+  Analyze(R"(func Bounds() {
+  var a [usize(4294967296)] u8;
+  var b [isize(2147483648)] u8;
+}
+func F(x i64) { usize(x); isize(x); }
+)");
+  ExpectError(1, 9, "array length constant expression overflows its integer type", 17);
+  ExpectError(2, 9, "array length constant expression overflows its integer type", 17);
+}
+
+TEST_F(SemaTest, ExplicitConversionReadsItsSourceEvenWhenDiscarded) {
+  Analyze(R"(func F() {
+  var x i32;
+  i32(x);
+})");
+  ExpectError(2, 6, "use of uninitialized variable 'x'", 1);
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+`-FunctionDecl {{address}} <test.cw:1:1, line:4:2> F 'func () void' contains-errors
+  `-CompoundStmt {{address}} <line:1:10, line:4:2> contains-errors
+    |-DeclStmt {{address}} <line:2:3, col:13>
+    | `-VarGroupDecl {{address}} <col:3, col:13>
+    |   `-VarDecl {{address:x}} <col:7, col:12> x 'i32'
+    |     `-BuiltinType {{address}} <col:9, col:12> 'i32'
+    `-ExprStmt {{address}} <line:3:3, col:10> contains-errors
+      `-FunctionalCastExpr {{address}} <col:3, col:9> 'i32' pure-rvalue target <col:3, col:6> 'i32' contains-errors
+        `-ImplicitCastExpr {{address}} <col:7, col:8> 'i32' pure-rvalue <LValueToRValue> contains-errors
+          `-DeclRefExpr {{address}} <col:7, col:8> 'i32' lvalue Var {{address:x}} 'x' 'i32' contains-errors
+)");
+}
+
+TEST_F(SemaTest, PreservesFailedNumericTypeCallSyntax) {
+  Analyze(R"(func F() {
+  i32(128i8);
+  i32(1,2);
+})");
+  ExpectError(1, 6, "integer literal is outside the range of 'i8'", 5);
+  ExpectError(2, 2, "numeric type call requires zero or one argument", 8);
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+`-FunctionDecl {{address}} <test.cw:1:1, line:4:2> F 'func () void' contains-errors
+  `-CompoundStmt {{address}} <line:1:10, line:4:2> contains-errors
+    |-ExprStmt {{address}} <line:2:3, col:14> contains-errors
+    | `-CallExpr {{address}} <col:3, col:13> contains-errors
+    |   |-BuiltinTypeExpr {{address}} <col:3, col:6> 'i32'
+    |   `-IntegerLiteral {{address}} <col:7, col:12> 'comptime_int' 128i8 contains-errors
+    `-ExprStmt {{address}} <line:3:3, col:12> contains-errors
+      `-CallExpr {{address}} <col:3, col:11> contains-errors
+        |-BuiltinTypeExpr {{address}} <col:3, col:6> 'i32'
+        |-ImplicitCastExpr {{address}} <col:7, col:8> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+        | `-IntegerLiteral {{address}} <col:7, col:8> 'comptime_int' 1
+        `-ImplicitCastExpr {{address}} <col:9, col:10> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+          `-IntegerLiteral {{address}} <col:9, col:10> 'comptime_int' 2
+)");
+}
+
+TEST_F(SemaTest, DiagnosesIndependentNumericTypeCallArguments) {
+  Analyze(R"(func F() {
+  i32(missing, other);
+})");
+  ExpectError(1, 6, "use of undeclared identifier 'missing'", 7);
+  ExpectError(1, 15, "use of undeclared identifier 'other'", 5);
+  ExpectError(1, 2, "numeric type call requires zero or one argument", 19);
+}
+
+TEST_F(SemaTest, ResolvesNumericTypeCallsInDeclarationTypes) {
+  Analyze(R"(trivial struct S { values [usize(u8(3))] i32; }
+func F(values &mut [usize(3)] i32) i32 { values[usize(1)] }
+var values := [usize(3)] i32 {1, 2, 3};
+)");
+}
+
+TEST_F(SemaTest, PreservesFunctionalCastAfterConstantEvaluationFailure) {
+  Analyze(R"(func F() {
+  var a [u8(300)] i32;
+})");
+  ExpectError(1, 9, "array length constant expression overflows its integer type", 7);
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+`-FunctionDecl {{address}} <test.cw:1:1, line:3:2> F 'func () void' contains-errors
+  `-CompoundStmt {{address}} <line:1:10, line:3:2> contains-errors
+    `-DeclStmt {{address}} <line:2:3, col:23> contains-errors
+      `-VarGroupDecl {{address}} <col:3, col:23> contains-errors
+        `-VarDecl {{address}} <col:7, col:22> a contains-errors
+          `-ArrayType {{address}} <col:9, col:22> contains-errors
+            |-FunctionalCastExpr {{address}} <col:10, col:17> 'u8' pure-rvalue target <col:10, col:12> 'u8'
+            | `-ImplicitCastExpr {{address}} <col:13, col:16> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+            |   `-IntegerLiteral {{address}} <col:13, col:16> 'comptime_int' 300
+            `-BuiltinType {{address}} <col:19, col:22> 'i32'
+)");
+}
+
+TEST_F(SemaTest, ExplicitConversionSupportsConditionalSourcesAndAssignmentEffects) {
+  Analyze(R"(func F(flag bool) i32 {
+  var x := 0;
+  var y := i64(x = 3);
+  i32(flag ? x++ : ++x);
+  return x;
+})");
 }
 
 TEST_F(SemaTest, WarnsForNarrowingEvenWhenTheExactConstantValueFits) {
@@ -7358,7 +8102,7 @@ var bad := -ch;
 
 TEST_F(SemaTest, TypesFloatingBooleanAndMixedLiteralArithmetic) {
   Analyze(R"(func f() {
-var positive := +1.0f;
+var positive := +1.0f32;
 var negative := -2.0;
 var flag := true;
 var mixed := 1 + 2.0;
@@ -7367,11 +8111,11 @@ var mixed := 1 + 2.0;
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 `-FunctionDecl {{address}} <test.cw:1:1, line:6:2> f 'func () void'
   `-CompoundStmt {{address}} <line:1:10, line:6:2>
-    |-DeclStmt {{address}} <line:2:1, col:23>
-    | `-VarGroupDecl {{address}} <col:1, col:23>
+    |-DeclStmt {{address}} <line:2:1, col:25>
+    | `-VarGroupDecl {{address}} <col:1, col:25>
     |   |-VarDecl {{address}} <col:5, col:13> positive 'f32'
-    |   `-UnaryOperator {{address}} <col:17, col:22> 'f32' pure-rvalue '+'
-    |     `-FloatLiteral {{address}} <col:18, col:22> 'f32' pure-rvalue 1
+    |   `-UnaryOperator {{address}} <col:17, col:24> 'f32' pure-rvalue '+'
+    |     `-FloatLiteral {{address}} <col:18, col:24> 'f32' pure-rvalue 1
     |-DeclStmt {{address}} <line:3:1, col:22>
     | `-VarGroupDecl {{address}} <col:1, col:22>
     |   |-VarDecl {{address}} <col:5, col:13> negative 'f64'
@@ -7722,7 +8466,7 @@ func choose(flag bool) {
 
 TEST_F(SemaTest, ReportsIndependentConditionalExpressionErrors) {
   Analyze(R"(func diagnose(condition i32, flag bool, value i32, size usize) {
-condition ? value : 1.0f;
+condition ? value : 1.0f32;
 condition ? flag : value;
 flag ? flag : value;
 flag ? size : value;
@@ -7745,11 +8489,11 @@ flag ? size : value;
   |-ParmVarDecl {{address:size}} <col:52, col:62> size 'usize'
   | `-BuiltinType {{address}} <col:57, col:62> 'usize'
   `-CompoundStmt {{address}} <col:64, line:6:2> contains-errors
-    |-ExprStmt {{address}} <line:2:1, col:26> contains-errors
-    | `-ConditionalOperator {{address}} <col:1, col:25> contains-errors
+    |-ExprStmt {{address}} <line:2:1, col:28> contains-errors
+    | `-ConditionalOperator {{address}} <col:1, col:27> contains-errors
     |   |-DeclRefExpr {{address}} <col:1, col:10> 'i32' lvalue ParmVar {{address:condition}} 'condition' 'i32'
     |   |-DeclRefExpr {{address}} <col:13, col:18> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
-    |   `-FloatLiteral {{address}} <col:21, col:25> 'f32' pure-rvalue 1
+    |   `-FloatLiteral {{address}} <col:21, col:27> 'f32' pure-rvalue 1
     |-ExprStmt {{address}} <line:3:1, col:26> contains-errors
     | `-ConditionalOperator {{address}} <col:1, col:25> contains-errors
     |   |-DeclRefExpr {{address}} <col:1, col:10> 'i32' lvalue ParmVar {{address:condition}} 'condition' 'i32'
@@ -9262,7 +10006,7 @@ TEST_F(SemaTest, EvaluatesDivisionAndRemainderArrayLengths) {
              e &copy [7 % 3] u8, f &copy [(-7 % 3) + 1] u8,
              g &copy [7 % -3] u8, h &copy [(-7 % -3) + 1] u8,
              i &copy [0 / -1] u8, j &copy [0 % 3] u8,
-             k &copy [(19 % 8) * 2 + 8 / 4] u8,
+             k &copy [usize((19 % 8) * 2 + 8 / 4)] u8,
              l &copy [((15 / 3) & 3) << (5 % 2)] u8) {
   var first [2] u8 := a;
   var second [0] u8 := b;
@@ -9280,21 +10024,41 @@ TEST_F(SemaTest, EvaluatesDivisionAndRemainderArrayLengths) {
 }
 
 TEST_F(SemaTest, EvaluatesUnsignedDivisionAndRemainderArrayLengths) {
-  Analyze(R"(func Lengths(a &copy [18446744073709551615 / 9223372036854775808] u8,
-             b &copy [18446744073709551615 % 256] u8) {
+  Analyze(R"(func Lengths(a &copy [255u8 / 128u8] u8, b &copy [255u8 % 128u8] u8,
+             c &copy [65535u16 / 256u16] u8, d &copy [65535u16 % 256u16] u8,
+             e &copy [4294967295u32 / 2147483648u32] u8, f &copy [4294967295u32 % 256u32] u8,
+             g &copy [18446744073709551615u64 / 9223372036854775808u64] u8,
+             h &copy [18446744073709551615u64 % 256u64] u8) {
   var first [1] u8 := a;
-  var second [255] u8 := b;
+  var second [127] u8 := b;
+  var third [255] u8 := c;
+  var fourth [255] u8 := d;
+  var fifth [1] u8 := e;
+  var sixth [255] u8 := f;
+  var seventh [1] u8 := g;
+  var eighth [255] u8 := h;
 })");
 }
 
 TEST_F(SemaTest, AcceptsRepresentableSignedDivisionAndRemainderArrayLengths) {
-  Analyze(R"(func Lengths(a &copy [-2147483648 % -1] u8, b &copy [-9223372036854775808 % -1] u8,
-             c &copy [-2147483648 / -2147483648] u8,
-             d &copy [-9223372036854775808 / -9223372036854775808] u8) {
+  Analyze(R"(func Lengths(a &copy [-128i8 % -1i8] u8, b &copy [-32768i16 % -1i16] u8,
+             c &copy [-2147483648i32 % -1i32] u8, d &copy [-9223372036854775808i64 % -1i64] u8,
+             e &copy [-128i8 / -1i16] u8, f &copy [-128i8 / -1] u8,
+             g &copy [(i16(-128i8) / -1i16) % 3i16] u8,
+             h &copy [-9223372036854775808i64 / -9223372036854775808i64] u8,
+             i &copy [(-128i8 / 1i8) + 128] u8,
+             j &copy [7i8 / 3u16] u8, k &copy [7u8 % 3i16] u8) {
   var first [0] u8 := a;
   var second [0] u8 := b;
-  var third [1] u8 := c;
-  var fourth [1] u8 := d;
+  var third [0] u8 := c;
+  var fourth [0] u8 := d;
+  var fifth [128] u8 := e;
+  var sixth [128] u8 := f;
+  var seventh [2] u8 := g;
+  var eighth [1] u8 := h;
+  var ninth [0] u8 := i;
+  var tenth [2] u8 := j;
+  var eleventh [1] u8 := k;
 })");
 }
 
@@ -9307,7 +10071,7 @@ func Use(source &copy Buffer) {
   var copied [2] i32 := global;
   var returned [2] i32 := Make();
   var nested [1] [3] i32 := [5 % 2] [10 / 3] i32 { { 1, 2, 3 } };
-  var empty [0] u8 := [-2147483648 % -1] u8 {};
+  var empty [0] u8 := [-128i8 % -1i8] u8 {};
 })");
 }
 
@@ -9316,30 +10080,58 @@ TEST_F(SemaTest, RejectsZeroDivisorsInArrayLengths) {
   var a [1 / 0] u8;
   var b [1 % 0] u8;
   var c [0 / (3 - 3)] u8;
+  var d [0 % u8()] u8;
+  var e [7u64 / 0u8] u8;
+  var f [0i16 / -0i16] u8;
+  var g [7usize % usize(0)] u8;
 })");
   ExpectError(1, 13, "array length divisor must be non-zero", 1);
   ExpectError(2, 13, "array length divisor must be non-zero", 1);
   ExpectError(3, 13, "array length divisor must be non-zero", 7);
+  ExpectError(4, 13, "array length divisor must be non-zero", 4);
+  ExpectError(5, 16, "array length divisor must be non-zero", 3);
+  ExpectError(6, 16, "array length divisor must be non-zero", 5);
+  ExpectError(7, 18, "array length divisor must be non-zero", 8);
 }
 
 TEST_F(SemaTest, RejectsUnrepresentableSignedDivisionArrayLengths) {
   Analyze(R"(func Lengths() {
-  var a [-2147483648 / -1] u8;
-  var b [-9223372036854775808 / -1] u8;
+  var a [-128i8 / -1i8] u8;
+  var b [-32768i16 / -1i16] u8;
+  var c [-2147483648i32 / -1i32] u8;
+  var d [-9223372036854775808i64 / -1i64] u8;
 })");
-  ExpectError(1, 9, "array length constant expression overflows its integer type", 16);
-  ExpectError(2, 9, "array length constant expression overflows its integer type", 25);
+  ExpectError(1, 9, "array length constant expression overflows its integer type", 13);
+  ExpectError(2, 9, "array length constant expression overflows its integer type", 17);
+  ExpectError(3, 9, "array length constant expression overflows its integer type", 22);
+  ExpectError(4, 9, "array length constant expression overflows its integer type", 31);
 }
 
 TEST_F(SemaTest, PreservesInnerErrorsInDivisionArrayLengths) {
   Analyze(R"(func Lengths() {
+  var a [(127i8 + 1i8) / 2i8] u8;
+  var b [0 / (127i8 + 1i8)] u8;
   var c [(1 / 0) % -1] u8;
+  var d [(-128i8 / -1i8) * 0] u8;
+  var e [(-128i8 / -1i8) % -1i8] u8;
+  var f [i64(-128i8 / -1i8)] u8;
+  var g [u16(u8(300) / 1u8)] u8;
+  var h [u8(256u16 / 1u16)] u8;
+  var i [-1i32 / 1u32] u8;
   var j [0 % (1 / 0)] u8;
   var k [1 / (1 << 32)] u8;
 })");
-  ExpectError(1, 14, "array length divisor must be non-zero", 1);
-  ExpectError(2, 18, "array length divisor must be non-zero", 1);
-  ExpectError(3, 19, "array length shift count must be non-negative and less than the left operand's bit width", 2);
+  ExpectError(1, 10, "array length constant expression overflows its integer type", 11);
+  ExpectError(2, 14, "array length constant expression overflows its integer type", 11);
+  ExpectError(3, 14, "array length divisor must be non-zero", 1);
+  ExpectError(4, 10, "array length constant expression overflows its integer type", 13);
+  ExpectError(5, 10, "array length constant expression overflows its integer type", 13);
+  ExpectError(6, 13, "array length constant expression overflows its integer type", 13);
+  ExpectError(7, 13, "array length constant expression overflows its integer type", 7);
+  ExpectError(8, 9, "array length constant expression overflows its integer type", 17);
+  ExpectError(9, 9, "array length constant expression overflows its integer type", 5);
+  ExpectError(10, 18, "array length divisor must be non-zero", 1);
+  ExpectError(11, 19, "array length shift count must be non-negative and less than the left operand's bit width", 2);
 }
 
 TEST_F(SemaTest, RejectsNegativeDivisionAndRemainderArrayLengths) {
@@ -9355,6 +10147,7 @@ TEST_F(SemaTest, RejectsNonIntegerOrNonConstantDivisionArrayLengths) {
   Analyze(R"(func Value() i32 { 4 }
 func Lengths(runtime i32) {
   var a [6.0 / 2.0] u8;
+  var b [i32(6.0 / 2.0)] u8;
   var c [6.0 % 2.0] u8;
   var d [true / false] u8;
   var e [runtime / 2] u8;
@@ -9362,11 +10155,44 @@ func Lengths(runtime i32) {
   var g [0 / Value()] u8;
 })");
   ExpectError(2, 9, "array length expression must have integer type, not 'f64'", 3);
-  ExpectError(3, 9, "binary operator '%' cannot be applied to types 'f64' and 'f64'", 9);
-  ExpectError(4, 9, "binary operator '/' cannot be applied to types 'bool' and 'bool'", 12);
-  ExpectError(5, 9, "array length is not a constant integer expression", 7);
-  ExpectError(6, 13, "array length is not a constant integer expression", 7);
+  ExpectError(3, 13, "array length expression must have integer type, not 'f64'", 3);
+  ExpectError(4, 9, "binary operator '%' cannot be applied to types 'f64' and 'f64'", 9);
+  ExpectError(5, 9, "binary operator '/' cannot be applied to types 'bool' and 'bool'", 12);
+  ExpectError(6, 9, "array length is not a constant integer expression", 7);
   ExpectError(7, 13, "array length is not a constant integer expression", 7);
+  ExpectError(8, 13, "array length is not a constant integer expression", 7);
+}
+
+TEST_F(SemaTest, NativeDivisionArrayLengthsUseTargetRange) {
+  Analyze(R"(func Lengths(a &copy [(-2147483648isize / -1isize) % 3isize] u8,
+             b &copy [-9223372036854775808isize % -1isize] u8,
+             c &copy [18446744073709551615usize / 9223372036854775808usize] u8,
+             d &copy [18446744073709551615usize % 256usize] u8,
+             e &copy [4294967296u64 / 1u64] [0] u8) {
+  var first [2] u8 := a;
+  var second [0] u8 := b;
+  var third [1] u8 := c;
+  var fourth [255] u8 := d;
+  var fifth [4294967296] [0] u8 := e;
+  var overflow [-9223372036854775808isize / -1isize] u8;
+})");
+  ExpectError(10, 16, "array length constant expression overflows its integer type", 35);
+}
+
+TEST_F(WasmSemaTest, DivisionArrayLengthsUseTargetRange) {
+  Analyze(R"(func Lengths(a &copy [-2147483648isize % -1isize] u8,
+             b &copy [4294967295usize / 2147483648usize] u8,
+             c &copy [4294967295usize % 256usize] u8) {
+  var first [0] u8 := a;
+  var second [1] u8 := b;
+  var third [255] u8 := c;
+  var overflow [-2147483648isize / -1isize] u8;
+  var too_large [4294967296u64 / 1u64] u8;
+  var conversion [usize(4294967296u64 / 1u64)] u8;
+})");
+  ExpectError(6, 16, "array length constant expression overflows its integer type", 26);
+  ExpectError(7, 17, "array length is outside the range of 'usize'", 20);
+  ExpectError(8, 18, "array length constant expression overflows its integer type", 27);
 }
 
 TEST_F(SemaTest, ChecksEachTypedArrayLengthOperationBeforeContinuing) {
@@ -11333,7 +12159,7 @@ func value() {})");
   ExpectError(
       0, 13,
       "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
-      "string literal, 'move', 'operator', 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
       "'-', '--', '~', '!', '::', '(', '['",
       1);
   ExpectError(0, 4, "declaration of variable 'value' conflicts with function declaration", 0);

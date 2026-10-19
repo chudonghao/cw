@@ -30,3 +30,31 @@ func InferredLiteral() u64 {
   var value := 9223372036854775808;
   value
 }
+
+func ByteMinimum() i8 {
+  -(((128i8)))
+}
+
+func TypedNegation() i8 {
+  -(-128i8)
+}
+
+func HexadecimalSuffix() u16 {
+  0x1f32u16
+}
+
+func ExplicitUnsigned() u64 {
+  18446744073709551615u64
+}
+
+func WidenedByte() i64 {
+  -128i8
+}
+
+func NextIndex(index usize) usize {
+  index + 1usize
+}
+
+func MinimumSize() isize {
+  -9223372036854775808isize
+}

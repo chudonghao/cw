@@ -1,0 +1,28 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-TypeAliasDecl {{address}} <explicit_numeric_conversion.cpp:1:1, col:21> col:7 referenced u8 'unsigned char'
+| `-BuiltinType {{address}} 'unsigned char'
+|-TypeAliasDecl {{address}} <line:2:1, col:13> col:7 referenced i64 'long'
+| `-BuiltinType {{address}} 'long'
+|-TypeAliasDecl {{address}} <line:3:1, col:24> col:7 referenced usize 'unsigned long'
+| `-BuiltinType {{address}} 'unsigned long'
+`-FunctionDecl {{address}} <line:5:1, line:11:1> line:5:6 ExplicitNumericConversion 'void (i64)' external-linkage
+  |-ParmVarDecl {{address:1}} <col:32, col:36> col:36 used value 'i64':'long'
+  `-CompoundStmt {{address}} <col:43, line:11:1>
+    |-CXXScalarValueInitExpr {{address}} <line:6:3, col:7> 'int'
+    |-CXXScalarValueInitExpr {{address}} <line:7:3, col:9> 'float'
+    |-ParenExpr {{address}} <line:8:3, col:13> 'u8':'unsigned char'
+    | `-CXXFunctionalCastExpr {{address}} <col:4, col:12> 'u8':'unsigned char' functional cast to u8 <NoOp>
+    |   `-ImplicitCastExpr {{address}} <col:7> 'u8':'unsigned char' <IntegralCast> part_of_explicit_cast
+    |     `-ImplicitCastExpr {{address}} <col:7> 'i64':'long' <LValueToRValue> part_of_explicit_cast
+    |       `-DeclRefExpr {{address}} <col:7> 'i64':'long' lvalue ParmVar {{address:1}} 'value' 'i64':'long'
+    |-ParenExpr {{address}} <line:9:3, col:14> 'i64':'long'
+    | `-CXXFunctionalCastExpr {{address}} <col:4, col:13> 'i64':'long' functional cast to i64 <NoOp>
+    |   `-ImplicitCastExpr {{address}} <col:8> 'i64':'long' <LValueToRValue> part_of_explicit_cast
+    |     `-DeclRefExpr {{address}} <col:8> 'i64':'long' lvalue ParmVar {{address:1}} 'value' 'i64':'long'
+    `-ParenExpr {{address}} <line:10:3, col:24> 'double'
+      `-CXXFunctionalCastExpr {{address}} <col:4, col:23> 'double' functional cast to double <NoOp>
+        `-ImplicitCastExpr {{address}} <col:11, col:22> 'double' <IntegralToFloating> part_of_explicit_cast
+          `-CXXFunctionalCastExpr {{address}} <col:11, col:22> 'usize':'unsigned long' functional cast to usize <NoOp>
+            `-ImplicitCastExpr {{address}} <col:17> 'usize':'unsigned long' <IntegralCast> part_of_explicit_cast
+              `-ImplicitCastExpr {{address}} <col:17> 'i64':'long' <LValueToRValue> part_of_explicit_cast
+                `-DeclRefExpr {{address}} <col:17> 'i64':'long' lvalue ParmVar {{address:1}} 'value' 'i64':'long'

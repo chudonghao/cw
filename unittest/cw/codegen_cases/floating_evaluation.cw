@@ -1,5 +1,5 @@
 func Bump(value &mut f32) f64 {
-  value = value + 1.0f;
+  value = value + 1.0f32;
   value
 }
 

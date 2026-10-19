@@ -232,6 +232,7 @@ INSTANTIATE_TEST_SUITE_P(
         LanguageFeatureCase{"numeric_loop", "NumericLoop"}, LanguageFeatureCase{"integer_types", "IntegerTypes"},
         LanguageFeatureCase{"integer_literals", "IntegerLiterals"},
         LanguageFeatureCase{"integer_conversions", "IntegerConversions"},
+        LanguageFeatureCase{"explicit_numeric_conversion", "ExplicitNumericConversion"},
         LanguageFeatureCase{"integer_arithmetic_widths", "IntegerArithmeticWidths"},
         LanguageFeatureCase{"integer_bitwise", "IntegerBitwise"},
         LanguageFeatureCase{"bitwise_evaluation", "BitwiseEvaluation"},

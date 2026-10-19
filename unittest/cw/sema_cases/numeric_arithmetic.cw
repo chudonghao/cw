@@ -5,7 +5,7 @@ func NumericArithmetic(signed8 i8, unsigned8 u8, signed16 i16, signed32 i32, sig
   var characters := 'a' + 'b';
   var mixed_float := signed32 + single;
   var wider_float := single * wide;
-  var literal_float := 1.0f + 2.0;
+  var literal_float := 1.0f32 + 2.0;
   var integer_difference := signed32 - signed32;
   var integer_quotient := signed32 / signed32;
   var integer_remainder := signed32 % signed32;

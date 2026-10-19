@@ -50,6 +50,29 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
   switch (expression.GetKind()) {
     case NodeKind::IntegerLiteral:
       return static_cast<const IntegerLiteral&>(expression).value;
+    case NodeKind::ScalarValueInitExpr: {
+      const auto* type = expression.type.GetTypePtr()->AsBuiltinType();
+      if (!type || !type->IsInteger()) {
+        return Failure(ConstantIntegerFailureKind::NotInteger, expression);
+      }
+      return llvm::APSInt(llvm::APInt(ast_context.GetIntegerBitWidth(*type), 0), !type->IsSignedInteger());
+    }
+    case NodeKind::FunctionalCastExpr: {
+      const auto& cast = static_cast<const FunctionalCastExpr&>(expression);
+      auto result = Evaluate(*cast.SubExpr, ast_context);
+      if (const auto* failure = std::get_if<ConstantIntegerFailure>(&result)) {
+        return *failure;
+      }
+      const auto* target = expression.type.GetTypePtr()->AsBuiltinType();
+      if (!target || !target->IsInteger()) {
+        return Failure(ConstantIntegerFailureKind::NotInteger, expression);
+      }
+      auto value = std::get<llvm::APSInt>(std::move(result));
+      if (!ConvertToType(value, expression.type, ast_context)) {
+        return Failure(ConstantIntegerFailureKind::NotRepresentable, expression);
+      }
+      return value;
+    }
     case NodeKind::ParenExpr: {
       const auto& parentheses = static_cast<const ParenExpr&>(expression);
       if (!parentheses.SubExpr) {

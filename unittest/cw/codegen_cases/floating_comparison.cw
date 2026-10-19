@@ -51,5 +51,5 @@ func NaNGreaterEqual() bool {
 }
 
 func SignedZerosEqual() bool {
-  0.0f == -0.0f
+  0.0f32 == -0.0f32
 }

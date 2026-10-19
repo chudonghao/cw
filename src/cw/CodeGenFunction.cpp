@@ -1618,6 +1618,15 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
       return builder_.getInt8(static_cast<const CharacterLiteral&>(expression).value);
     case NodeKind::FloatLiteral:
       return llvm::ConstantFP::get(*codegen_.llvm_context_, static_cast<const FloatLiteral&>(expression).value);
+    case NodeKind::ScalarValueInitExpr:
+      return llvm::Constant::getNullValue(result_type);
+    case NodeKind::FunctionalCastExpr: {
+      const auto& cast = static_cast<const FunctionalCastExpr&>(expression);
+      auto* value = EmitScalarExpr(*cast.SubExpr);
+      return value ? EmitNumericConversion(value, *cast.SubExpr->type.GetTypePtr()->AsBuiltinType(),
+                                           *expression.type.GetTypePtr()->AsBuiltinType())
+                   : nullptr;
+    }
     case NodeKind::ParenExpr:
       return EmitScalarExpr(*static_cast<const ParenExpr&>(expression).SubExpr);
     case NodeKind::CallExpr:

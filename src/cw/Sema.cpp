@@ -513,6 +513,14 @@ bool HasFunctionResultObject(const FunctionDecl& declaration) {
   return !declaration.ReturnVar->type || !declaration.ReturnVar->type.GetTypePtr()->IsVoid();
 }
 
+const BuiltinType* GetIntegerLiteralSuffixType(const Expr& expression, ASTContext& ast_context) {
+  const Expr* literal = expression.IgnoreParens();
+  if (literal->GetKind() != NodeKind::IntegerLiteral) return nullptr;
+  const auto suffix = static_cast<const IntegerLiteral&>(*literal).suffix;
+  if (suffix == BuiltinTypeKind::Invalid) return nullptr;
+  return ast_context.GetBuiltinType(suffix);
+}
+
 const BuiltinType* DefaultIntegerType(ASTContext& ast_context, const llvm::APSInt& value) {
   if (value.isSigned() ? value.isSignedIntN(32) : value.isIntN(31)) {
     return ast_context.GetBuiltinType(BuiltinTypeKind::I32);
@@ -2990,7 +2998,7 @@ void Sema::AnalyzeStmt(Stmt& statement, const ResultBlockAnalysisContext& result
     case NodeKind::ExprStmt: {
       auto& expression_statement = static_cast<ExprStmt&>(statement);
       expression_statement.Expr = AnalyzeExpr(
-          std::move(expression_statement.Expr), ComptimeIntMode::Materialize,
+          std::move(expression_statement.Expr),
           is_constructor_prologue ? ExpressionUse::ConstructorPrologue : ExpressionUse::InitializationStatement);
       if (expression_statement.Expr && !expression_statement.Expr->ContainsErrors() &&
           expression_statement.Expr->type) {
@@ -3257,12 +3265,21 @@ void Sema::AnalyzeVariableGroup(VarGroupDecl& declaration, TypeUseKind use, Glob
   }
 }
 
-std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> expression, ComptimeIntMode mode) {
+std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> expression) {
+  expression = AnalyzeConstantIntegerExprImpl(std::move(expression));
+  // Array lengths retain unsuffixed exact integers, but must still check explicit suffixes.
+  if (expression && GetIntegerLiteralSuffixType(*expression, *ast_context_)) {
+    MaterializeComptimeInteger(expression);
+  }
+  return expression;
+}
+
+std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExprImpl(std::unique_ptr<Expr> expression) {
   if (!expression) return nullptr;
 
-  const auto analyze_child = [&](std::unique_ptr<Expr>& child,
-                                 ComptimeIntMode child_mode = ComptimeIntMode::Materialize) {
-    child = AnalyzeConstantIntegerExpr(std::move(child), child_mode);
+  const auto analyze_child = [&](std::unique_ptr<Expr>& child) {
+    child = AnalyzeConstantIntegerExprImpl(std::move(child));
+    MaterializeComptimeInteger(child);
     InheritErrors(*expression, child.get());
   };
   bool supported = false;
@@ -3276,10 +3293,11 @@ std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> exp
     case NodeKind::StringLiteral:
     case NodeKind::RecoveryExpr:
       // Ordinary literal typing also lets the evaluator diagnose non-integer lengths.
-      return AnalyzeExpr(std::move(expression), mode);
+      return AnalyzeExprImpl(std::move(expression));
     case NodeKind::ParenExpr: {
       auto& parentheses = static_cast<ParenExpr&>(*expression);
-      analyze_child(parentheses.SubExpr, ComptimeIntMode::Preserve);
+      parentheses.SubExpr = AnalyzeConstantIntegerExprImpl(std::move(parentheses.SubExpr));
+      InheritErrors(parentheses, parentheses.SubExpr.get());
       if (parentheses.SubExpr) {
         parentheses.type = parentheses.SubExpr->type;
         parentheses.value_category = parentheses.SubExpr->value_category;
@@ -3291,11 +3309,14 @@ std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> exp
     }
     case NodeKind::UnaryOperator: {
       auto& unary = static_cast<UnaryOperator&>(*expression);
-      const bool preserves_comptime_integer = unary.op == expr::plus || unary.op == expr::minus;
-      supported = preserves_comptime_integer || unary.op == expr::tilde;
-      analyze_child(unary.Operand,
-                    preserves_comptime_integer ? ComptimeIntMode::Preserve : ComptimeIntMode::Materialize);
+      unary.Operand = AnalyzeConstantIntegerExprImpl(std::move(unary.Operand));
+      const BuiltinType* negated_literal_type = PrepareUnaryOperand(unary);
+      InheritErrors(unary, unary.Operand.get());
+      supported = unary.op == expr::plus || unary.op == expr::minus || unary.op == expr::tilde;
       if (supported) AnalyzeBuiltinUnaryOperator(unary);
+      if (negated_literal_type) {
+        MaterializeComptimeInteger(expression, negated_literal_type);
+      }
       unsupported_operator = !supported;
       break;
     }
@@ -3314,6 +3335,8 @@ std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> exp
       unsupported_operator = !supported;
       break;
     }
+    case NodeKind::BuiltinTypeExpr:
+      return AnalyzeExprImpl(std::move(expression));
     case NodeKind::DeclRefExpr:
       // Name recovery uses the enclosing interface or execution environment, but cannot supply a constant.
       expression = AnalyzeDeclRefExpr(std::move(expression), DeclRefRole::Object);
@@ -3325,6 +3348,10 @@ std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> exp
     case NodeKind::DestructorCallExpr:
     case NodeKind::ReceiverCallExpr: {
       auto& call = static_cast<CallExpr&>(*expression);
+      if (call.Callee && call.Callee->GetKind() == NodeKind::BuiltinTypeExpr) {
+        for (auto& argument : call.Args) analyze_child(argument);
+        return FormBuiltinTypeCall(std::move(expression));
+      }
       if (call.GetKind() == NodeKind::DestructorCallExpr) {
         analyze_child(static_cast<DestructorCallExpr&>(call).TargetAddress);
       } else if (call.GetKind() == NodeKind::ReceiverCallExpr) {
@@ -3390,24 +3417,28 @@ std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExpr(std::unique_ptr<Expr> exp
                                     "'&', '|', '^', '<<', and '>>' operators"
                                   : "array length is not a constant integer expression");
   }
-  if (!expression->ContainsErrors() && expression->type && expression->type.GetTypePtr()->AsComptimeIntType() &&
-      mode == ComptimeIntMode::Materialize) {
-    MaterializeComptimeInteger(expression);
-  }
   return expression;
 }
 
-std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, ComptimeIntMode mode, ExpressionUse use,
+std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, ExpressionUse use,
                                         const ConstructionResultContext* construction_context) {
+  expression = AnalyzeExprImpl(std::move(expression), use, construction_context);
+  MaterializeComptimeInteger(expression);
+  return expression;
+}
+
+std::unique_ptr<Expr> Sema::AnalyzeExprImpl(std::unique_ptr<Expr> expression, ExpressionUse use,
+                                            const ConstructionResultContext* construction_context) {
   if (!expression) {
     return nullptr;
   }
 
   switch (expression->GetKind()) {
-    case NodeKind::IntegerLiteral:
+    case NodeKind::IntegerLiteral: {
       expression->type = QualType(ast_context_->GetComptimeIntType());
       expression->value_category = ValueCategory::None;
       break;
+    }
     case NodeKind::CharacterLiteral:
       expression->type = QualType(ast_context_->GetBuiltinType(BuiltinTypeKind::U8));
       expression->value_category = ValueCategory::PureRValue;
@@ -3440,6 +3471,12 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
     }
     case NodeKind::RecoveryExpr:
       break;
+    case NodeKind::BuiltinTypeExpr: {
+      const auto& type = static_cast<const BuiltinTypeExpr&>(*expression);
+      Diagnose(*expression, kErrorDiagnostic, type.range,
+               fmt::format("type '{}' cannot be used as an object expression", to_string(type.kind)));
+      break;
+    }
     case NodeKind::DeclRefExpr:
       expression = AnalyzeDeclRefExpr(std::move(expression), DeclRefRole::Object);
       break;
@@ -3448,8 +3485,8 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
       break;
     case NodeKind::ParenExpr: {
       auto& parentheses = static_cast<ParenExpr&>(*expression);
-      parentheses.SubExpr = AnalyzeExpr(std::move(parentheses.SubExpr), ComptimeIntMode::Preserve,
-                                        ExpressionUse::General, construction_context);
+      parentheses.SubExpr =
+          AnalyzeExprImpl(std::move(parentheses.SubExpr), ExpressionUse::General, construction_context);
       InheritErrors(parentheses, parentheses.SubExpr.get());
       if (parentheses.SubExpr) {
         parentheses.type = parentheses.SubExpr->type;
@@ -3461,12 +3498,13 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
     }
     case NodeKind::UnaryOperator: {
       auto& unary_expression = static_cast<UnaryOperator&>(*expression);
-      const ComptimeIntMode operand_mode = unary_expression.op == expr::plus || unary_expression.op == expr::minus
-                                               ? ComptimeIntMode::Preserve
-                                               : ComptimeIntMode::Materialize;
-      unary_expression.Operand = AnalyzeExpr(std::move(unary_expression.Operand), operand_mode);
+      unary_expression.Operand = AnalyzeExprImpl(std::move(unary_expression.Operand));
+      const BuiltinType* negated_literal_type = PrepareUnaryOperand(unary_expression);
       InheritErrors(unary_expression, unary_expression.Operand.get());
       expression = AnalyzeUnaryOperator(std::move(expression));
+      if (negated_literal_type) {
+        MaterializeComptimeInteger(expression, negated_literal_type);
+      }
       break;
     }
     case NodeKind::BinaryOperator: {
@@ -3501,10 +3539,10 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
               ? nullptr
               : construction_context;
       conditional_expression.Cond = AnalyzeExpr(std::move(conditional_expression.Cond));
-      conditional_expression.Then = AnalyzeExpr(std::move(conditional_expression.Then), ComptimeIntMode::Materialize,
-                                                ExpressionUse::General, branch_context);
-      conditional_expression.Else = AnalyzeExpr(std::move(conditional_expression.Else), ComptimeIntMode::Materialize,
-                                                ExpressionUse::General, branch_context);
+      conditional_expression.Then =
+          AnalyzeExpr(std::move(conditional_expression.Then), ExpressionUse::General, branch_context);
+      conditional_expression.Else =
+          AnalyzeExpr(std::move(conditional_expression.Else), ExpressionUse::General, branch_context);
       InheritErrors(conditional_expression, conditional_expression.Cond.get());
       InheritErrors(conditional_expression, conditional_expression.Then.get());
       InheritErrors(conditional_expression, conditional_expression.Else.get());
@@ -3540,6 +3578,10 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
       for (auto& argument : call_expression.Args) {
         argument = AnalyzeExpr(std::move(argument));
         InheritErrors(call_expression, argument.get());
+      }
+      if (call_expression.Callee && call_expression.Callee->GetKind() == NodeKind::BuiltinTypeExpr) {
+        expression = FormBuiltinTypeCall(std::move(expression));
+        break;
       }
       if (!call_expression.is_nonvirtual && call_expression.Callee && !call_expression.Callee->ContainsErrors() &&
           IsStructObjectOperand(*call_expression.Callee)) {
@@ -3626,12 +3668,6 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
       break;
   }
 
-  // Parentheses and unary signs preserve exact integers until the enclosing expression requests
-  // a runtime type, so the complete value determines materialization.
-  if (!expression->ContainsErrors() && expression->type &&
-      expression->type.GetTypePtr()->GetKind() == TypeKind::ComptimeInt && mode == ComptimeIntMode::Materialize) {
-    MaterializeComptimeInteger(expression);
-  }
   if (type_layouts_ready_ && !expression->ContainsErrors() && expression->type) {
     ValidateLayoutUse(*expression, *expression->type.GetTypePtr());
   }
@@ -3639,11 +3675,32 @@ std::unique_ptr<Expr> Sema::AnalyzeExpr(std::unique_ptr<Expr> expression, Compti
 }
 
 std::unique_ptr<Expr> Sema::AnalyzeCalleeExpr(std::unique_ptr<Expr> expression) {
-  if (!expression || expression->GetKind() != NodeKind::DeclRefExpr) {
-    return AnalyzeExpr(std::move(expression));
+  if (!expression || expression->GetKind() == NodeKind::BuiltinTypeExpr) {
+    return expression;
+  }
+  if (expression->GetKind() == NodeKind::DeclRefExpr) {
+    return AnalyzeDeclRefExpr(std::move(expression), DeclRefRole::Callee);
   }
 
-  return AnalyzeDeclRefExpr(std::move(expression), DeclRefRole::Callee);
+  // Parenthesized names follow ordinary object-expression rules.
+  return AnalyzeExpr(std::move(expression));
+}
+
+const BuiltinType* Sema::PrepareUnaryOperand(UnaryOperator& expression) {
+  auto& operand = expression.Operand;
+  if (!operand || operand->ContainsErrors() || !operand->type || !operand->type.GetTypePtr()->AsComptimeIntType()) {
+    return nullptr;
+  }
+
+  const BuiltinType* suffix_type = GetIntegerLiteralSuffixType(*operand, *ast_context_);
+  if (expression.op == expr::minus && suffix_type && suffix_type->IsSignedInteger()) {
+    return suffix_type;
+  }
+  // Unsuffixed sign chains remain exact. Other operations need a concrete operand type.
+  if (suffix_type || (expression.op != expr::plus && expression.op != expr::minus)) {
+    MaterializeComptimeInteger(operand);
+  }
+  return nullptr;
 }
 
 std::unique_ptr<Expr> Sema::AnalyzeUnaryOperator(std::unique_ptr<Expr> expression) {
@@ -4167,7 +4224,7 @@ void Sema::AnalyzeArrayValueExpr(ArrayValueExpr& expression, QualType contextual
         element_context.target_type = element_type.WithoutConst();
         context = &element_context;
       }
-      element = AnalyzeExpr(std::move(element), ComptimeIntMode::Materialize, ExpressionUse::General, context);
+      element = AnalyzeExpr(std::move(element), ExpressionUse::General, context);
     }
     InheritErrors(expression, element.get());
     if (!element || element->ContainsErrors() || !element->type) {
@@ -4632,8 +4689,7 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
   } else {
     const ConstructionResultContext* source_context =
         target_is_valid && has_direct_delegating_source ? &construction_context : nullptr;
-    expression.Source =
-        AnalyzeExpr(std::move(expression.Source), ComptimeIntMode::Materialize, ExpressionUse::General, source_context);
+    expression.Source = AnalyzeExpr(std::move(expression.Source), ExpressionUse::General, source_context);
     InheritErrors(expression, expression.Source.get());
   }
 
@@ -5171,6 +5227,47 @@ std::unique_ptr<Expr> Sema::AnalyzeCallableObjectCall(std::unique_ptr<Expr> expr
   CommitArgumentConversions(ExpressionSlots(call->Args), parameter_types, plans);
   FormCallResult(*call, function_type);
   return call;
+}
+
+std::unique_ptr<Expr> Sema::FormBuiltinTypeCall(std::unique_ptr<Expr> expression) {
+  auto& call = static_cast<CallExpr&>(*expression);
+  const auto& callee = static_cast<const BuiltinTypeExpr&>(*call.Callee);
+  const BuiltinType* target = ast_context_->GetBuiltinType(callee.kind);
+  const QualType target_type(target);
+  if (!target->IsInteger() && !target->IsFloatingPoint()) {
+    Diagnose(call, kErrorDiagnostic, callee.range, "type call requires a numeric type");
+  }
+  if (call.Args.size() > 1) {
+    Diagnose(call, kErrorDiagnostic, call.range, "numeric type call requires zero or one argument");
+  }
+  if (call.ContainsErrors()) {
+    return expression;
+  }
+
+  if (call.Args.empty()) {
+    auto initialization = std::make_unique<ScalarValueInitExpr>();
+    initialization->range = call.range;
+    initialization->target_name = NameSyntax::Identifier(to_string(callee.kind), callee.range);
+    initialization->type = target_type;
+    initialization->value_category = ValueCategory::PureRValue;
+    return initialization;
+  }
+
+  auto& argument = call.Args.front();
+  const auto* source = argument && argument->type ? argument->type.GetTypePtr()->AsBuiltinType() : nullptr;
+  if (!source || (!source->IsInteger() && !source->IsFloatingPoint())) {
+    Diagnose(call, kErrorDiagnostic, argument ? argument->range : call.range,
+             "numeric conversion requires a numeric source");
+    return expression;
+  }
+  ApplyDefaultValueConversion(argument);
+  auto cast = std::make_unique<FunctionalCastExpr>();
+  cast->range = call.range;
+  cast->SubExpr = std::move(argument);
+  cast->target_name = NameSyntax::Identifier(to_string(callee.kind), callee.range);
+  cast->type = target_type;
+  cast->value_category = ValueCategory::PureRValue;
+  return cast;
 }
 
 void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext* construction_context) {
@@ -5936,10 +6033,11 @@ void Sema::FormDestructorCallResult(DestructorCallExpr& expression, DeclRefExpr&
   expression.value_category = ValueCategory::None;
 }
 
-bool Sema::MaterializeComptimeInteger(std::unique_ptr<Expr>& expression) {
-  BOOST_ASSERT(expression);
-  BOOST_ASSERT(expression->type);
-  BOOST_ASSERT(expression->type.GetTypePtr()->GetKind() == TypeKind::ComptimeInt);
+bool Sema::MaterializeComptimeInteger(std::unique_ptr<Expr>& expression, const BuiltinType* explicit_type) {
+  if (!expression || expression->ContainsErrors() || !expression->type) return false;
+  if (!expression->type.GetTypePtr()->AsComptimeIntType()) return true;
+
+  if (!explicit_type) explicit_type = GetIntegerLiteralSuffixType(*expression, *ast_context_);
 
   const auto evaluated = EvaluateConstantInteger(*expression, *ast_context_);
   const auto* value = std::get_if<llvm::APSInt>(&evaluated);
@@ -5948,14 +6046,26 @@ bool Sema::MaterializeComptimeInteger(std::unique_ptr<Expr>& expression) {
     return false;
   }
 
-  const BuiltinType* default_type = DefaultIntegerType(*ast_context_, *value);
-  if (!default_type) {
+  const BuiltinType* type = explicit_type ? explicit_type : DefaultIntegerType(*ast_context_, *value);
+  if (!type) {
     Diagnose(*expression, kErrorDiagnostic, expression->range,
              "integer constant cannot be represented by any default integer type");
     return false;
   }
 
-  WrapInImplicitCast(expression, QualType(default_type), ImplicitConversionKind::ComptimeIntegerMaterialization);
+  if (explicit_type) {
+    const unsigned width = ast_context_->GetIntegerBitWidth(*type);
+    const bool fits = type->IsSignedInteger()
+                          ? (value->isSigned() ? value->isSignedIntN(width) : value->isIntN(width - 1))
+                          : (value->isNonNegative() && value->isIntN(width));
+    if (!fits) {
+      Diagnose(*expression, kErrorDiagnostic, expression->IgnoreParens()->range,
+               fmt::format("integer literal is outside the range of '{}'", to_string(type->GetBuiltinTypeKind())));
+      return false;
+    }
+  }
+
+  WrapInImplicitCast(expression, QualType(type), ImplicitConversionKind::ComptimeIntegerMaterialization);
   return true;
 }
 

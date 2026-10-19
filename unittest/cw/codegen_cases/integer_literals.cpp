@@ -18,3 +18,18 @@ unsigned long long InferredLiteral() {
   auto value = 9223372036854775808ULL;
   return value;
 }
+
+signed char ByteMinimum() { return -128; }
+
+// CW i8 negation wraps; Clang's signed char conversion gives the same result on this target.
+signed char TypedNegation() { return static_cast<signed char>(-static_cast<signed char>(-128)); }
+
+unsigned short HexadecimalSuffix() { return 0x1f32; }
+
+unsigned long long ExplicitUnsigned() { return 18446744073709551615ULL; }
+
+long long WidenedByte() { return static_cast<signed char>(-128); }
+
+unsigned long NextIndex(unsigned long index) { return index + 1UL; }
+
+long MinimumSize() { return (-9223372036854775807L - 1); }

@@ -37,12 +37,15 @@ enum TokenType {
   bool_literal = expr::bool_literal,            // true, false
   integer_literal = expr::integer_literal,      // 123, 0xFF, etc.
   character_literal = expr::character_literal,  // 'a', '\n', etc.
-  float_literal = expr::float_literal,          // 1.23f, 0.0, etc.
+  float_literal = expr::float_literal,          // 1.23f32, 0.0, etc.
   string_literal = expr::string_literal,        // "abc", etc.
 
   // Keyword operators
   move_ = expr::move_,          // move value
   operator_ = expr::operator_,  // operator function name
+
+  // Type keywords
+  builtin_type = expr::builtin_type,  // void, bool, i8, etc.
 
   // Reserved object expression
   this_ = expr::this_,  // current object
@@ -107,28 +110,27 @@ enum TokenType {
   NonExprTokenStart = expr::num_symbols,
 
   // Keywords
-  builtin_type,  // void, bool, i8, etc.
-  const_,        // const
-  mut,           // mut
-  copy,          // copy
-  struct_,       // struct
-  trivial_,      // trivial
-  virtual_,      // virtual
-  abstract_,     // abstract
-  override_,     // override
-  func,          // func
-  var,           // var
-  alias,         // alias
-  namespace_,    // namespace
-  export_,       // export
-  import_,       // import
-  if_,           // if
-  else_,         // else
-  while_,        // while
-  for_,          // for
-  break_,        // break
-  continue_,     // continue
-  return_,       // return
+  const_,      // const
+  mut,         // mut
+  copy,        // copy
+  struct_,     // struct
+  trivial_,    // trivial
+  virtual_,    // virtual
+  abstract_,   // abstract
+  override_,   // override
+  func,        // func
+  var,         // var
+  alias,       // alias
+  namespace_,  // namespace
+  export_,     // export
+  import_,     // import
+  if_,         // if
+  else_,       // else
+  while_,      // while
+  for_,        // for
+  break_,      // break
+  continue_,   // continue
+  return_,     // return
 
   // Others
   comment,  // comment
@@ -154,6 +156,7 @@ struct BoolProperty {
 
 struct IntegerProperty {
   llvm::APSInt value{1, true};
+  BuiltinTypeKind suffix{};
 };
 
 struct CharacterProperty {

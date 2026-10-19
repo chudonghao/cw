@@ -64,3 +64,63 @@ entry:
   %1 = load i64, ptr %.result, align 8
   ret i64 %1
 }
+
+define noundef signext i8 @"cw:ByteMinimum:func()i8"() {
+entry:
+  %.result = alloca i8, align 1
+  store i8 -128, ptr %.result, align 1
+  %0 = load i8, ptr %.result, align 1
+  ret i8 %0
+}
+
+define noundef signext i8 @"cw:TypedNegation:func()i8"() {
+entry:
+  %.result = alloca i8, align 1
+  store i8 -128, ptr %.result, align 1
+  %0 = load i8, ptr %.result, align 1
+  ret i8 %0
+}
+
+define noundef zeroext i16 @"cw:HexadecimalSuffix:func()u16"() {
+entry:
+  %.result = alloca i16, align 2
+  store i16 7986, ptr %.result, align 2
+  %0 = load i16, ptr %.result, align 2
+  ret i16 %0
+}
+
+define noundef i64 @"cw:ExplicitUnsigned:func()u64"() {
+entry:
+  %.result = alloca i64, align 8
+  store i64 -1, ptr %.result, align 8
+  %0 = load i64, ptr %.result, align 8
+  ret i64 %0
+}
+
+define noundef i64 @"cw:WidenedByte:func()i64"() {
+entry:
+  %.result = alloca i64, align 8
+  store i64 -128, ptr %.result, align 8
+  %0 = load i64, ptr %.result, align 8
+  ret i64 %0
+}
+
+define noundef i64 @"cw:NextIndex:func(usize)usize"(i64 noundef %index) {
+entry:
+  %.result = alloca i64, align 8
+  %index.addr = alloca i64, align 8
+  store i64 %index, ptr %index.addr, align 8
+  %0 = load i64, ptr %index.addr, align 8
+  %add = add i64 %0, 1
+  store i64 %add, ptr %.result, align 8
+  %1 = load i64, ptr %.result, align 8
+  ret i64 %1
+}
+
+define noundef i64 @"cw:MinimumSize:func()isize"() {
+entry:
+  %.result = alloca i64, align 8
+  store i64 -9223372036854775808, ptr %.result, align 8
+  %0 = load i64, ptr %.result, align 8
+  ret i64 %0
+}

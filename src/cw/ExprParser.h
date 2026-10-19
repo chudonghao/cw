@@ -107,6 +107,7 @@ class ExprParser : public lang::LRStateMachine {
   int Reduce_NamePrefix__coloncolon();
   int Reduce_NamePrefix__ID_coloncolon();
   int Reduce_OperatorFunctionName__qualified();
+  int Reduce_PrimaryExpr__builtin_type();
   int Reduce_PrimaryExpr__null_literal();
   int Reduce_PrimaryExpr__integer_literal();
   int Reduce_PrimaryExpr__character_literal();

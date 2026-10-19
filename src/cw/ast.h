@@ -80,6 +80,9 @@ enum class NodeKind {
   BaseSubobjectExpr,
   SubscriptExpr,
   ArrayValueExpr,
+  BuiltinTypeExpr,
+  ScalarValueInitExpr,
+  FunctionalCastExpr,
   CallExpr,
   OperatorCallExpr,
   ConstructionExpr,
@@ -520,9 +523,10 @@ struct Expr : Node {
   const Expr* IgnoreParens() const;
 };
 
-/// \brief Integer literal expression (123, 0x1F).
+/// \brief Integer literal expression (123, 0x1F, 1usize).
 struct IntegerLiteral : Expr {
   llvm::APSInt value{1, true};  ///< Exact integer value.
+  BuiltinTypeKind suffix{};     ///< Written type suffix, or Invalid when absent.
 
   NodeKind GetKind() const override { return NodeKind::IntegerLiteral; }
   void Accept(ASTVisitor& visitor) override;
@@ -538,7 +542,7 @@ struct CharacterLiteral : Expr {
   void Traverse(ASTVisitor& visitor) override;
 };
 
-/// \brief Float literal expression (1.23, 3.14f).
+/// \brief Float literal expression (1.23, 3.14f32).
 struct FloatLiteral : Expr {
   llvm::APFloat value{llvm::APFloat::IEEEdouble()};  ///< Value in the literal's floating-point format.
 
@@ -720,7 +724,36 @@ struct ArrayValueExpr : Expr {
   void Traverse(ASTVisitor& visitor) override;
 };
 
-/// \brief Function call expression (f(a, b)).
+/// \brief Builtin type keyword in expression syntax.
+struct BuiltinTypeExpr : Expr {
+  BuiltinTypeKind kind{};  ///< Builtin type kind written in source.
+
+  NodeKind GetKind() const override { return NodeKind::BuiltinTypeExpr; }
+  void Accept(ASTVisitor& visitor) override;
+  void Traverse(ASTVisitor& visitor) override;
+};
+
+/// \brief Zero initialization of a numeric value (T()).
+struct ScalarValueInitExpr : Expr {
+  NameSyntax target_name{};  ///< Target type name as written in source.
+
+  NodeKind GetKind() const override { return NodeKind::ScalarValueInitExpr; }
+  void Accept(ASTVisitor& visitor) override;
+  void Traverse(ASTVisitor& visitor) override;
+};
+
+/// \brief Explicit numeric conversion (T(value)).
+struct FunctionalCastExpr : Expr {
+  std::unique_ptr<Expr> SubExpr{};  ///< Analyzed source value.
+
+  NameSyntax target_name{};  ///< Target type name as written in source.
+
+  NodeKind GetKind() const override { return NodeKind::FunctionalCastExpr; }
+  void Accept(ASTVisitor& visitor) override;
+  void Traverse(ASTVisitor& visitor) override;
+};
+
+/// \brief Function or type call expression (f(a, b)).
 struct CallExpr : Expr {
   std::unique_ptr<Expr> Callee{};             ///< Callee expression.
   std::vector<std::unique_ptr<Expr>> Args{};  ///< Arguments.

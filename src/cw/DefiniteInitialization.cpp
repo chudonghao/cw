@@ -1199,6 +1199,9 @@ class AnalysisEngine {
       case NodeKind::MaterializeTemporaryExpr:
         WalkChild(static_cast<const MaterializeTemporaryExpr&>(expression).SubExpr, excluded, environment, collect);
         return;
+      case NodeKind::FunctionalCastExpr:
+        WalkChild(static_cast<const FunctionalCastExpr&>(expression).SubExpr, excluded, environment, collect);
+        return;
       case NodeKind::ImplicitOverloadSetSelectionExpr:
         // The selected function address is already a complete value.  Its
         // retained source subtree does not read a runtime object.
