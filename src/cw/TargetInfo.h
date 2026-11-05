@@ -28,8 +28,10 @@ class TargetInfo {
   unsigned GetPointerBitWidth() const { return IsWasm32() ? 32 : 64; }
   std::uint64_t GetScalarAlignment(unsigned storage_bits) const;
   std::uint64_t GetPointerAlignment() const { return IsWasm32() ? 4 : 8; }
+  /// LLVM requires allocated objects to fit the signed index range. The 64-bit limit is further
+  /// constrained by size-in-bits conversions.
   std::uint64_t GetMaxObjectSize() const {
-    return IsWasm32() ? (std::uint64_t{1} << 32) - 1 : (std::uint64_t{1} << 61) - 1;
+    return IsWasm32() ? (std::uint64_t{1} << 31) - 1 : (std::uint64_t{1} << 61) - 1;
   }
 
  private:

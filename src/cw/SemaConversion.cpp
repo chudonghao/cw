@@ -345,6 +345,19 @@ const PointerType* CommonPointerType(ASTContext& ast_context, QualType left, Qua
   if (FindDerivedToBasePath(right_pointee.GetTypePtr(), left_pointee.GetTypePtr())) {
     return ast_context.GetPointerType(QualType(left_pointee.GetTypePtr(), pointee_const));
   }
+  return CommonQualifiedPointerType(ast_context, left, right);
+}
+
+const PointerType* CommonQualifiedPointerType(ASTContext& ast_context, QualType left, QualType right) {
+  const auto* lhs = left ? left.GetTypePtr()->AsPointerType() : nullptr;
+  const auto* rhs = right ? right.GetTypePtr()->AsPointerType() : nullptr;
+  if (!lhs || !rhs || lhs->GetPointee().GetTypePtr()->AsFunctionType() ||
+      rhs->GetPointee().GetTypePtr()->AsFunctionType()) {
+    return nullptr;
+  }
+  if (lhs == rhs) {
+    return lhs;
+  }
 
   // Merge each pointee level, adding the const barriers needed by either
   // source when a deeper level gains a qualifier.

@@ -181,6 +181,9 @@ class CodeGenFunction {
                          std::vector<llvm::Value*>& arguments);
   llvm::Value* EmitScalarExpr(const Expr& expression);
   llvm::Value* EmitScalarIncrementDecrement(const UnaryOperator& expression, Address target);
+  llvm::Value* EmitPointerOffset(const Expr& expression, llvm::Value* pointer, llvm::Value* offset,
+                                 const PointerType& type, bool subtract, llvm::StringRef name = "add.ptr");
+  llvm::Value* EmitPointerDifference(llvm::Value* lhs, llvm::Value* rhs, const PointerType& type);
   llvm::Value* EmitNumericConversion(llvm::Value* value, const BuiltinType& source, const BuiltinType& target);
   llvm::Value* EmitNumericBinaryOperator(const Expr& expression, expr::ExprGrammarSymbol op, llvm::Value* lhs,
                                          llvm::Value* rhs, const BuiltinType& type);

@@ -207,6 +207,21 @@ bool IsAssignmentOperator(std::string_view name);
 /// \brief Returns the corresponding binary operator for compound assignment, or the original operator.
 expr::ExprGrammarSymbol GetComputationOp(expr::ExprGrammarSymbol op);
 
+/// \brief Builtin raw pointer arithmetic selected by an operator and its operand types.
+enum class PointerArithmeticKind {
+  None,
+  Offset,      ///< A raw object pointer moved by an isize or usize element count.
+  Difference,  ///< The element distance between two raw object pointers.
+};
+
+/// \brief Returns whether \p type is a raw pointer to an object type.
+/// Function pointers, virtual interface pointers and `*void` do not qualify.
+bool IsRawObjectPointerType(QualType type);
+
+/// \brief Classifies '+', '-', '+=' and '-=' over the operand types alone.
+/// Sema and CodeGen share this shape check; Sema separately rejects zero-sized pointees.
+PointerArithmeticKind ClassifyPointerArithmetic(expr::ExprGrammarSymbol op, QualType lhs, QualType rhs);
+
 /// \brief One source-level declaration attribute.
 struct Attribute {
   std::string name{};   ///< Attribute name as written in source.

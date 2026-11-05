@@ -1238,7 +1238,16 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
       if (!target) {
         return {};
       }
-      if (assignment.IsCompoundAssignment()) {
+      if (assignment.IsCompoundAssignment() &&
+          ClassifyPointerArithmetic(assignment.op, assignment.LHS->type, assignment.RHS->type) ==
+              PointerArithmeticKind::Offset) {
+        const auto& pointer_type = *assignment.LHS->type.GetTypePtr()->AsPointerType();
+        auto* pointer = EmitLoadOfScalar(target, pointer_type);
+        value = EmitPointerOffset(assignment, pointer, value, pointer_type, assignment.op == expr::minusequal);
+        if (!value) {
+          return {};
+        }
+      } else if (assignment.IsCompoundAssignment()) {
         const auto op = GetComputationOp(assignment.op);
         const auto& target_type = *assignment.LHS->type.GetTypePtr()->AsBuiltinType();
         const auto& computation_type =
@@ -1732,7 +1741,20 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
       if (!rhs) {
         return nullptr;
       }
-      // Except for shifts, Sema has converted both operands to their common type.
+      switch (ClassifyPointerArithmetic(binary.op, binary.LHS->type, binary.RHS->type)) {
+        case PointerArithmeticKind::Offset: {
+          // Both operands are already evaluated in source order; only the GEP operands are arranged.
+          const bool pointer_first = IsRawObjectPointerType(binary.LHS->type);
+          const auto& pointer_type = *(pointer_first ? binary.LHS : binary.RHS)->type.GetTypePtr()->AsPointerType();
+          return EmitPointerOffset(binary, pointer_first ? lhs : rhs, pointer_first ? rhs : lhs, pointer_type,
+                                   binary.op == expr::minus);
+        }
+        case PointerArithmeticKind::Difference:
+          return EmitPointerDifference(lhs, rhs, *binary.LHS->type.GetTypePtr()->AsPointerType());
+        case PointerArithmeticKind::None:
+          break;
+      }
+      // Except for shifts and pointer offsets, Sema has converted both operands to their common type.
       if (binary.LHS->type.GetTypePtr()->AsVirtualSlotType()) {
         // Sema permits virtual interface pointers to be compared only with null.
         auto* left = EmitVirtualPointerIsNotNull(lhs);
@@ -1761,6 +1783,17 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
 }
 
 llvm::Value* CodeGenFunction::EmitScalarIncrementDecrement(const UnaryOperator& expression, Address target) {
+  if (IsRawObjectPointerType(expression.Operand->type)) {
+    const auto& pointer_type = *expression.Operand->type.GetTypePtr()->AsPointerType();
+    auto* old_value = EmitLoadOfScalar(target, pointer_type);
+    auto* step = GetTargetOffset(expression.op == expr::plusplus ? 1 : -1);
+    auto* value = EmitPointerOffset(expression, old_value, step, pointer_type, false, "incdec.ptr");
+    if (!value) {
+      return nullptr;
+    }
+    EmitStoreOfScalar(value, target, pointer_type);
+    return old_value;
+  }
   const auto& type = *expression.Operand->type.GetTypePtr()->AsBuiltinType();
   auto* old_value = EmitLoadOfScalar(target, type);
   llvm::Value* one = type.IsFloatingPoint() ? llvm::ConstantFP::get(old_value->getType(), 1.0)
@@ -1773,6 +1806,35 @@ llvm::Value* CodeGenFunction::EmitScalarIncrementDecrement(const UnaryOperator& 
   EmitStoreOfScalar(value, target, type);
   // Prefix callers retain the target address; postfix callers deliver this saved value.
   return old_value;
+}
+
+llvm::Value* CodeGenFunction::EmitPointerOffset(const Expr& expression, llvm::Value* pointer, llvm::Value* offset,
+                                                const PointerType& type, bool subtract, llvm::StringRef name) {
+  auto conversion = codegen_.ConvertTypeForMem(*type.GetPointee().GetTypePtr());
+  if (const auto* failure = std::get_if<CodeGen::TypeConversionFailure>(&conversion)) {
+    codegen_.DiagnoseTypeConversionFailure(expression, *failure, "this pointer arithmetic type");
+    return nullptr;
+  }
+  // Size integers already have the pointer width, so the offset needs no extension.
+  if (subtract) {
+    offset = builder_.CreateNeg(offset, "idx.neg");
+  }
+  // CW offsets wrap and may leave their storage, so the GEP carries no in-bounds or no-wrap flags.
+  // It still derives the result from the pointer, which grants no access to other objects.
+  return builder_.CreateGEP(std::get<llvm::Type*>(conversion), pointer, offset, name, llvm::GEPNoWrapFlags::none());
+}
+
+llvm::Value* CodeGenFunction::EmitPointerDifference(llvm::Value* lhs, llvm::Value* rhs, const PointerType& type) {
+  auto* left = builder_.CreatePtrToInt(lhs, GetTargetIndexType(), "sub.ptr.lhs.cast");
+  auto* right = builder_.CreatePtrToInt(rhs, GetTargetIndexType(), "sub.ptr.rhs.cast");
+  auto* difference = builder_.CreateSub(left, right, "sub.ptr.sub");
+  // Sema has rejected zero-sized and invalid pointee layouts.
+  const auto size = std::get<TypeLayout>(codegen_.ast_context_->GetTypeLayout(*type.GetPointee().GetTypePtr())).size;
+  if (size == 1) {
+    return difference;
+  }
+  // CW truncates byte differences that are not element multiples, so the division is not exact.
+  return builder_.CreateSDiv(difference, GetTargetIndex(size), "sub.ptr.div");
 }
 
 llvm::Value* CodeGenFunction::EmitNumericConversion(llvm::Value* value, const BuiltinType& source,

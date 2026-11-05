@@ -112,6 +112,7 @@ add_cwc_program_case(global_initialization 7)
 add_cwc_program_case(virtual_dispatch 2)
 add_cwc_program_case(main_arguments 1)
 add_cwc_program_case(pointer_round_trip 19)
+add_cwc_program_case(pointer_arithmetic_result 0)
 add_cwc_program_case(base_subobject_conversion 20)
 add_cwc_program_case(aggregate_values 15)
 add_cwc_program_case(scope_lifetime 1)
@@ -136,6 +137,8 @@ add_cwc_driver_case(wasm_global_ir wasm_global_ir
                        "${wasm_driver_case_dir}/global_initialization.cw")
 add_cwc_driver_case(wasm_virtual_slot_ir wasm_virtual_slot_ir
                        "${wasm_driver_case_dir}/virtual_pointers.cw")
+add_cwc_driver_case(wasm_pointer_arithmetic_ir wasm_pointer_arithmetic_ir
+                       "${wasm_driver_case_dir}/pointer_arithmetic.cw")
 add_cwc_driver_case(wasm_link wasm_link)
 set_tests_properties("cwc.driver.wasm_link" PROPERTIES SKIP_REGULAR_EXPRESSION "cannot locate wasm-ld")
 add_cwc_driver_case(wasm_multi_source_link wasm_multi_source_link

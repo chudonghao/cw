@@ -179,7 +179,8 @@ INSTANTIATE_TEST_SUITE_P(
         LanguageFeatureCase{"covariant_return", "CovariantReturn"},
         LanguageFeatureCase{"virtual_interface_pointer", "VirtualInterfacePointer"},
         LanguageFeatureCase{"nonvirtual_call", "NonVirtualCall"},
-        LanguageFeatureCase{"callable_object", "CallableObject"}, LanguageFeatureCase{"fixed_array", "FixedArray"}),
+        LanguageFeatureCase{"callable_object", "CallableObject"}, LanguageFeatureCase{"fixed_array", "FixedArray"},
+        LanguageFeatureCase{"pointer_arithmetic", "PointerArithmetic"}),
     LanguageFeatureCaseName);
 
 // Namespace lookup, declaration ownership, and initialization.
@@ -5428,7 +5429,7 @@ func F(a &mut i32, b &move i32, p *i32, item &mut Item, data &mut [2] i32, index
 
 TEST_F(SemaTest, RejectsUnsupportedIncrementDecrementTypes) {
   Analyze(R"(trivial struct Item {}
-func F(b bool, p *i32, data &mut [2] i32, item Item) {
+func F(b bool, p *void, data &mut [2] i32, item Item) {
   ++b;
   b--;
   p++;
@@ -5438,7 +5439,7 @@ func F(b bool, p *i32, data &mut [2] i32, item Item) {
 
   ExpectError(2, 2, "unary operator '++' cannot be applied to type 'bool'", 3);
   ExpectError(3, 2, "unary operator '--' cannot be applied to type 'bool'", 3);
-  ExpectError(4, 2, "unary operator '++' cannot be applied to type '*i32'", 3);
+  ExpectError(4, 2, "unary operator '++' cannot be applied to type '*void'", 3);
   ExpectError(5, 2, "unary operator '--' cannot be applied to type '[2] i32'", 6);
   ExpectError(6, 2, "unary operator '++' cannot be applied to type 'Item'", 6);
 }
@@ -9223,6 +9224,242 @@ null == 0;
   ExpectError(14, 0, "unary operator '!' cannot be applied to type '*i32'", 2);
   ExpectError(15, 0, "unary operator '!' cannot be applied to type '<null>'", 5);
   ExpectError(16, 0, "binary operator '==' cannot be applied to types '<null>' and 'i32'", 9);
+}
+
+// Raw pointer arithmetic.
+
+TEST_F(SemaTest, AcceptsPointerArithmeticForms) {
+  Analyze(R"(trivial struct Empty {}
+trivial struct Pair { first i64; second i32; }
+func F(p *i32, c *const i32, nested **i32, merged *const *const i32, rows *[3] i16, pairs *Pair, empty *Empty,
+       callbacks **func () void, interfaces *virtual *func (&copy Pair) i32, n usize, s isize) {
+  var k const *i32 := p;
+  p + n; n + p; p - n; p + s; s + p; p - s;
+  c + n; k + n; k - c; p - c; c - p;
+  p + 1usize; p - 1isize; 0usize + p;
+  nested + n; rows - s; pairs + n; empty + n; callbacks + n; interfaces - s;
+  nested - merged; rows - rows; pairs - pairs; empty - empty; p - p;
+  p += n; p -= s; ++p; --p; p++; p--;
+  c += n; c -= s; ++c; c--;
+  var reference &mut *i32 := p;
+  reference += n; ++reference; reference--;
+  p = p + n;
+  var none *i32 := null;
+  none + 0usize; none - none;
+})");
+}
+
+TEST_F(SemaTest, PreservesPointeeConstButNotPointerConstInOffsets) {
+  Analyze(R"(func F(pointer &copy *const i32, count usize) *const i32 { pointer + count })");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, col:77> F 'func (&copy *const i32, usize) *const i32'
+  |-ParmVarDecl {{address:pointer}} <col:8, col:32> pointer '&copy *const i32'
+  | `-ReferenceType {{address}} <col:16, col:32> '&copy'
+  |   `-PointerType {{address}} <col:22, col:32>
+  |     `-ConstType {{address}} <col:23, col:32>
+  |       `-BuiltinType {{address}} <col:29, col:32> 'i32'
+  |-ParmVarDecl {{address:count}} <col:34, col:45> count 'usize'
+  | `-BuiltinType {{address}} <col:40, col:45> 'usize'
+  |-ReturnVarDecl {{address:result}} <col:47, col:57> '*const i32'
+  | `-PointerType {{address}} <col:47, col:57>
+  |   `-ConstType {{address}} <col:48, col:57>
+  |     `-BuiltinType {{address}} <col:54, col:57> 'i32'
+  `-CompoundStmt {{address}} <col:58, col:77>
+    `-ImplicitResultInitializationExpr {{address}} <col:60, col:75> 'void' ReturnVar {{address:result}} '*const i32'
+      `-BinaryOperator {{address}} <col:60, col:75> '*const i32' pure-rvalue '+'
+        |-ImplicitCastExpr {{address}} <col:60, col:67> '*const i32' pure-rvalue <LValueToRValue>
+        | `-DeclRefExpr {{address}} <col:60, col:67> 'const *const i32' lvalue ParmVar {{address:pointer}} 'pointer' '&copy *const i32'
+        `-ImplicitCastExpr {{address}} <col:70, col:75> 'usize' pure-rvalue <LValueToRValue>
+          `-DeclRefExpr {{address}} <col:70, col:75> 'usize' lvalue ParmVar {{address:count}} 'count' 'usize')");
+}
+
+TEST_F(SemaTest, RejectsInvalidPointerOffsetTypes) {
+  Analyze(R"(func F(p *i32, q *i32, n usize, i i32, u u64, b bool, f f64) {
+  p + 1;
+  p + i;
+  u + p;
+  p - b;
+  p + f;
+  n - p;
+  p + q;
+  p += 1;
+  n += p;
+  p -= q;
+})");
+
+  ExpectError(1, 2, "binary operator '+' cannot be applied to types '*i32' and 'i32'", 5);
+  ExpectError(2, 2, "binary operator '+' cannot be applied to types '*i32' and 'i32'", 5);
+  ExpectError(3, 2, "binary operator '+' cannot be applied to types 'u64' and '*i32'", 5);
+  ExpectError(4, 2, "binary operator '-' cannot be applied to types '*i32' and 'bool'", 5);
+  ExpectError(5, 2, "binary operator '+' cannot be applied to types '*i32' and 'f64'", 5);
+  ExpectError(6, 2, "binary operator '-' cannot be applied to types 'usize' and '*i32'", 5);
+  ExpectError(7, 2, "binary operator '+' cannot be applied to types '*i32' and '*i32'", 5);
+  ExpectError(8, 2, "binary operator '+=' cannot be applied to types '*i32' and 'i32'", 6);
+  ExpectError(9, 2, "binary operator '+=' cannot be applied to types 'usize' and '*i32'", 6);
+  ExpectError(10, 2, "binary operator '-=' cannot be applied to types '*i32' and '*i32'", 6);
+}
+
+TEST_F(SemaTest, RejectsPointerArithmeticOnNonObjectPointers) {
+  Analyze(R"(trivial struct Pair { value i32; }
+func F(v *void, callback *func () void, interface virtual *func (&copy Pair) i32, n usize) {
+  v + n;
+  v - v;
+  ++v;
+  callback + n;
+  callback - callback;
+  callback++;
+  interface + n;
+  interface--;
+})");
+
+  ExpectError(2, 2, "binary operator '+' cannot be applied to types '*void' and 'usize'", 5);
+  ExpectError(3, 2, "binary operator '-' cannot be applied to types '*void' and '*void'", 5);
+  ExpectError(4, 2, "unary operator '++' cannot be applied to type '*void'", 3);
+  ExpectError(5, 2, "binary operator '+' cannot be applied to types '*func () void' and 'usize'", 12);
+  ExpectError(6, 2, "binary operator '-' cannot be applied to types '*func () void' and '*func () void'", 19);
+  ExpectError(7, 2, "unary operator '++' cannot be applied to type '*func () void'", 10);
+  ExpectError(8, 2, "binary operator '+' cannot be applied to types 'virtual *func (&copy Pair) i32' and 'usize'", 13);
+  ExpectError(9, 2, "unary operator '--' cannot be applied to type 'virtual *func (&copy Pair) i32'", 11);
+}
+
+TEST_F(SemaTest, SkipsPointerArithmeticOnStructsWithoutLayouts) {
+  Analyze(R"(trivial struct Broken : Unknown {}
+func F(broken *Broken, other *Broken, n usize) {
+  broken + n;
+  broken - other;
+  ++broken;
+  broken -= n;
+})");
+
+  ExpectError(0, 24, "unknown type 'Unknown'", 7);
+}
+
+TEST_F(SemaTest, RejectsPointerArithmeticOnZeroSizedPointees) {
+  Analyze(R"(trivial struct Empty {}
+trivial struct Aligned { values [0] i64; }
+func F(empty *Empty, aligned *Aligned, rows *[0] i32, n usize) {
+  empty + n;
+  empty - empty;
+  aligned + 0usize;
+  aligned - aligned;
+  n + rows;
+  rows += n;
+  ++rows;
+  rows--;
+})");
+
+  ExpectError(5, 2, "pointer arithmetic requires a pointer to an object of nonzero size, not '*Aligned'", 16);
+  ExpectError(6, 2, "pointer arithmetic requires a pointer to an object of nonzero size, not '*Aligned'", 17);
+  ExpectError(7, 2, "pointer arithmetic requires a pointer to an object of nonzero size, not '*[0] i32'", 8);
+  ExpectError(8, 2, "pointer arithmetic requires a pointer to an object of nonzero size, not '*[0] i32'", 9);
+  ExpectError(9, 2, "pointer arithmetic requires a pointer to an object of nonzero size, not '*[0] i32'", 6);
+  ExpectError(10, 2, "pointer arithmetic requires a pointer to an object of nonzero size, not '*[0] i32'", 6);
+}
+
+TEST_F(SemaTest, DoesNotRepeatPointeeLayoutErrorsInPointerArithmetic) {
+  Analyze(R"(func F(p *[2305843009213693952] u8, n usize) {
+  p + n;
+  ++p;
+  p - p;
+})");
+
+  ExpectError(0, 10,
+              "array of 2305843009213693952 elements of type 'u8' is too large; maximum object size is "
+              "2305843009213693951 bytes",
+              24);
+}
+
+TEST_F(SemaTest, RejectsIncompatiblePointerDifferencesAndUntypedNull) {
+  Analyze(R"(trivial struct Base {}
+trivial struct Derived : Base {}
+func F(i *i32, f *f64, base *Base, derived *Derived, nested_base **Base, nested_derived **Derived, n usize) {
+  i - f;
+  derived - base;
+  nested_derived - nested_base;
+  i - null;
+  null - i;
+  null - null;
+  null + n;
+  n + null;
+})");
+
+  ExpectError(3, 2, "binary operator '-' cannot be applied to types '*i32' and '*f64'", 5);
+  ExpectError(4, 2, "binary operator '-' cannot be applied to types '*Derived' and '*Base'", 14);
+  ExpectError(5, 2, "binary operator '-' cannot be applied to types '**Derived' and '**Base'", 28);
+  ExpectError(6, 2, "binary operator '-' cannot be applied to types '*i32' and '<null>'", 8);
+  ExpectError(7, 2, "binary operator '-' cannot be applied to types '<null>' and '*i32'", 8);
+  ExpectError(8, 2, "binary operator '-' cannot be applied to types '<null>' and '<null>'", 11);
+  ExpectError(9, 2, "binary operator '+' cannot be applied to types '<null>' and 'usize'", 8);
+  ExpectError(10, 2, "binary operator '+' cannot be applied to types 'usize' and '<null>'", 8);
+}
+
+TEST_F(SemaTest, RequiresModifiablePointerArithmeticTargets) {
+  Analyze(R"(func F(readonly &copy *i32, p *i32, n usize) {
+  var fixed const *i32 := p;
+  fixed += n;
+  ++fixed;
+  readonly--;
+  (p + n) += n;
+  (p + n)++;
+  (move p) -= n;
+})");
+
+  ExpectError(2, 2, "assignment target must be a modifiable lvalue, not 'const *i32'", 5);
+  ExpectError(3, 4, "unary operator '++' requires a modifiable lvalue operand, not 'const *i32'", 5);
+  ExpectError(4, 2, "unary operator '--' requires a modifiable lvalue operand, not 'const *i32'", 8);
+  ExpectError(5, 2, "assignment target must be a modifiable lvalue, not '*i32'", 7);
+  ExpectError(6, 2, "unary operator '++' requires a modifiable lvalue operand, not '*i32'", 7);
+  ExpectError(7, 2, "assignment target must be a modifiable lvalue, not '*i32'", 8);
+}
+
+TEST_F(SemaTest, RequiresInitializedPointerArithmeticOperands) {
+  Analyze(R"(func F(p *i32, n usize) {
+  var q *i32;
+  var m usize;
+  q + n;
+  p + m;
+  q - p;
+  q += n;
+  ++q;
+  q--;
+})");
+
+  ExpectError(3, 2, "use of uninitialized variable 'q'", 1);
+  ExpectError(4, 6, "use of uninitialized variable 'm'", 1);
+  ExpectError(5, 2, "use of uninitialized variable 'q'", 1);
+  ExpectError(6, 2, "use of uninitialized variable 'q'", 1);
+  ExpectError(7, 4, "use of uninitialized variable 'q'", 1);
+  ExpectError(8, 2, "use of uninitialized variable 'q'", 1);
+}
+
+TEST_F(SemaTest, RejectsPointerArithmeticInArrayLengths) {
+  Analyze(R"(func F(p *u8) {
+  var data [usize(p - p)] u8;
+})");
+
+  ExpectError(1, 18, "array length is not a constant integer expression", 1);
+  ExpectError(1, 22, "array length is not a constant integer expression", 1);
+}
+
+TEST_F(WasmSemaTest, LimitsObjectSizeToTheSignedIndexRange) {
+  Analyze(R"(trivial struct Exact { bytes [2147483647] u8; }
+trivial struct Fields {
+  first [1073741824] u8;
+  second [1073741824] u8;
+}
+trivial struct Tail {
+  first i32;
+  tail [2147483643] u8;
+}
+func Use(fits &copy [2147483647] u8, large &copy [2147483648] u8, pointer *u8, count usize) isize {
+  pointer + count - pointer
+})");
+
+  ExpectError(3, 2, "structure 'Fields' is too large; maximum object size is 2147483647 bytes", 23);
+  ExpectError(5, 15, "structure 'Tail' is too large; maximum object size is 2147483647 bytes", 4);
+  ExpectError(9, 49, "array of 2147483648 elements of type 'u8' is too large; maximum object size is 2147483647 bytes",
+              15);
 }
 
 struct NullTargetPair {

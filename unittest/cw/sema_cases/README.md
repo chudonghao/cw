@@ -19,6 +19,10 @@ C++ and CW ASTs preserve their real node structures. They are reviewed for equiv
 and nested size-integer conversions. CW's `FunctionalCastExpr` owns the numeric conversion directly;
 Clang may represent it with an additional implicit conversion child.
 
+`pointer_arithmetic` compares offsets, differences, compound assignment and increments over raw
+pointers. CW converts both difference operands to their common pointer type; Clang keeps the
+original operand types and checks pointee compatibility.
+
 ## Normative Boundary
 
 The CW source and expected AST are authored and reviewed before the implementation they specify. Never generate, copy, or update `<name>.cw.ast.txt` from the current CW compiler output. Change it only when the language design changes.
@@ -70,6 +74,7 @@ The cases, in registration order, are:
 35. `nonvirtual_call`
 36. `callable_object`
 37. `fixed_array`
+38. `pointer_arithmetic`
 
 ## Generating Clang References
 
