@@ -11,17 +11,8 @@
 
 namespace cw {
 
-CFGExpressionElement::CFGExpressionElement(const Expr& expression, CFGExpressionContext context,
-                                           std::vector<const Expr*> excluded_subexpressions)
-    : CFGElement(CFGElementKind::Expression),
-      expression_(&expression),
-      context_(context),
-      excluded_subexpressions_(std::move(excluded_subexpressions)) {
-  for (const Expr* excluded : excluded_subexpressions_) {
-    BOOST_ASSERT(excluded);
-    BOOST_ASSERT(excluded != expression_);
-  }
-}
+CFGExpressionElement::CFGExpressionElement(const Expr& expression)
+    : CFGElement(CFGElementKind::Expression), expression_(&expression) {}
 
 CFGDeclarationElement::CFGDeclarationElement(const VarDecl& declaration, CFGDeclarationForm form,
                                              const Expr* initializer)

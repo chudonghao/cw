@@ -17,6 +17,8 @@ namespace cw {
 /// \brief Builds a source-level CFG from a type-complete Semantic AST.
 ///
 /// The builder does not mutate the AST and does not perform data-flow analysis.
+/// Blocks split only at statement-level control flow; each statement-level
+/// expression becomes one event because initialization happens only in statements.
 /// Build() returns null for a function declaration without a body.
 class CFGBuilder {
   using BlockList = std::vector<CFGBlock*>;
@@ -56,20 +58,7 @@ class CFGBuilder {
   CFGBlock* BuildReturn(const ReturnStmt& statement, CFGBlock& current);
   CFGBlock* BuildVarGroup(const VarGroupDecl& declaration, CFGBlock& current);
 
-  CFGBlock* BuildExpression(const Expr& expression, CFGBlock& current,
-                            CFGExpressionContext context = CFGExpressionContext::Ordinary);
-  CFGBlock* BuildGenericExpression(const Expr& expression, CFGBlock& current, CFGExpressionContext context);
-  CFGBlock* BuildConditionalExpression(const ConditionalOperator& expression, CFGBlock& current,
-                                       CFGExpressionContext context);
-  CFGBlock* BuildLogicalExpression(const BinaryOperator& expression, CFGBlock& current);
-  CFGBlock* BuildAssignment(const BinaryOperator& expression, CFGBlock& current);
-  CFGBlock* BuildArrayAssignment(const ArrayAssignmentExpr& expression, CFGBlock& current);
-  CFGBlock* BuildArrayValue(const ArrayValueExpr& expression, CFGBlock& current, CFGExpressionContext context);
-  CFGBlock* BuildAssignmentOperatorCall(const OperatorCallExpr& expression, CFGBlock& current);
-  CFGBlock* BuildInitializationExpression(const InitializationExpr& expression, CFGBlock& current);
-  CFGBlock* BuildImplicitResultInitializationExpression(const ImplicitResultInitializationExpr& expression,
-                                                        CFGBlock& current);
-
+  void EmitExpression(const Expr& expression, CFGBlock& block);
   void EmitScopeExits(CFGBlock& block, std::size_t outer_scope_depth);
   void EmitFunctionExit(CFGBlock& block, const Node& exit_location);
   void RecordResultExit(CFGBlock& block, const Node& location);

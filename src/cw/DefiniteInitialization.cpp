@@ -1011,59 +1011,35 @@ class AnalysisEngine {
   }
 
   void TransferExpressionElement(const CFGExpressionElement& element, Environment& environment, bool collect) {
-    const Expr& expression = element.GetExpression();
-    // Child regions already emitted as CFG events must not be evaluated a second time.
-    std::unordered_set<const Expr*> excluded(element.ExcludedSubexpressions().begin(),
-                                             element.ExcludedSubexpressions().end());
-    switch (element.GetContext()) {
-      case CFGExpressionContext::Ordinary:
-        WalkExpression(expression, excluded, environment, collect);
-        break;
-      case CFGExpressionContext::ObjectLocation:
-        WalkLocatingBase(expression, excluded, environment, collect);
-        break;
-      case CFGExpressionContext::InitializationTarget:
-        WalkInitializationTarget(expression, excluded, environment, collect);
-        break;
-    }
+    // Each element is a whole statement-level expression; the walk follows its evaluation order.
+    WalkExpression(element.GetExpression(), environment, collect);
   }
 
-  bool IsExcluded(const Expr& expression, const std::unordered_set<const Expr*>& excluded) const {
-    return excluded.find(&expression) != excluded.end();
-  }
-
-  void WalkChild(const std::unique_ptr<Expr>& child, const std::unordered_set<const Expr*>& excluded,
-                 Environment& environment, bool collect) {
+  void WalkChild(const std::unique_ptr<Expr>& child, Environment& environment, bool collect) {
     if (child) {
-      WalkExpression(*child, excluded, environment, collect);
+      WalkExpression(*child, environment, collect);
     }
   }
 
-  void WalkArguments(const std::vector<std::unique_ptr<Expr>>& arguments,
-                     const std::unordered_set<const Expr*>& excluded, Environment& environment, bool collect) {
-    for (const auto& argument : arguments) WalkChild(argument, excluded, environment, collect);
+  void WalkArguments(const std::vector<std::unique_ptr<Expr>>& arguments, Environment& environment, bool collect) {
+    for (const auto& argument : arguments) WalkChild(argument, environment, collect);
   }
 
-  void WalkOrderedAssignmentOperands(const Expr* lhs, const Expr* rhs, const std::unordered_set<const Expr*>& excluded,
-                                     Environment& environment, bool collect) {
+  void WalkOrderedAssignmentOperands(const Expr* lhs, const Expr* rhs, Environment& environment, bool collect) {
     if (rhs) {
-      WalkExpression(*rhs, excluded, environment, collect);
+      WalkExpression(*rhs, environment, collect);
     }
     if (lhs) {
-      WalkExpression(*lhs, excluded, environment, collect);
+      WalkExpression(*lhs, environment, collect);
     }
   }
 
-  void WalkExpression(const Expr& expression, const std::unordered_set<const Expr*>& excluded, Environment& environment,
-                      bool collect) {
-    if (IsExcluded(expression, excluded)) {
-      return;
-    }
+  void WalkExpression(const Expr& expression, Environment& environment, bool collect) {
     // Assignment reads its operands in language order even when represented as an operator call.
     const Expr* assignment_lhs = nullptr;
     const Expr* assignment_rhs = nullptr;
     if (GetAssignmentOperands(expression, assignment_lhs, assignment_rhs)) {
-      WalkOrderedAssignmentOperands(assignment_lhs, assignment_rhs, excluded, environment, collect);
+      WalkOrderedAssignmentOperands(assignment_lhs, assignment_rhs, environment, collect);
       return;
     }
 
@@ -1073,28 +1049,28 @@ class AnalysisEngine {
         CheckRead(expression, environment, collect);
         return;
       case NodeKind::ParenExpr:
-        WalkChild(static_cast<const ParenExpr&>(expression).SubExpr, excluded, environment, collect);
+        WalkChild(static_cast<const ParenExpr&>(expression).SubExpr, environment, collect);
         return;
       case NodeKind::UnaryOperator:
-        WalkChild(static_cast<const UnaryOperator&>(expression).Operand, excluded, environment, collect);
+        WalkChild(static_cast<const UnaryOperator&>(expression).Operand, environment, collect);
         return;
       case NodeKind::BinaryOperator: {
         const auto& binary = static_cast<const BinaryOperator&>(expression);
-        WalkChild(binary.LHS, excluded, environment, collect);
-        WalkChild(binary.RHS, excluded, environment, collect);
+        WalkChild(binary.LHS, environment, collect);
+        WalkChild(binary.RHS, environment, collect);
         return;
       }
       case NodeKind::InitializationExpr: {
         const auto& initialization = static_cast<const InitializationExpr&>(expression);
-        WalkChild(initialization.Source, excluded, environment, collect);
-        if (initialization.Target && !IsExcluded(*initialization.Target, excluded)) {
+        WalkChild(initialization.Source, environment, collect);
+        if (initialization.Target) {
           const Expr* target = initialization.Target->IgnoreParens();
           const bool non_lvalue_conditional = target && target->GetKind() == NodeKind::ConditionalOperator &&
                                               target->value_category != ValueCategory::LValue;
           if (non_lvalue_conditional) {
-            WalkExpression(*initialization.Target, excluded, environment, collect);
+            WalkExpression(*initialization.Target, environment, collect);
           } else {
-            WalkInitializationTarget(*initialization.Target, excluded, environment, collect);
+            WalkInitializationTarget(*initialization.Target, environment, collect);
           }
         }
         if (valid_initializations_.find(&initialization) != valid_initializations_.end()) {
@@ -1104,24 +1080,24 @@ class AnalysisEngine {
       }
       case NodeKind::ImplicitResultInitializationExpr: {
         const auto& initialization = static_cast<const ImplicitResultInitializationExpr&>(expression);
-        WalkChild(initialization.Source, excluded, environment, collect);
+        WalkChild(initialization.Source, environment, collect);
         ApplyResultInitialization(initialization, environment, collect);
         return;
       }
       case NodeKind::ConditionalOperator: {
         const auto& conditional = static_cast<const ConditionalOperator&>(expression);
-        WalkChild(conditional.Cond, excluded, environment, collect);
-        WalkChild(conditional.Then, excluded, environment, collect);
-        WalkChild(conditional.Else, excluded, environment, collect);
+        WalkChild(conditional.Cond, environment, collect);
+        WalkChild(conditional.Then, environment, collect);
+        WalkChild(conditional.Else, environment, collect);
         return;
       }
       case NodeKind::MemberExpr: {
         const auto& member = static_cast<const MemberExpr&>(expression);
         if (member.Base) {
           if (member.op == expr::arrow) {
-            WalkExpression(*member.Base, excluded, environment, collect);
+            WalkExpression(*member.Base, environment, collect);
           } else {
-            WalkLocatingBase(*member.Base, excluded, environment, collect);
+            WalkLocatingBase(*member.Base, environment, collect);
           }
         }
         CheckRead(expression, environment, collect);
@@ -1131,9 +1107,9 @@ class AnalysisEngine {
         const auto& base = static_cast<const BaseSubobjectExpr&>(expression);
         if (base.Base) {
           if (base.op == expr::arrow) {
-            WalkExpression(*base.Base, excluded, environment, collect);
+            WalkExpression(*base.Base, environment, collect);
           } else {
-            WalkLocatingBase(*base.Base, excluded, environment, collect);
+            WalkLocatingBase(*base.Base, environment, collect);
           }
         }
         CheckRead(expression, environment, collect);
@@ -1141,66 +1117,66 @@ class AnalysisEngine {
       }
       case NodeKind::SubscriptExpr: {
         const auto& subscript = static_cast<const SubscriptExpr&>(expression);
-        WalkSubscriptLocation(subscript, excluded, environment, collect);
+        WalkSubscriptLocation(subscript, environment, collect);
         CheckRead(expression, environment, collect);
         return;
       }
       case NodeKind::ArrayValueExpr: {
         const auto& array = static_cast<const ArrayValueExpr&>(expression);
-        for (const auto& element : array.Elements) WalkChild(element, excluded, environment, collect);
+        for (const auto& element : array.Elements) WalkChild(element, environment, collect);
         return;
       }
       case NodeKind::CallExpr:
       case NodeKind::OperatorCallExpr: {
         const auto& call = static_cast<const CallExpr&>(expression);
-        WalkChild(call.Callee, excluded, environment, collect);
-        WalkArguments(call.Args, excluded, environment, collect);
+        WalkChild(call.Callee, environment, collect);
+        WalkArguments(call.Args, environment, collect);
         return;
       }
       case NodeKind::ReceiverCallExpr: {
         const auto& call = static_cast<const ReceiverCallExpr&>(expression);
         // Arrow dereference is already explicit; evaluate the receiver only once.
-        WalkChild(call.Callee, excluded, environment, collect);
-        WalkChild(call.Receiver, excluded, environment, collect);
-        WalkArguments(call.Args, excluded, environment, collect);
+        WalkChild(call.Callee, environment, collect);
+        WalkChild(call.Receiver, environment, collect);
+        WalkArguments(call.Args, environment, collect);
         return;
       }
       case NodeKind::ConstructionExpr: {
         const auto& construction = static_cast<const ConstructionExpr&>(expression);
-        WalkChild(construction.TargetAddress, excluded, environment, collect);
-        WalkArguments(construction.Args, excluded, environment, collect);
+        WalkChild(construction.TargetAddress, environment, collect);
+        WalkArguments(construction.Args, environment, collect);
         return;
       }
       case NodeKind::ArrayConstructionExpr:
-        WalkChild(static_cast<const ArrayConstructionExpr&>(expression).Source, excluded, environment, collect);
+        WalkChild(static_cast<const ArrayConstructionExpr&>(expression).Source, environment, collect);
         return;
       case NodeKind::ArrayAssignmentExpr:
         BOOST_ASSERT(false && "array assignment is handled before expression dispatch");
         return;
       case NodeKind::DestructorCallExpr: {
         const auto& call = static_cast<const DestructorCallExpr&>(expression);
-        WalkChild(call.TargetAddress, excluded, environment, collect);
-        WalkChild(call.Callee, excluded, environment, collect);
-        for (const auto& argument : call.Args) WalkChild(argument, excluded, environment, collect);
+        WalkChild(call.TargetAddress, environment, collect);
+        WalkChild(call.Callee, environment, collect);
+        for (const auto& argument : call.Args) WalkChild(argument, environment, collect);
         return;
       }
       case NodeKind::ImplicitCastExpr: {
         const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
         if (AsObjectBaseSubobjectCast(&cast)) {
           if (cast.SubExpr) {
-            WalkLocatingBase(*cast.SubExpr, excluded, environment, collect);
+            WalkLocatingBase(*cast.SubExpr, environment, collect);
           }
           CheckRead(cast, environment, collect);
         } else {
-          WalkChild(cast.SubExpr, excluded, environment, collect);
+          WalkChild(cast.SubExpr, environment, collect);
         }
         return;
       }
       case NodeKind::MaterializeTemporaryExpr:
-        WalkChild(static_cast<const MaterializeTemporaryExpr&>(expression).SubExpr, excluded, environment, collect);
+        WalkChild(static_cast<const MaterializeTemporaryExpr&>(expression).SubExpr, environment, collect);
         return;
       case NodeKind::FunctionalCastExpr:
-        WalkChild(static_cast<const FunctionalCastExpr&>(expression).SubExpr, excluded, environment, collect);
+        WalkChild(static_cast<const FunctionalCastExpr&>(expression).SubExpr, environment, collect);
         return;
       case NodeKind::ImplicitOverloadSetSelectionExpr:
         // The selected function address is already a complete value.  Its
@@ -1211,11 +1187,7 @@ class AnalysisEngine {
     }
   }
 
-  void WalkLocatingBase(const Expr& expression, const std::unordered_set<const Expr*>& excluded,
-                        Environment& environment, bool collect) {
-    if (IsExcluded(expression, excluded)) {
-      return;
-    }
+  void WalkLocatingBase(const Expr& expression, Environment& environment, bool collect) {
     switch (expression.GetKind()) {
       case NodeKind::DeclRefExpr:
       case NodeKind::ThisExpr:
@@ -1223,7 +1195,7 @@ class AnalysisEngine {
       case NodeKind::ParenExpr: {
         const auto& parentheses = static_cast<const ParenExpr&>(expression);
         if (parentheses.SubExpr) {
-          WalkLocatingBase(*parentheses.SubExpr, excluded, environment, collect);
+          WalkLocatingBase(*parentheses.SubExpr, environment, collect);
         }
         return;
       }
@@ -1233,9 +1205,9 @@ class AnalysisEngine {
           return;
         }
         if (member.op == expr::arrow) {
-          WalkExpression(*member.Base, excluded, environment, collect);
+          WalkExpression(*member.Base, environment, collect);
         } else {
-          WalkLocatingBase(*member.Base, excluded, environment, collect);
+          WalkLocatingBase(*member.Base, environment, collect);
         }
         return;
       }
@@ -1245,40 +1217,36 @@ class AnalysisEngine {
           return;
         }
         if (base.op == expr::arrow) {
-          WalkExpression(*base.Base, excluded, environment, collect);
+          WalkExpression(*base.Base, environment, collect);
         } else {
-          WalkLocatingBase(*base.Base, excluded, environment, collect);
+          WalkLocatingBase(*base.Base, environment, collect);
         }
         return;
       }
       case NodeKind::SubscriptExpr:
-        WalkSubscriptLocation(static_cast<const SubscriptExpr&>(expression), excluded, environment, collect);
+        WalkSubscriptLocation(static_cast<const SubscriptExpr&>(expression), environment, collect);
         return;
       case NodeKind::ImplicitCastExpr: {
         const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
         if (cast.SubExpr) {
-          WalkLocatingBase(*cast.SubExpr, excluded, environment, collect);
+          WalkLocatingBase(*cast.SubExpr, environment, collect);
         }
         return;
       }
       case NodeKind::MaterializeTemporaryExpr: {
         const auto& materialization = static_cast<const MaterializeTemporaryExpr&>(expression);
         if (materialization.SubExpr) {
-          WalkLocatingBase(*materialization.SubExpr, excluded, environment, collect);
+          WalkLocatingBase(*materialization.SubExpr, environment, collect);
         }
         return;
       }
       default:
-        WalkExpression(expression, excluded, environment, collect);
+        WalkExpression(expression, environment, collect);
         return;
     }
   }
 
-  void WalkInitializationTarget(const Expr& expression, const std::unordered_set<const Expr*>& excluded,
-                                Environment& environment, bool collect) {
-    if (IsExcluded(expression, excluded)) {
-      return;
-    }
+  void WalkInitializationTarget(const Expr& expression, Environment& environment, bool collect) {
     switch (expression.GetKind()) {
       case NodeKind::DeclRefExpr:
       case NodeKind::ThisExpr:
@@ -1286,7 +1254,7 @@ class AnalysisEngine {
       case NodeKind::ParenExpr: {
         const auto& parentheses = static_cast<const ParenExpr&>(expression);
         if (parentheses.SubExpr) {
-          WalkInitializationTarget(*parentheses.SubExpr, excluded, environment, collect);
+          WalkInitializationTarget(*parentheses.SubExpr, environment, collect);
         }
         return;
       }
@@ -1294,9 +1262,9 @@ class AnalysisEngine {
         const auto& member = static_cast<const MemberExpr&>(expression);
         if (member.Base) {
           if (member.op == expr::arrow) {
-            WalkExpression(*member.Base, excluded, environment, collect);
+            WalkExpression(*member.Base, environment, collect);
           } else {
-            WalkLocatingBase(*member.Base, excluded, environment, collect);
+            WalkLocatingBase(*member.Base, environment, collect);
           }
         }
         return;
@@ -1305,58 +1273,57 @@ class AnalysisEngine {
         const auto& base = static_cast<const BaseSubobjectExpr&>(expression);
         if (base.Base) {
           if (base.op == expr::arrow) {
-            WalkExpression(*base.Base, excluded, environment, collect);
+            WalkExpression(*base.Base, environment, collect);
           } else {
-            WalkLocatingBase(*base.Base, excluded, environment, collect);
+            WalkLocatingBase(*base.Base, environment, collect);
           }
         }
         return;
       }
       case NodeKind::ConditionalOperator: {
         const auto& conditional = static_cast<const ConditionalOperator&>(expression);
-        WalkChild(conditional.Cond, excluded, environment, collect);
-        if (conditional.Then && !IsExcluded(*conditional.Then, excluded)) {
-          WalkInitializationTarget(*conditional.Then, excluded, environment, collect);
+        WalkChild(conditional.Cond, environment, collect);
+        if (conditional.Then) {
+          WalkInitializationTarget(*conditional.Then, environment, collect);
         }
-        if (conditional.Else && !IsExcluded(*conditional.Else, excluded)) {
-          WalkInitializationTarget(*conditional.Else, excluded, environment, collect);
+        if (conditional.Else) {
+          WalkInitializationTarget(*conditional.Else, environment, collect);
         }
         return;
       }
       case NodeKind::SubscriptExpr: {
         const auto& subscript = static_cast<const SubscriptExpr&>(expression);
-        WalkSubscriptLocation(subscript, excluded, environment, collect);
+        WalkSubscriptLocation(subscript, environment, collect);
         return;
       }
       case NodeKind::UnaryOperator:
-        WalkChild(static_cast<const UnaryOperator&>(expression).Operand, excluded, environment, collect);
+        WalkChild(static_cast<const UnaryOperator&>(expression).Operand, environment, collect);
         return;
       case NodeKind::ImplicitCastExpr: {
         const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
         if (cast.SubExpr) {
-          WalkInitializationTarget(*cast.SubExpr, excluded, environment, collect);
+          WalkInitializationTarget(*cast.SubExpr, environment, collect);
         }
         return;
       }
       case NodeKind::MaterializeTemporaryExpr: {
         const auto& materialization = static_cast<const MaterializeTemporaryExpr&>(expression);
         if (materialization.SubExpr) {
-          WalkInitializationTarget(*materialization.SubExpr, excluded, environment, collect);
+          WalkInitializationTarget(*materialization.SubExpr, environment, collect);
         }
         return;
       }
       default:
-        WalkExpression(expression, excluded, environment, collect);
+        WalkExpression(expression, environment, collect);
         return;
     }
   }
 
-  void WalkSubscriptLocation(const SubscriptExpr& expression, const std::unordered_set<const Expr*>& excluded,
-                             Environment& environment, bool collect) {
-    if (expression.Base && !IsExcluded(*expression.Base, excluded)) {
-      WalkLocatingBase(*expression.Base, excluded, environment, collect);
+  void WalkSubscriptLocation(const SubscriptExpr& expression, Environment& environment, bool collect) {
+    if (expression.Base) {
+      WalkLocatingBase(*expression.Base, environment, collect);
     }
-    WalkChild(expression.Index, excluded, environment, collect);
+    WalkChild(expression.Index, environment, collect);
   }
 
   void CheckRead(const Expr& expression, const Environment& environment, bool collect) {

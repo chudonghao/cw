@@ -48,36 +48,19 @@ class CFGElement {
   explicit CFGElement(CFGElementKind kind) : kind_(kind) {}
 };
 
-/// \brief The context in which an expression region is evaluated.
-enum class CFGExpressionContext {
-  Ordinary,
-  ObjectLocation,  ///< Locate a projection's base without reading the whole object.
-  InitializationTarget,
-};
-
-/// \brief A source-level expression region evaluated in one basic block.
+/// \brief One statement-level expression evaluated as a whole in a basic block.
 ///
-/// Subexpressions represented by earlier CFG elements or control-flow regions
-/// are listed in ExcludedSubexpressions(). An analysis walking GetExpression()
-/// must not visit them again, while the root expression's own semantics still
-/// occur at this program point.
+/// Initialization state changes only at statement boundaries, so the CFG does not split
+/// an expression's internal control flow. An analysis walks the expression from its root
+/// and follows the language's evaluation order itself.
 class CFGExpressionElement final : public CFGElement {
   const Expr* expression_;  ///< Non-owning; the Semantic AST outlives this CFG.
-  CFGExpressionContext context_;
-  std::vector<const Expr*> excluded_subexpressions_;  ///< Non-owning separately evaluated roots.
 
  public:
-  explicit CFGExpressionElement(const Expr& expression, CFGExpressionContext context = CFGExpressionContext::Ordinary,
-                                std::vector<const Expr*> excluded_subexpressions = {});
+  explicit CFGExpressionElement(const Expr& expression);
 
   /// \brief Returns the non-owning expression root associated with this event.
   const Expr& GetExpression() const { return *expression_; }
-
-  /// \brief Returns the context in which the expression region is evaluated.
-  CFGExpressionContext GetContext() const { return context_; }
-
-  /// \brief Returns subexpression roots represented elsewhere in the CFG.
-  const std::vector<const Expr*>& ExcludedSubexpressions() const { return excluded_subexpressions_; }
 };
 
 /// \brief Source form that establishes one tracked object instance.

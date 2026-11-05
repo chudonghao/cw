@@ -11623,6 +11623,123 @@ TEST_F(SemaTest, EmitsDefiniteInitializationFindingsInSourceOrder) {
   ExpectError(5, 2, "use of uninitialized variable 'third'", 5);
 }
 
+TEST_F(SemaTest, ReportsUninitializedReadsInShortCircuitOperandsInSourceOrder) {
+  Analyze(R"(func F(flag bool) {
+  var a bool;
+  var b bool;
+  var c bool;
+  var d bool;
+  (a && b) || (flag && (c || d));
+  a || a;
+})");
+
+  ExpectError(5, 3, "use of uninitialized variable 'a'", 1);
+  ExpectError(5, 8, "use of uninitialized variable 'b'", 1);
+  ExpectError(5, 24, "use of uninitialized variable 'c'", 1);
+  ExpectError(5, 29, "use of uninitialized variable 'd'", 1);
+  ExpectError(6, 2, "use of uninitialized variable 'a'", 1);
+  ExpectError(6, 7, "use of uninitialized variable 'a'", 1);
+}
+
+TEST_F(SemaTest, ReportsUninitializedReadsInNestedBranchesAcrossOperands) {
+  Analyze(R"(func Take(first i32, second bool, third i32) i32 { first }
+func F(flag bool) i32 {
+  var a i32;
+  var b bool;
+  var c i32;
+  var d i32;
+  {
+    var values [2] i32 := [2] i32 { flag ? a : 0, c };
+  }
+  Take(flag ? 1 : d, flag && b, c + (flag ? a : d))
+})");
+
+  ExpectError(7, 43, "use of uninitialized variable 'a'", 1);
+  ExpectError(7, 50, "use of uninitialized variable 'c'", 1);
+  ExpectError(9, 18, "use of uninitialized variable 'd'", 1);
+  ExpectError(9, 29, "use of uninitialized variable 'b'", 1);
+  ExpectError(9, 32, "use of uninitialized variable 'c'", 1);
+  ExpectError(9, 44, "use of uninitialized variable 'a'", 1);
+  ExpectError(9, 48, "use of uninitialized variable 'd'", 1);
+}
+
+TEST_F(SemaTest, ReportsConditionalAssignmentSourceBeforeConditionalTarget) {
+  Analyze(R"(func F(flag bool) {
+  var a i32;
+  var b i32;
+  var c i32;
+  var d i32;
+  (flag ? a : b) = (flag ? c : d);
+})");
+
+  ExpectError(5, 27, "use of uninitialized variable 'c'", 1);
+  ExpectError(5, 31, "use of uninitialized variable 'd'", 1);
+  ExpectError(5, 10, "use of uninitialized variable 'a'", 1);
+  ExpectError(5, 14, "use of uninitialized variable 'b'", 1);
+}
+
+TEST_F(SemaTest, ReportsUninitializedReadsInBranchingInitializationSources) {
+  Analyze(R"(func F(flag bool) {
+  var b i32;
+  var a i32;
+  b := flag ? a : 0;
+  {
+    var c i32, d i32 := flag ? b : a, a;
+  }
+}
+func G(flag bool) var result i32 {
+  var a i32;
+  flag && a > 0 ? a : 0
+}
+func W(flag bool) i32 {
+  var a i32;
+  var b bool;
+  while flag && b {}
+  return flag ? a : 0;
+})");
+
+  ExpectError(3, 14, "use of uninitialized variable 'a'", 1);
+  ExpectError(5, 35, "use of uninitialized variable 'a'", 1);
+  ExpectError(5, 38, "use of uninitialized variable 'a'", 1);
+  ExpectError(10, 10, "use of uninitialized variable 'a'", 1);
+  ExpectError(10, 18, "use of uninitialized variable 'a'", 1);
+  ExpectError(15, 16, "use of uninitialized variable 'b'", 1);
+  ExpectError(16, 16, "use of uninitialized variable 'a'", 1);
+}
+
+TEST_F(SemaTest, InitializesGlobalBlockResultsInTailOrderAcrossBranches) {
+  Analyze(R"(var flag bool := true;
+var first i32, second i32 := {
+  flag ? second : 1, first
+})");
+
+  ExpectError(2, 9, "use of uninitialized variable 'second'", 6);
+}
+
+TEST_F(SemaTest, ReportsUninitializedThisReadInBranchingConstructorSource) {
+  Analyze(R"(struct Pair { first i32; second i32; }
+ctor Pair(flag bool) {
+  this.first := flag ? this.second : 1;
+  this.second := 2;
+}
+dtor Pair() {})");
+
+  ExpectError(2, 23, "use of uninitialized variable 'this'", 4);
+}
+
+TEST_F(SemaTest, RecoversFromNestedInitializationWithBranchingSource) {
+  Analyze(R"(func F(flag bool) {
+  var first i32;
+  var second i32;
+  var third i32;
+  first = (second := flag ? third : 1);
+})");
+
+  ExpectError(4, 11, "initialization expression must be used directly as an expression statement", 26);
+  ExpectError(4, 28, "use of uninitialized variable 'third'", 5);
+  ExpectError(4, 2, "use of uninitialized variable 'first'", 5);
+}
+
 TEST_F(SemaTest, OrdersEmptyMergeConflictBeforeFollowingControlFlow) {
   Analyze(R"(func f(first bool, second bool) {
   var value i32;

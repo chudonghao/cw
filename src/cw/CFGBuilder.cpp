@@ -12,144 +12,6 @@
 #include <boost/assert.hpp>
 
 namespace cw {
-namespace {
-
-void AppendChild(const std::unique_ptr<Expr>& child, std::vector<const Expr*>& children) {
-  if (child) {
-    children.push_back(child.get());
-  }
-}
-
-std::vector<const Expr*> ExpressionChildren(const Expr& expression) {
-  std::vector<const Expr*> children;
-  auto append_arguments = [&](const auto& arguments) {
-    for (const auto& argument : arguments) AppendChild(argument, children);
-  };
-
-  switch (expression.GetKind()) {
-    case NodeKind::ParenExpr:
-      AppendChild(static_cast<const ParenExpr&>(expression).SubExpr, children);
-      break;
-    case NodeKind::FunctionalCastExpr:
-      AppendChild(static_cast<const FunctionalCastExpr&>(expression).SubExpr, children);
-      break;
-    case NodeKind::UnaryOperator:
-      AppendChild(static_cast<const UnaryOperator&>(expression).Operand, children);
-      break;
-    case NodeKind::BinaryOperator: {
-      const auto& binary = static_cast<const BinaryOperator&>(expression);
-      AppendChild(binary.LHS, children);
-      AppendChild(binary.RHS, children);
-      break;
-    }
-    case NodeKind::InitializationExpr: {
-      const auto& initialization = static_cast<const InitializationExpr&>(expression);
-      AppendChild(initialization.Target, children);
-      AppendChild(initialization.Source, children);
-      break;
-    }
-    case NodeKind::ImplicitResultInitializationExpr:
-      AppendChild(static_cast<const ImplicitResultInitializationExpr&>(expression).Source, children);
-      break;
-    case NodeKind::ConditionalOperator: {
-      const auto& conditional = static_cast<const ConditionalOperator&>(expression);
-      AppendChild(conditional.Cond, children);
-      AppendChild(conditional.Then, children);
-      AppendChild(conditional.Else, children);
-      break;
-    }
-    case NodeKind::MemberExpr:
-      AppendChild(static_cast<const MemberExpr&>(expression).Base, children);
-      break;
-    case NodeKind::BaseSubobjectExpr:
-      AppendChild(static_cast<const BaseSubobjectExpr&>(expression).Base, children);
-      break;
-    case NodeKind::SubscriptExpr: {
-      const auto& subscript = static_cast<const SubscriptExpr&>(expression);
-      AppendChild(subscript.Base, children);
-      AppendChild(subscript.Index, children);
-      break;
-    }
-    case NodeKind::ArrayValueExpr: {
-      const auto& array = static_cast<const ArrayValueExpr&>(expression);
-      for (const auto& element : array.Elements) AppendChild(element, children);
-      break;
-    }
-    case NodeKind::CallExpr:
-    case NodeKind::OperatorCallExpr: {
-      const auto& call = static_cast<const CallExpr&>(expression);
-      AppendChild(call.Callee, children);
-      append_arguments(call.Args);
-      break;
-    }
-    case NodeKind::ReceiverCallExpr: {
-      const auto& call = static_cast<const ReceiverCallExpr&>(expression);
-      // Sema has already made arrow dereference part of the receiver subtree.
-      AppendChild(call.Callee, children);
-      AppendChild(call.Receiver, children);
-      append_arguments(call.Args);
-      break;
-    }
-    case NodeKind::ConstructionExpr: {
-      const auto& construction = static_cast<const ConstructionExpr&>(expression);
-      AppendChild(construction.TargetAddress, children);
-      append_arguments(construction.Args);
-      break;
-    }
-    case NodeKind::ArrayConstructionExpr:
-      AppendChild(static_cast<const ArrayConstructionExpr&>(expression).Source, children);
-      break;
-    case NodeKind::ArrayAssignmentExpr: {
-      const auto& assignment = static_cast<const ArrayAssignmentExpr&>(expression);
-      AppendChild(assignment.LHS, children);
-      AppendChild(assignment.RHS, children);
-      break;
-    }
-    case NodeKind::DestructorCallExpr: {
-      const auto& call = static_cast<const DestructorCallExpr&>(expression);
-      AppendChild(call.TargetAddress, children);
-      AppendChild(call.Callee, children);
-      for (const auto& argument : call.Args) AppendChild(argument, children);
-      break;
-    }
-    case NodeKind::ImplicitCastExpr:
-      AppendChild(static_cast<const ImplicitCastExpr&>(expression).SubExpr, children);
-      break;
-    case NodeKind::MaterializeTemporaryExpr:
-      AppendChild(static_cast<const MaterializeTemporaryExpr&>(expression).SubExpr, children);
-      break;
-    case NodeKind::ImplicitOverloadSetSelectionExpr:
-      // The retained source subtree describes name lookup and overload
-      // selection; it is not a separate runtime evaluation.
-      break;
-    default:
-      break;
-  }
-
-  return children;
-}
-
-bool ContainsControlFlow(const Expr& expression) {
-  if (expression.GetKind() == NodeKind::ConditionalOperator) {
-    return true;
-  }
-  if (expression.GetKind() == NodeKind::BinaryOperator &&
-      IsLogicalBinaryOperator(static_cast<const BinaryOperator&>(expression).op)) {
-    return true;
-  }
-
-  for (const Expr* child : ExpressionChildren(expression)) {
-    if (ContainsControlFlow(*child)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool RequiresSeparateCFGEvent(const Expr& expression) { return ContainsControlFlow(expression); }
-
-}  // namespace
-
 std::unique_ptr<CFG> CFGBuilder::Build(const FunctionDecl& function) {
   if (!function.Body) {
     return nullptr;
@@ -242,7 +104,7 @@ CFGBlock* CFGBuilder::BuildCompound(const CompoundStmt& statement, CFGBlock& cur
     if (!block) {
       block = &cfg_->CreateBlock();
     }
-    block = BuildExpression(*tail, *block);
+    EmitExpression(*tail, *block);
   }
 
   if (block && emit_normal_scope_exit) {
@@ -296,7 +158,7 @@ CFGBuilder::BlockList CFGBuilder::BuildResultCompound(const CompoundStmt& statem
     if (!block) {
       block = &cfg_->CreateBlock();
     }
-    block = BuildExpression(*tail, *block);
+    EmitExpression(*tail, *block);
   }
 
   BlockList exits;
@@ -312,16 +174,15 @@ CFGBuilder::BlockList CFGBuilder::BuildResultCompound(const CompoundStmt& statem
 }
 
 CFGBuilder::BlockList CFGBuilder::BuildResultIf(const IfStmt& statement, CFGBlock& current) {
-  CFGBlock* condition = &current;
   if (statement.Cond) {
-    condition = BuildExpression(*statement.Cond, *condition);
+    EmitExpression(*statement.Cond, current);
   }
-  condition->SetTerminator(statement);
+  current.SetTerminator(statement);
 
   CFGBlock& then_entry = cfg_->CreateBlock();
   CFGBlock& else_entry = cfg_->CreateBlock();
-  cfg_->Connect(*condition, then_entry, CFGEdgeKind::True);
-  cfg_->Connect(*condition, else_entry, CFGEdgeKind::False);
+  cfg_->Connect(current, then_entry, CFGEdgeKind::True);
+  cfg_->Connect(current, else_entry, CFGEdgeKind::False);
 
   BlockList exits;
   if (statement.Then) {
@@ -352,7 +213,8 @@ CFGBlock* CFGBuilder::BuildStatement(const Stmt& statement, CFGBlock& current) {
       if (!expression_statement.Expr) {
         return &current;
       }
-      return BuildExpression(*expression_statement.Expr, current);
+      EmitExpression(*expression_statement.Expr, current);
+      return &current;
     }
     case NodeKind::DeclStmt: {
       const auto& declaration_statement = static_cast<const DeclStmt&>(statement);
@@ -394,19 +256,18 @@ CFGBlock* CFGBuilder::BuildStatement(const Stmt& statement, CFGBlock& current) {
 }
 
 CFGBlock* CFGBuilder::BuildIf(const IfStmt& statement, CFGBlock& current) {
-  CFGBlock* condition = &current;
   if (statement.Cond) {
-    condition = BuildExpression(*statement.Cond, *condition);
+    EmitExpression(*statement.Cond, current);
   }
-  condition->SetTerminator(statement);
+  current.SetTerminator(statement);
 
   CFGBlock& then_entry = cfg_->CreateBlock();
-  cfg_->Connect(*condition, then_entry, CFGEdgeKind::True);
+  cfg_->Connect(current, then_entry, CFGEdgeKind::True);
   CFGBlock* then_exit = statement.Then ? BuildCompound(*statement.Then, then_entry) : &then_entry;
 
   if (!statement.Else) {
     CFGBlock& join = cfg_->CreateBlock();
-    cfg_->Connect(*condition, join, CFGEdgeKind::False);
+    cfg_->Connect(current, join, CFGEdgeKind::False);
     if (then_exit) {
       cfg_->Connect(*then_exit, join, CFGEdgeKind::Unconditional);
     }
@@ -415,7 +276,7 @@ CFGBlock* CFGBuilder::BuildIf(const IfStmt& statement, CFGBlock& current) {
   }
 
   CFGBlock& else_entry = cfg_->CreateBlock();
-  cfg_->Connect(*condition, else_entry, CFGEdgeKind::False);
+  cfg_->Connect(current, else_entry, CFGEdgeKind::False);
   CFGBlock* else_exit = BuildCompound(*statement.Else, else_entry);
   if (!then_exit && !else_exit) {
     return nullptr;
@@ -436,16 +297,15 @@ CFGBlock* CFGBuilder::BuildWhile(const WhileStmt& statement, CFGBlock& current) 
   CFGBlock& condition_entry = cfg_->CreateBlock();
   cfg_->Connect(current, condition_entry, CFGEdgeKind::Unconditional);
 
-  CFGBlock* condition_exit = &condition_entry;
   if (statement.Cond) {
-    condition_exit = BuildExpression(*statement.Cond, *condition_exit);
+    EmitExpression(*statement.Cond, condition_entry);
   }
-  condition_exit->SetTerminator(statement);
+  condition_entry.SetTerminator(statement);
 
   CFGBlock& body_entry = cfg_->CreateBlock();
   CFGBlock& loop_exit = cfg_->CreateBlock();
-  cfg_->Connect(*condition_exit, body_entry, CFGEdgeKind::True);
-  cfg_->Connect(*condition_exit, loop_exit, CFGEdgeKind::False);
+  cfg_->Connect(condition_entry, body_entry, CFGEdgeKind::True);
+  cfg_->Connect(condition_entry, loop_exit, CFGEdgeKind::False);
 
   loop_stack_.push_back(LoopContext{&condition_entry, &loop_exit, scope_stack_.size()});
   CFGBlock* body_exit = statement.Body ? BuildCompound(*statement.Body, body_entry) : &body_entry;
@@ -459,17 +319,16 @@ CFGBlock* CFGBuilder::BuildWhile(const WhileStmt& statement, CFGBlock& current) 
 }
 
 CFGBlock* CFGBuilder::BuildReturn(const ReturnStmt& statement, CFGBlock& current) {
-  CFGBlock* exit_block = &current;
   if (statement.Expr) {
-    exit_block = BuildExpression(*statement.Expr, *exit_block);
+    EmitExpression(*statement.Expr, current);
   }
-  exit_block->SetTerminator(statement);
+  current.SetTerminator(statement);
 
   if (initializer_block_depth_ != 0) {
     return nullptr;
   }
 
-  EmitFunctionExit(*exit_block, statement);
+  EmitFunctionExit(current, statement);
   return nullptr;
 }
 
@@ -511,7 +370,7 @@ CFGBlock* CFGBuilder::BuildVarGroup(const VarGroupDecl& declaration, CFGBlock& c
     for (std::size_t index = 0; index < std::max(declaration.Vars.size(), declaration.InitExprs.size()); ++index) {
       const Expr* initializer = index < declaration.InitExprs.size() ? declaration.InitExprs[index].get() : nullptr;
       if (initializer) {
-        block = BuildExpression(*initializer, *block);
+        EmitExpression(*initializer, *block);
       }
       if (index >= declaration.Vars.size() || !declaration.Vars[index]) {
         continue;
@@ -537,243 +396,8 @@ CFGBlock* CFGBuilder::BuildVarGroup(const VarGroupDecl& declaration, CFGBlock& c
   return block;
 }
 
-CFGBlock* CFGBuilder::BuildExpression(const Expr& expression, CFGBlock& current, CFGExpressionContext context) {
-  switch (expression.GetKind()) {
-    case NodeKind::InitializationExpr:
-      return BuildInitializationExpression(static_cast<const InitializationExpr&>(expression), current);
-    case NodeKind::ImplicitResultInitializationExpr:
-      return BuildImplicitResultInitializationExpression(
-          static_cast<const ImplicitResultInitializationExpr&>(expression), current);
-    case NodeKind::ConditionalOperator:
-      return BuildConditionalExpression(static_cast<const ConditionalOperator&>(expression), current, context);
-    case NodeKind::BinaryOperator: {
-      const auto& binary = static_cast<const BinaryOperator&>(expression);
-      if (binary.IsAssignment()) {
-        return BuildAssignment(binary, current);
-      }
-      if (IsLogicalBinaryOperator(binary.op)) {
-        return BuildLogicalExpression(binary, current);
-      }
-      break;
-    }
-    case NodeKind::OperatorCallExpr: {
-      const auto& call = static_cast<const OperatorCallExpr&>(expression);
-      if (call.IsAssignment()) {
-        return BuildAssignmentOperatorCall(call, current);
-      }
-      break;
-    }
-    case NodeKind::ArrayAssignmentExpr:
-      return BuildArrayAssignment(static_cast<const ArrayAssignmentExpr&>(expression), current);
-    case NodeKind::ArrayValueExpr:
-      return BuildArrayValue(static_cast<const ArrayValueExpr&>(expression), current, context);
-    default:
-      break;
-  }
-  return BuildGenericExpression(expression, current, context);
-}
-
-CFGBlock* CFGBuilder::BuildGenericExpression(const Expr& expression, CFGBlock& current, CFGExpressionContext context) {
-  CFGBlock* block = &current;
-  std::vector<const Expr*> excluded_subexpressions;
-  const std::vector<const Expr*> children = ExpressionChildren(expression);
-  // Splitting every sibling preserves the evaluation before and after a branch.
-  // Expressions without internal control flow remain a single source-level region.
-  if (std::any_of(children.begin(), children.end(),
-                  [](const Expr* child) { return RequiresSeparateCFGEvent(*child); })) {
-    for (const Expr* child : children) {
-      CFGExpressionContext child_context = CFGExpressionContext::Ordinary;
-      switch (expression.GetKind()) {
-        case NodeKind::ParenExpr:
-          child_context = context;
-          break;
-        case NodeKind::MemberExpr:
-          if (static_cast<const MemberExpr&>(expression).op != expr::arrow) {
-            child_context = CFGExpressionContext::ObjectLocation;
-          }
-          break;
-        case NodeKind::BaseSubobjectExpr:
-          if (static_cast<const BaseSubobjectExpr&>(expression).op != expr::arrow) {
-            child_context = CFGExpressionContext::ObjectLocation;
-          }
-          break;
-        case NodeKind::SubscriptExpr:
-          if (child == static_cast<const SubscriptExpr&>(expression).Base.get()) {
-            child_context = CFGExpressionContext::ObjectLocation;
-          }
-          break;
-        case NodeKind::ImplicitCastExpr:
-        case NodeKind::MaterializeTemporaryExpr:
-          if (context == CFGExpressionContext::ObjectLocation) {
-            child_context = context;
-          }
-          break;
-        default:
-          break;
-      }
-      block = BuildExpression(*child, *block, child_context);
-      excluded_subexpressions.push_back(child);
-    }
-  }
-  // Keep the enclosing event, but exclude children already represented by separate events.
-  block->EmplaceElement<CFGExpressionElement>(expression, context, std::move(excluded_subexpressions));
-  return block;
-}
-
-CFGBlock* CFGBuilder::BuildConditionalExpression(const ConditionalOperator& expression, CFGBlock& current,
-                                                 CFGExpressionContext context) {
-  CFGBlock* condition = &current;
-  if (expression.Cond) {
-    condition = BuildExpression(*expression.Cond, *condition);
-  }
-  condition->SetTerminator(expression);
-
-  CFGBlock& then_entry = cfg_->CreateBlock();
-  CFGBlock& else_entry = cfg_->CreateBlock();
-  CFGBlock& join = cfg_->CreateBlock();
-  cfg_->Connect(*condition, then_entry, CFGEdgeKind::True);
-  cfg_->Connect(*condition, else_entry, CFGEdgeKind::False);
-
-  // Locating a base still evaluates the selected conditional operand normally.
-  const CFGExpressionContext branch_context =
-      context == CFGExpressionContext::ObjectLocation ? CFGExpressionContext::Ordinary : context;
-  CFGBlock* then_exit = &then_entry;
-  if (expression.Then) {
-    then_exit = BuildExpression(*expression.Then, *then_exit, branch_context);
-  }
-  CFGBlock* else_exit = &else_entry;
-  if (expression.Else) {
-    else_exit = BuildExpression(*expression.Else, *else_exit, branch_context);
-  }
-  cfg_->Connect(*then_exit, join, CFGEdgeKind::Unconditional);
-  cfg_->Connect(*else_exit, join, CFGEdgeKind::Unconditional);
-  join.SetAnchor(expression);
-  return &join;
-}
-
-CFGBlock* CFGBuilder::BuildLogicalExpression(const BinaryOperator& expression, CFGBlock& current) {
-  CFGBlock* condition = &current;
-  if (expression.LHS) {
-    condition = BuildExpression(*expression.LHS, *condition);
-  }
-  condition->SetTerminator(expression);
-
-  CFGBlock& rhs_entry = cfg_->CreateBlock();
-  CFGBlock& join = cfg_->CreateBlock();
-  if (expression.op == expr::ampamp) {
-    cfg_->Connect(*condition, rhs_entry, CFGEdgeKind::True);
-    cfg_->Connect(*condition, join, CFGEdgeKind::False);
-  } else {
-    cfg_->Connect(*condition, join, CFGEdgeKind::True);
-    cfg_->Connect(*condition, rhs_entry, CFGEdgeKind::False);
-  }
-
-  CFGBlock* rhs_exit = &rhs_entry;
-  if (expression.RHS) {
-    rhs_exit = BuildExpression(*expression.RHS, *rhs_exit);
-  }
-  cfg_->Connect(*rhs_exit, join, CFGEdgeKind::Unconditional);
-  join.SetAnchor(expression);
-  return &join;
-}
-
-CFGBlock* CFGBuilder::BuildAssignment(const BinaryOperator& expression, CFGBlock& current) {
-  BOOST_ASSERT(expression.IsAssignment());
-  CFGBlock* block = &current;
-  std::vector<const Expr*> operands;
-  if (expression.RHS) {
-    block = BuildExpression(*expression.RHS, *block);
-    operands.push_back(expression.RHS.get());
-  }
-  if (expression.LHS) {
-    block = BuildExpression(*expression.LHS, *block, CFGExpressionContext::Ordinary);
-    operands.push_back(expression.LHS.get());
-  }
-  block->EmplaceElement<CFGExpressionElement>(expression, CFGExpressionContext::Ordinary, std::move(operands));
-  return block;
-}
-
-CFGBlock* CFGBuilder::BuildArrayAssignment(const ArrayAssignmentExpr& expression, CFGBlock& current) {
-  CFGBlock* block = &current;
-  std::vector<const Expr*> operands;
-  if (expression.RHS) {
-    block = BuildExpression(*expression.RHS, *block);
-    operands.push_back(expression.RHS.get());
-  }
-  if (expression.LHS) {
-    block = BuildExpression(*expression.LHS, *block, CFGExpressionContext::Ordinary);
-    operands.push_back(expression.LHS.get());
-  }
-  block->EmplaceElement<CFGExpressionElement>(expression, CFGExpressionContext::Ordinary, std::move(operands));
-  return block;
-}
-
-CFGBlock* CFGBuilder::BuildArrayValue(const ArrayValueExpr& expression, CFGBlock& current,
-                                      CFGExpressionContext context) {
-  CFGBlock* block = &current;
-  std::vector<const Expr*> elements;
-  elements.reserve(expression.Elements.size());
-  for (const auto& element : expression.Elements) {
-    if (!element) {
-      continue;
-    }
-    block = BuildExpression(*element, *block);
-    elements.push_back(element.get());
-  }
-  block->EmplaceElement<CFGExpressionElement>(expression, context, std::move(elements));
-  return block;
-}
-
-CFGBlock* CFGBuilder::BuildAssignmentOperatorCall(const OperatorCallExpr& expression, CFGBlock& current) {
-  BOOST_ASSERT(expression.IsAssignment());
-  CFGBlock* block = &current;
-  std::vector<const Expr*> operands;
-
-  // Assignment has a language-defined evaluation order even after Sema replaces the
-  // source BinaryOperator with an OperatorCallExpr. Args retain source order
-  // [lhs, rhs], while the CFG evaluates rhs before lhs.
-  block = BuildExpression(*expression.Args[1], *block);
-  operands.push_back(expression.Args[1].get());
-
-  const Expr& lhs = *expression.Args[0];
-  block = BuildExpression(lhs, *block, CFGExpressionContext::Ordinary);
-  operands.push_back(&lhs);
-
-  block->EmplaceElement<CFGExpressionElement>(expression, CFGExpressionContext::Ordinary, std::move(operands));
-  return block;
-}
-
-CFGBlock* CFGBuilder::BuildInitializationExpression(const InitializationExpr& expression, CFGBlock& current) {
-  CFGBlock* block = &current;
-  std::vector<const Expr*> operands;
-  if (expression.Source) {
-    block = BuildExpression(*expression.Source, *block);
-    operands.push_back(expression.Source.get());
-  }
-  if (expression.Target) {
-    const Expr* target = expression.Target->IgnoreParens();
-    const bool is_non_lvalue_conditional =
-        target && target->GetKind() == NodeKind::ConditionalOperator && target->value_category != ValueCategory::LValue;
-    // Locating an initialization target must not read the object being initialized.
-    const CFGExpressionContext target_context =
-        is_non_lvalue_conditional ? CFGExpressionContext::Ordinary : CFGExpressionContext::InitializationTarget;
-    block = BuildExpression(*expression.Target, *block, target_context);
-    operands.push_back(expression.Target.get());
-  }
-  block->EmplaceElement<CFGExpressionElement>(expression, CFGExpressionContext::Ordinary, std::move(operands));
-  return block;
-}
-
-CFGBlock* CFGBuilder::BuildImplicitResultInitializationExpression(const ImplicitResultInitializationExpr& expression,
-                                                                  CFGBlock& current) {
-  CFGBlock* block = &current;
-  std::vector<const Expr*> operands;
-  if (expression.Source) {
-    block = BuildExpression(*expression.Source, *block);
-    operands.push_back(expression.Source.get());
-  }
-  block->EmplaceElement<CFGExpressionElement>(expression, CFGExpressionContext::Ordinary, std::move(operands));
-  return block;
+void CFGBuilder::EmitExpression(const Expr& expression, CFGBlock& block) {
+  block.EmplaceElement<CFGExpressionElement>(expression);
 }
 
 void CFGBuilder::EmitScopeExits(CFGBlock& block, std::size_t outer_scope_depth) {
