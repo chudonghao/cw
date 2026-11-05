@@ -281,6 +281,9 @@ class Sema {
                                                                   const std::vector<std::unique_ptr<Expr>*>& operands);
   void AnalyzeBuiltinUnaryOperator(UnaryOperator& expression);
   void AnalyzeBuiltinBinaryOperator(BinaryOperator& expression);
+  void AnalyzeBuiltinPointerArithmetic(BinaryOperator& expression, PointerArithmeticKind kind);
+  /// Pointer arithmetic moves by whole pointee objects, so the pointee must have a nonzero size.
+  bool ValidatePointerArithmeticStep(Expr& expression, QualType pointer_type);
   void AnalyzeSubscriptExpr(SubscriptExpr& expression);
   void AnalyzeArrayValueExpr(ArrayValueExpr& expression, QualType contextual_type = {});
   void AnalyzeArrayValueElementsForRecovery(ArrayValueExpr& expression);

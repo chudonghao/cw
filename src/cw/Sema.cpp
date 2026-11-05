@@ -3883,6 +3883,14 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
                            expr::to_string(expression.op), DescribeExpressionType(operand_type)));
       return;
     }
+    if (IsRawObjectPointerType(operand_type)) {
+      if (!ValidatePointerArithmeticStep(expression, operand_type)) {
+        return;
+      }
+      expression.type = operand_type;
+      expression.value_category = expression.is_postfix ? ValueCategory::PureRValue : ValueCategory::LValue;
+      return;
+    }
     const BuiltinType* builtin_type = operand_type.GetTypePtr()->AsBuiltinType();
     if (!builtin_type || !(builtin_type->IsInteger() || builtin_type->IsFloatingPoint())) {
       Diagnose(expression, kErrorDiagnostic, expression.range,
@@ -4018,6 +4026,12 @@ void Sema::AnalyzeBuiltinBinaryOperator(BinaryOperator& expression) {
              fmt::format("binary operator '{}' is not supported", expr::to_string(expression.op)));
     return;
   }
+  if (const auto pointer_arithmetic =
+          ClassifyPointerArithmetic(expression.op, expression.LHS->type, expression.RHS->type);
+      pointer_arithmetic != PointerArithmeticKind::None) {
+    AnalyzeBuiltinPointerArithmetic(expression, pointer_arithmetic);
+    return;
+  }
 
   const QualType bool_type(ast_context_->GetBuiltinType(BuiltinTypeKind::Bool));
   if (is_logical) {
@@ -4113,6 +4127,77 @@ void Sema::AnalyzeBuiltinBinaryOperator(BinaryOperator& expression) {
                     : is_arithmetic || is_bitwise ? common_type
                                                   : bool_type;
   expression.value_category = is_compound_assignment ? ValueCategory::LValue : ValueCategory::PureRValue;
+}
+
+void Sema::AnalyzeBuiltinPointerArithmetic(BinaryOperator& expression, PointerArithmeticKind kind) {
+  if (kind == PointerArithmeticKind::Difference) {
+    // Differences require matching pointees: qualifiers merge, but no base class is selected.
+    const auto* common_pointer = CommonQualifiedPointerType(*ast_context_, expression.LHS->type, expression.RHS->type);
+    if (!common_pointer) {
+      Diagnose(expression, kErrorDiagnostic, expression.range,
+               fmt::format("binary operator '{}' cannot be applied to {}", expr::to_string(expression.op),
+                           DescribeOperandTypes(expression.LHS->type, expression.RHS->type, "types ")));
+      return;
+    }
+    const QualType common_type(common_pointer);
+    if (!ValidatePointerArithmeticStep(expression, common_type)) {
+      return;
+    }
+    auto lhs_result = BuildValueConversion(MakeConversionSource(*expression.LHS).state, common_type, *ast_context_);
+    auto rhs_result = BuildValueConversion(MakeConversionSource(*expression.RHS).state, common_type, *ast_context_);
+    const auto* lhs_plan = std::get_if<ConversionSequence>(&lhs_result);
+    const auto* rhs_plan = std::get_if<ConversionSequence>(&rhs_result);
+    BOOST_ASSERT(lhs_plan && rhs_plan);
+    if (!lhs_plan || !rhs_plan) {
+      return;
+    }
+    expression.LHS =
+        CommitConversion(std::move(expression.LHS), common_type, *lhs_plan, ConstructionKind::CompleteObject);
+    expression.RHS =
+        CommitConversion(std::move(expression.RHS), common_type, *rhs_plan, ConstructionKind::CompleteObject);
+    expression.type = QualType(ast_context_->GetBuiltinType(BuiltinTypeKind::ISize));
+    expression.value_category = ValueCategory::PureRValue;
+    return;
+  }
+
+  // An offset keeps the pointer type. The size integer is only read, never converted.
+  auto& pointer = IsRawObjectPointerType(expression.LHS->type) ? expression.LHS : expression.RHS;
+  auto& offset = &pointer == &expression.LHS ? expression.RHS : expression.LHS;
+  if (!ValidatePointerArithmeticStep(expression, pointer->type)) {
+    return;
+  }
+  ApplyDefaultValueConversion(offset);
+  if (expression.IsCompoundAssignment()) {
+    // Keep the target intact. CodeGen reads and writes back its value after locating it once.
+    expression.type = expression.LHS->type;
+    expression.value_category = ValueCategory::LValue;
+    return;
+  }
+  ApplyDefaultValueConversion(pointer);
+  expression.type = pointer->type.WithoutConst();
+  expression.value_category = ValueCategory::PureRValue;
+}
+
+bool Sema::ValidatePointerArithmeticStep(Expr& expression, QualType pointer_type) {
+  const QualType pointee = pointer_type.GetTypePtr()->AsPointerType()->GetPointee();
+  if (!HasLayoutPrerequisites(*pointee.GetTypePtr())) {
+    // Existing type errors already explain why the pointee has no layout.
+    expression.contains_errors = true;
+    return false;
+  }
+  const auto layout = ast_context_->GetTypeLayout(*pointee.GetTypePtr());
+  if (std::holds_alternative<LayoutFailure>(layout)) {
+    // The declaration that introduced this pointer type has already reported the oversized pointee.
+    expression.contains_errors = true;
+    return false;
+  }
+  if (std::get<TypeLayout>(layout).size == 0) {
+    Diagnose(expression, kErrorDiagnostic, expression.range,
+             fmt::format("pointer arithmetic requires a pointer to an object of nonzero size, not '{}'",
+                         TypeSpelling(pointer_type.WithoutConst())));
+    return false;
+  }
+  return true;
 }
 
 void Sema::AnalyzeSubscriptExpr(SubscriptExpr& expression) {

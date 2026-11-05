@@ -251,6 +251,35 @@ expr::ExprGrammarSymbol GetComputationOp(expr::ExprGrammarSymbol op) {
   return op;
 }
 
+bool IsRawObjectPointerType(QualType type) {
+  const auto* pointer = type ? type.GetTypePtr()->AsPointerType() : nullptr;
+  return pointer && pointer->GetPointee().GetTypePtr()->IsObject();
+}
+
+PointerArithmeticKind ClassifyPointerArithmetic(expr::ExprGrammarSymbol op, QualType lhs, QualType rhs) {
+  const auto is_size_integer = [](QualType type) {
+    const auto* builtin = type ? type.GetTypePtr()->AsBuiltinType() : nullptr;
+    return builtin && builtin->IsSizeInteger();
+  };
+  const bool pointer_lhs = IsRawObjectPointerType(lhs);
+  const bool pointer_rhs = IsRawObjectPointerType(rhs);
+  switch (op) {
+    case expr::plus:
+      return (pointer_lhs && is_size_integer(rhs)) || (is_size_integer(lhs) && pointer_rhs)
+                 ? PointerArithmeticKind::Offset
+                 : PointerArithmeticKind::None;
+    case expr::minus:
+      if (pointer_lhs && is_size_integer(rhs)) return PointerArithmeticKind::Offset;
+      return pointer_lhs && pointer_rhs ? PointerArithmeticKind::Difference : PointerArithmeticKind::None;
+    case expr::plusequal:
+    case expr::minusequal:
+      // Compound assignment writes back to its target, so only the pointer can be on the left.
+      return pointer_lhs && is_size_integer(rhs) ? PointerArithmeticKind::Offset : PointerArithmeticKind::None;
+    default:
+      return PointerArithmeticKind::None;
+  }
+}
+
 // Type Accept and Traverse implementations.
 
 void BuiltinTypeSyntax::Accept(ASTVisitor& visitor) { visitor.Visit(*this); }

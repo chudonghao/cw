@@ -176,6 +176,10 @@ using ConversionRiskFacts = std::vector<ConversionRiskFact>;
 const BuiltinType* CommonNumericType(ASTContext& ast_context, QualType left, QualType right);
 /// \brief Selects a common concrete raw pointer type, or null when none is available.
 const PointerType* CommonPointerType(ASTContext& ast_context, QualType left, QualType right);
+/// \brief Merges the const qualifiers of two raw pointers with the same unqualified pointee structure.
+/// Unlike CommonPointerType, this never selects a base class, so it suits operations that require
+/// matching pointees.
+const PointerType* CommonQualifiedPointerType(ASTContext& ast_context, QualType left, QualType right);
 
 /// \brief Borrows a fully prepared expression without changing it.
 ConversionSource MakeConversionSource(const Expr& expression);

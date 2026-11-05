@@ -1,0 +1,30 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+`-FunctionDecl {{address}} <pointer_arithmetic.cpp:3:1, line:10:1> line:3:6 PointerArithmetic 'void (int *, const int *, unsigned long, long)' external-linkage
+  |-ParmVarDecl {{address:1}} <col:24, col:29> col:29 used pointer 'int *'
+  |-ParmVarDecl {{address:2}} <col:38, col:49> col:49 used readonly 'const int *'
+  |-ParmVarDecl {{address:3}} <col:59, col:73> col:73 used count 'unsigned long'
+  |-ParmVarDecl {{address:4}} <col:80, col:85> col:85 used offset 'long'
+  `-CompoundStmt {{address}} <col:93, line:10:1>
+    |-BinaryOperator {{address}} <line:4:3, col:13> 'int *' '+'
+    | |-ImplicitCastExpr {{address}} <col:3> 'int *' <LValueToRValue>
+    | | `-DeclRefExpr {{address}} <col:3> 'int *' lvalue ParmVar {{address:1}} 'pointer' 'int *'
+    | `-ImplicitCastExpr {{address}} <col:13> 'unsigned long' <LValueToRValue>
+    |   `-DeclRefExpr {{address}} <col:13> 'unsigned long' lvalue ParmVar {{address:3}} 'count' 'unsigned long'
+    |-BinaryOperator {{address}} <line:5:3, col:12> 'const int *' '+'
+    | |-ImplicitCastExpr {{address}} <col:3> 'long' <LValueToRValue>
+    | | `-DeclRefExpr {{address}} <col:3> 'long' lvalue ParmVar {{address:4}} 'offset' 'long'
+    | `-ImplicitCastExpr {{address}} <col:12> 'const int *' <LValueToRValue>
+    |   `-DeclRefExpr {{address}} <col:12> 'const int *' lvalue ParmVar {{address:2}} 'readonly' 'const int *'
+    |-BinaryOperator {{address}} <line:6:3, col:13> '__ptrdiff_t':'long' '-'
+    | |-ImplicitCastExpr {{address}} <col:3> 'int *' <LValueToRValue>
+    | | `-DeclRefExpr {{address}} <col:3> 'int *' lvalue ParmVar {{address:1}} 'pointer' 'int *'
+    | `-ImplicitCastExpr {{address}} <col:13> 'const int *' <LValueToRValue>
+    |   `-DeclRefExpr {{address}} <col:13> 'const int *' lvalue ParmVar {{address:2}} 'readonly' 'const int *'
+    |-CompoundAssignOperator {{address}} <line:7:3, col:14> 'int *' lvalue '+=' ComputeLHSTy='int *' ComputeResultTy='int *'
+    | |-DeclRefExpr {{address}} <col:3> 'int *' lvalue ParmVar {{address:1}} 'pointer' 'int *'
+    | `-ImplicitCastExpr {{address}} <col:14> 'unsigned long' <LValueToRValue>
+    |   `-DeclRefExpr {{address}} <col:14> 'unsigned long' lvalue ParmVar {{address:3}} 'count' 'unsigned long'
+    |-UnaryOperator {{address}} <line:8:3, col:5> 'int *' lvalue prefix '++'
+    | `-DeclRefExpr {{address}} <col:5> 'int *' lvalue ParmVar {{address:1}} 'pointer' 'int *'
+    `-UnaryOperator {{address}} <line:9:3, col:10> 'int *' postfix '--'
+      `-DeclRefExpr {{address}} <col:3> 'int *' lvalue ParmVar {{address:1}} 'pointer' 'int *'
