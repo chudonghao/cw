@@ -36,7 +36,6 @@ add_library(
   Lexer.h Lexer.cpp
   Parser.h Parser.cpp
   Sema.h Sema.cpp
-  SemaConstant.h SemaConstant.cpp
   SemaConversion.h SemaConversion.cpp
   SemaOverload.h SemaOverload.cpp
   NameSyntax.h NameLookup.h NameLookup.cpp
@@ -47,6 +46,7 @@ add_library(
   TargetInfo.h TargetInfo.cpp
   TypeLayout.h TypeLayout.cpp
   VTableLayout.h VTableLayout.cpp
+  ConstantEvaluation.h ConstantEvaluation.cpp
   Diagnostic.h Diagnostic.cpp
   ParseResult.h
   CFG.h CFG.cpp

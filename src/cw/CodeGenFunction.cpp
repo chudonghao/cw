@@ -21,7 +21,7 @@
 #include <llvm/IR/Module.h>
 
 #include "ASTContext.h"
-#include "SemaConstant.h"
+#include "ConstantEvaluation.h"
 
 namespace cw::codegen_detail {
 
@@ -1669,7 +1669,7 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
         }
         case ImplicitConversionKind::ComptimeIntegerMaterialization: {
           // Reuse the exact integer evaluator only at the materialization selected by Sema.
-          auto result = sema_detail::EvaluateConstantInteger(*cast.SubExpr, *codegen_.ast_context_);
+          auto result = EvaluateConstantInteger(*cast.SubExpr, *codegen_.ast_context_);
           const auto* integer = std::get_if<llvm::APSInt>(&result);
           if (!integer) {
             codegen_.Unsupported(expression, "this compile-time integer expression");

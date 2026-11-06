@@ -1,14 +1,14 @@
-/// \file SemaConstant.cpp
+/// \file ConstantEvaluation.cpp
 /// \copyright 2026 Donghao Chu
 /// \license SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 /// \url https://github.com/chudonghao/cw
 
-#include "SemaConstant.h"
+#include "ConstantEvaluation.h"
 
 #include "ASTContext.h"
 #include "ast.h"
 
-namespace cw::sema_detail {
+namespace cw {
 
 namespace {
 
@@ -231,4 +231,4 @@ ConstantIntegerResult EvaluateConstantInteger(const Expr& expression, const ASTC
   return Evaluate(expression, ast_context);
 }
 
-}  // namespace cw::sema_detail
+}  // namespace cw
