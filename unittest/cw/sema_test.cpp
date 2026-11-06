@@ -12756,3 +12756,102 @@ export dtor Box() {}
 func Use() { var value := Box(); }
 )");
 }
+
+TEST_F(SemaTest, RejectsOverloadedProgramEntry) {
+  Analyze(R"(func main() i32 { 0 }
+func main(value i32) i32 { value })");
+  ExpectError(1, 5, "program entry 'main' must not be overloaded", 4);
+  ExpectNote(0, 5, "previous entry is here", 4);
+}
+
+TEST_F(SemaTest, RejectsVariableProgramEntry) {
+  Analyze("var main i32 := 0;");
+  ExpectError(0, 4, "program entry 'main' must be a function", 4);
+}
+
+TEST_F(SemaTest, RejectsProgramEntryReturnTypeOnNativeTarget) {
+  Analyze("export func main() f64 { 1.0 }");
+  ExpectError(0, 12, "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'", 4);
+}
+
+TEST_F(SemaTest, RejectsProgramEntryParametersOnNativeTarget) {
+  Analyze("func main(argc i32, argv *u8) i32 { argc }");
+  ExpectError(0, 5, "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'", 4);
+}
+
+TEST_F(SemaTest, RejectsImplicitVirtualImplementationEntrySignature) {
+  Analyze(R"(import struct Base { virtual { func main(this &copy Base) i32; } }
+import dtor Base();
+)");
+  ExpectError(0, 36, "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'", 4);
+}
+
+TEST_F(SemaTest, RejectsProgramEntryOverloadingImplicitVirtualImplementation) {
+  Analyze(R"(import struct Base { virtual { func main(this &copy Base) i32; } }
+import dtor Base();
+func main() i32 { 0 }
+)");
+  ExpectError(0, 36, "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'", 4);
+  ExpectError(2, 5, "program entry 'main' must not be overloaded", 4);
+  ExpectNote(0, 36, "previous entry is here", 4);
+}
+
+TEST_F(WasmSemaTest, RejectsOverloadedProgramEntry) {
+  Analyze(R"(func main(value i32) f64 { 1.0 }
+func main() i32 { 0 })");
+  ExpectError(1, 5, "program entry 'main' must not be overloaded", 4);
+  ExpectNote(0, 5, "previous entry is here", 4);
+}
+
+TEST_F(WasmSemaTest, RejectsVariableProgramEntry) {
+  Analyze("var main i32 := 0;");
+  ExpectError(0, 4, "program entry 'main' must be a function", 4);
+}
+
+TEST_F(SemaTest, AcceptsProgramEntryWithoutParameters) { Analyze("func main() i32 { 0 }"); }
+
+TEST_F(SemaTest, AcceptsProgramEntryWithArguments) { Analyze("func main(argc i32, argv **u8) i32 { argc }"); }
+
+TEST_F(SemaTest, TreatsNamespaceMainAsOrdinaryFunction) {
+  Analyze("namespace api { func main() i32 { 0 } func main(value i32) f64 { 1.0 } }");
+}
+
+TEST_F(SemaTest, AcceptsTranslationUnitWithoutProgramEntry) { Analyze("func Run() i32 { 0 }"); }
+
+TEST_F(WasmSemaTest, AcceptsNonNativeProgramEntrySignature) { Analyze("func main(value i32) f64 { 1.0 }"); }
+
+TEST_F(SemaTest, ReportsProgramEntryErrorsAlongsideOtherErrors) {
+  Analyze(R"(func Use() { missing; }
+func main() f64 { 1.0 })");
+  ExpectError(1, 5, "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'", 4);
+  ExpectError(0, 13, "use of undeclared identifier 'missing'", 7);
+}
+
+TEST_F(SemaTest, SkipsProgramEntryWithUnresolvedType) {
+  Analyze("func main(value Missing) f64 { 1.0 }");
+  ExpectError(0, 16, "unknown type 'Missing'", 7);
+}
+
+TEST_F(SemaTest, SkipsRedefinedProgramEntry) {
+  Analyze(R"(func main() i32 { 0 }
+func main() i32 { 1 })");
+  ExpectError(1, 5, "redefinition of function 'main'", 0);
+  ExpectNote(0, 5, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, SkipsProgramEntryVariablesDiagnosedByBinding) {
+  Analyze(R"(func main() i32 { 0 }
+var main i32 := 0;
+var main i32 := 1;)");
+  ExpectError(1, 4, "declaration of variable 'main' conflicts with function declaration", 0);
+  ExpectNote(0, 5, "conflicting declaration is here", 0);
+  ExpectError(2, 4, "declaration of variable 'main' conflicts with function declaration", 0);
+  ExpectNote(0, 5, "conflicting declaration is here", 0);
+}
+
+TEST_F(SemaTest, ChecksOnlyTheFirstProgramEntryVariable) {
+  Analyze("var main i32 := 0; var main i32 := 1;");
+  ExpectError(0, 4, "program entry 'main' must be a function", 4);
+  ExpectError(0, 23, "redefinition of variable 'main'", 0);
+  ExpectNote(0, 4, "previous declaration is here", 0);
+}

@@ -177,6 +177,7 @@ class Sema {
   InheritedVirtualSlots CompleteTypeSemantics(TranslationUnitDecl& translation_unit);
   void CompleteCallableInterfaces(TranslationUnitDecl& translation_unit, const InheritedVirtualSlots& inherited_slots);
   void ValidateDeclarationModifiers(TranslationUnitDecl& translation_unit);
+  void ValidateProgramEntry(TranslationUnitDecl& translation_unit);
   void AnalyzeDeclarationBodies(TranslationUnitDecl& translation_unit);
   void FinalizeTranslationUnitSemantics(TranslationUnitDecl& translation_unit);
 

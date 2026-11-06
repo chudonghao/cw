@@ -1403,6 +1403,7 @@ void Sema::CompleteCallableInterfaces(TranslationUnitDecl& translation_unit,
   AssociateVirtualImplementations(translation_unit);
   ValidateRequiredOverrideDeclarations(translation_unit, inherited_slots);
   ValidateDeclarationModifiers(translation_unit);
+  ValidateProgramEntry(translation_unit);
 }
 
 void Sema::ValidateDeclarationModifiers(TranslationUnitDecl& translation_unit) {
@@ -1491,6 +1492,57 @@ void Sema::ValidateDeclarationModifiers(TranslationUnitDecl& translation_unit) {
         break;
     }
   }
+}
+
+void Sema::ValidateProgramEntry(TranslationUnitDecl& translation_unit) {
+  const auto* i32 = ast_context_->GetBuiltinType(BuiltinTypeKind::I32);
+  const auto* argv_type = ast_context_->GetPointerType(
+      QualType(ast_context_->GetPointerType(QualType(ast_context_->GetBuiltinType(BuiltinTypeKind::U8)))));
+  const FunctionDecl* entry = nullptr;
+  const auto check_function = [&](FunctionDecl& function) {
+    // Declarations already rejected by interface analysis would only repeat their diagnostics.
+    if (function.name != "main" || function.is_invalid || function.ContainsErrors()) return;
+    if (entry) {
+      Diagnose(function, kErrorDiagnostic, function.name_range, "program entry 'main' must not be overloaded");
+      EmitDiagnostic(kNoteDiagnostic, entry->name_range, "previous entry is here");
+      return;
+    }
+    entry = &function;
+    const auto* type = function.type.GetTypePtr()->AsFunctionType();
+    const auto& parameters = type->GetParameterTypes();
+    if (!ast_context_->GetTargetInfo().IsWasm32() &&
+        (type->GetReturnType() != i32 ||
+         !(parameters.empty() || (parameters.size() == 2 && parameters[0] == i32 && parameters[1] == argv_type)))) {
+      Diagnose(function, kErrorDiagnostic, function.name_range,
+               "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'");
+    }
+  };
+  // Global variables bind only during body analysis, which diagnoses a variable that conflicts with an
+  // interface binding or redefines an earlier variable; only the first unbound variable needs this check.
+  bool variable_checked = static_cast<bool>(LookupDirectName("main", *ast_context_->GetRootNamespace()));
+  for (const auto& declaration : translation_unit.Decls) {
+    if (!declaration) continue;
+    if (declaration->GetKind() == NodeKind::VarGroupDecl) {
+      for (const auto& variable : static_cast<VarGroupDecl&>(*declaration).Vars) {
+        if (!variable || variable->name != "main" || variable_checked) continue;
+        variable_checked = true;
+        if (!variable->is_invalid && !variable->ContainsErrors()) {
+          Diagnose(*variable, kErrorDiagnostic, variable->name_range, "program entry 'main' must be a function");
+        }
+      }
+    } else if (declaration->GetKind() == NodeKind::FunctionDecl) {
+      check_function(static_cast<FunctionDecl&>(*declaration));
+    } else if (declaration->GetKind() == NodeKind::StructDecl && declaration->modifier == DeclModifier::Import) {
+      const auto& structure = static_cast<StructDecl&>(*declaration);
+      if (!structure.VirtualDecl) continue;
+      for (const auto& slot : structure.VirtualDecl->Functions) {
+        // An imported concrete slot without an independent declaration still
+        // names an ordinary implementation in its enclosing namespace.
+        if (slot && !slot->is_abstract && !slot->implementation) check_function(*slot);
+      }
+    }
+  }
+  // The linker diagnoses a missing entry, including when an external object supplies it.
 }
 
 void Sema::ValidateExportedTypeUse(TypeSyntax* type_syntax, QualType type) {
