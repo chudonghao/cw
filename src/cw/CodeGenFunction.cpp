@@ -51,19 +51,6 @@ bool HasArrayElements(const ArrayType& type) {
 
 }  // namespace
 
-CodeGenFunction::CodeGenFunction(CodeGen& codegen, llvm::Function& function)
-    : codegen_(codegen), function_(function), builder_(*codegen.llvm_context_) {}
-
-llvm::IntegerType* CodeGenFunction::GetTargetIndexType() const { return codegen_.GetPointerIndexType(); }
-
-llvm::ConstantInt* CodeGenFunction::GetTargetIndex(std::uint64_t value) const {
-  return llvm::ConstantInt::get(GetTargetIndexType(), value);
-}
-
-llvm::ConstantInt* CodeGenFunction::GetTargetOffset(std::int64_t value) const {
-  return llvm::ConstantInt::get(GetTargetIndexType(), value, true);
-}
-
 CodeGenFunction::ConditionalEvaluation::ConditionalEvaluation(CodeGenFunction& owner, llvm::BasicBlock* entry,
                                                               llvm::BasicBlock* arm)
     : owner_(owner),
@@ -93,6 +80,161 @@ CodeGenFunction::ConditionalEvaluation::~ConditionalEvaluation() {
   owner_.conditional_entry_ = previous_entry_;
   owner_.conditional_condition_ = previous_condition_;
   owner_.conditional_inverted_ = previous_inverted_;
+}
+
+CodeGenFunction::CodeGenFunction(CodeGen& codegen, llvm::Function& function)
+    : codegen_(codegen), function_(function), builder_(*codegen.llvm_context_) {}
+
+bool CodeGenFunction::Generate(const FunctionDecl& declaration, const CodeGen::FunctionInfo& function_info,
+                               CodeGen::StructorKind kind) {
+  structor_kind_ = kind;
+  StartFunction();
+  if (function_info.this_index) {
+    auto* target = function_.getArg(*function_info.this_index);
+    target->setName("this");
+    const StructType* this_type = declaration.GetKind() == NodeKind::ConstructorDecl
+                                      ? static_cast<const ConstructorDecl&>(declaration).target_type
+                                      : static_cast<const DestructorDecl&>(declaration).target_type;
+    this_address_ = MakeAddress(target, function_info.this_type, this_type);
+  }
+  if (!declaration.type.GetTypePtr()->AsFunctionType()->GetReturnType()->IsVoid()) {
+    if (!declaration.ReturnVar) {
+      return codegen_.InternalError(declaration, "function has no result declaration");
+    }
+    const auto& result = *declaration.ReturnVar;
+    const llvm::StringRef name = result.name.empty() ? ".result" : llvm::StringRef(result.name);
+    if (function_info.result_index) {
+      auto* address = function_.getArg(*function_info.result_index);
+      address->setName(name);
+      locals_.emplace(&result, MakeAddress(address, function_info.result.memory_type, result.type.GetTypePtr(),
+                                           Overlap::DoesNotOverlap));
+    } else if (!DeclareVariable(result, name)) {
+      return false;
+    }
+  }
+  for (std::size_t index = 0; index < declaration.ParmVars.size(); ++index) {
+    const auto& parameter = *declaration.ParmVars[index];
+    const auto& info = function_info.parameters[index];
+    llvm::Argument* argument = info.llvm_index ? function_.getArg(*info.llvm_index) : nullptr;
+    if (info.abi.kind == CodeGen::ABIArgInfo::Kind::Indirect) {
+      // The caller has already formed this parameter's independent value object.
+      argument->setName(parameter.name);
+      locals_.emplace(&parameter, MakeAddress(argument, info.abi.memory_type, parameter.type.GetTypePtr(),
+                                              Overlap::DoesNotOverlap));
+      continue;
+    }
+    const bool aggregate = IsAggregate(*parameter.type.GetTypePtr());
+    const bool coerced = argument && aggregate && info.abi.direct_type != info.abi.memory_type;
+    Address storage = DeclareVariable(parameter, argument && !coerced ? parameter.name + ".addr" : parameter.name);
+    if (!storage) {
+      return false;
+    }
+    if (argument) {
+      argument->setName(coerced ? parameter.name + ".coerce" : parameter.name);
+      if (aggregate) {
+        EmitCoercedStore(argument, storage);
+      } else {
+        EmitStoreOfScalar(argument, storage, *parameter.type.GetTypePtr());
+      }
+    }
+  }
+  if (declaration.GetKind() == NodeKind::DestructorDecl) {
+    if (!EmitVTablePointer(this_address_,
+                           *static_cast<const DestructorDecl&>(declaration).target_type->GetDeclaration()))
+      return false;
+    EnterDestructorCleanups(static_cast<const DestructorDecl&>(declaration));
+  }
+  if (!EmitCompound(*declaration.Body) || !EmitLocalCleanups(0)) {
+    return false;
+  }
+  return EmitFunctionReturn(declaration, function_info);
+}
+
+void CodeGenFunction::GenerateThunk(const VTableEntry& entry, const CodeGen::FunctionInfo& info,
+                                    llvm::Function& implementation) {
+  StartFunction();
+  // Overrides preserve parameters. Forward the ABI values and result slot directly;
+  // a thunk must not introduce parameter objects or their cleanup.
+  BOOST_ASSERT(function_.getFunctionType() == implementation.getFunctionType());
+  std::vector<llvm::Value*> arguments;
+  for (auto& argument : function_.args()) {
+    arguments.push_back(&argument);
+  }
+  auto* call = builder_.CreateCall(implementation.getFunctionType(), &implementation, arguments);
+  NameCallResult(*call);
+  call->setAttributes(implementation.getAttributes());
+  llvm::Value* result = call;
+  if (entry.return_adjustment != 0) {
+    auto* adjusted =
+        builder_.CreateGEP(builder_.getInt8Ty(), result, GetTargetOffset(entry.return_adjustment), "return.adjusted",
+                           llvm::GEPNoWrapFlags::inBounds() | llvm::GEPNoWrapFlags::noUnsignedWrap());
+    const auto* return_type = entry.interface->type.GetTypePtr()->AsFunctionType()->GetReturnType();
+    result = return_type->AsPointerType() ? builder_.CreateSelect(builder_.CreateIsNull(result),
+                                                                  llvm::ConstantPointerNull::get(builder_.getPtrTy()),
+                                                                  adjusted, "return.nullable")
+                                          : adjusted;
+  }
+  EmitReturnBlock();
+  if (info.type->getReturnType()->isVoidTy()) {
+    builder_.CreateRetVoid();
+  } else {
+    builder_.CreateRet(result);
+  }
+  builder_.ClearInsertionPoint();
+}
+
+bool CodeGenFunction::GenerateGlobalVarInit(const VarGroupDecl& declaration) {
+  StartFunction();
+  if (!EmitVarGroup(declaration)) {
+    return false;
+  }
+  FinishFunction();
+  return true;
+}
+
+void CodeGenFunction::GenerateGlobalInit(llvm::ArrayRef<llvm::Function*> initializers) {
+  StartFunction();
+  for (auto* initializer : initializers) {
+    builder_.CreateCall(initializer);
+  }
+  FinishFunction();
+}
+
+bool CodeGenFunction::GenerateGlobalDestructor(const VarDecl& declaration) {
+  StartFunction();
+  auto* object = function_.getArg(0);
+  object->setName("object");
+  auto* type = codegen_.globals_.at(&declaration)->getValueType();
+  if (!EmitDestroy(MakeAddress(object, type, declaration.type.GetTypePtr(), Overlap::DoesNotOverlap),
+                   *declaration.type.GetTypePtr())) {
+    return false;
+  }
+  FinishFunction();
+  return true;
+}
+
+llvm::IntegerType* CodeGenFunction::GetTargetIndexType() const { return codegen_.GetPointerIndexType(); }
+
+llvm::ConstantInt* CodeGenFunction::GetTargetIndex(std::uint64_t value) const {
+  return llvm::ConstantInt::get(GetTargetIndexType(), value);
+}
+
+llvm::ConstantInt* CodeGenFunction::GetTargetOffset(std::int64_t value) const {
+  return llvm::ConstantInt::get(GetTargetIndexType(), value, true);
+}
+
+void CodeGenFunction::StartFunction() {
+  BOOST_ASSERT(function_.empty());
+  builder_.SetInsertPoint(llvm::BasicBlock::Create(*codegen_.llvm_context_, "entry", &function_));
+  return_block_ = CreateBasicBlock("return");
+}
+
+void CodeGenFunction::FinishFunction() {
+  EmitReturnBlock();
+  if (HaveInsertPoint()) {
+    builder_.CreateRetVoid();
+    builder_.ClearInsertionPoint();
+  }
 }
 
 Address CodeGenFunction::MakeAddress(llvm::Value* pointer, llvm::Type* element_type, const Type* semantic_type,
@@ -269,6 +411,30 @@ void CodeGenFunction::EmitStoreOfScalar(llvm::Value* value, Address address, con
   builder_.CreateAlignedStore(value, address.pointer, address.alignment);
 }
 
+bool CodeGenFunction::EmitArrayLoop(std::uint64_t count, bool reverse, llvm::StringRef name,
+                                    llvm::function_ref<bool(llvm::Value*)> emit_element) {
+  if (count == 0) {
+    return true;
+  }
+  auto* predecessor = builder_.GetInsertBlock();
+  auto* body = CreateBasicBlock(name);
+  auto* end = CreateBasicBlock("array.end");
+  EmitBlock(body);
+  auto* cursor = builder_.CreatePHI(GetTargetIndexType(), 2, "array.index");
+  cursor->addIncoming(GetTargetIndex(reverse ? count : 0), predecessor);
+  auto* index = reverse ? builder_.CreateSub(cursor, GetTargetIndex(1), "array.previous") : cursor;
+  if (!emit_element(index)) {
+    return false;
+  }
+  auto* next = reverse ? index : builder_.CreateAdd(index, GetTargetIndex(1), "array.next");
+  cursor->addIncoming(next, builder_.GetInsertBlock());
+  auto* finished = builder_.CreateICmpEQ(next, GetTargetIndex(reverse ? 0 : count), "array.finished");
+  builder_.CreateCondBr(finished, end, body);
+  builder_.ClearInsertionPoint();
+  EmitBlock(end);
+  return true;
+}
+
 llvm::BasicBlock* CodeGenFunction::CreateBasicBlock(llvm::StringRef name) {
   // Attach blocks immediately so the module also owns them if emission fails.
   return llvm::BasicBlock::Create(*codegen_.llvm_context_, name, &function_);
@@ -348,84 +514,6 @@ bool CodeGenFunction::EmitBranchOnBoolExpr(const Expr& expression, llvm::BasicBl
   return true;
 }
 
-void CodeGenFunction::AddTemporaryCleanup(Address address, const Type& type) {
-  if (type.GetTriviality() != TypeTriviality::NonTrivial) {
-    return;
-  }
-  Cleanup cleanup{address, &type, {}};
-  if (conditional_condition_) {
-    if (conditional_inverted_) {
-      llvm::IRBuilder<> before_branch(conditional_entry_->getTerminator());
-      conditional_condition_ = before_branch.CreateNot(conditional_condition_, "cleanup.condition");
-      conditional_inverted_ = false;
-    }
-    cleanup.condition = conditional_condition_;
-  } else if (conditional_entry_) {
-    Address flag = CreateStorage(builder_.getInt1Ty(), "cleanup.active");
-    llvm::IRBuilder<> reset(conditional_entry_->getTerminator());
-    reset.CreateAlignedStore(builder_.getFalse(), flag.pointer, flag.alignment);
-    builder_.CreateAlignedStore(builder_.getTrue(), flag.pointer, flag.alignment);
-    cleanup.condition = flag;
-  }
-  temporary_cleanups_.push_back(cleanup);
-}
-
-bool CodeGenFunction::EmitCleanup(const Cleanup& cleanup) {
-  llvm::Value* condition = nullptr;
-  if (const auto* value = std::get_if<llvm::Value*>(&cleanup.condition)) {
-    condition = *value;
-  } else if (const auto* flag = std::get_if<Address>(&cleanup.condition)) {
-    condition = builder_.CreateAlignedLoad(flag->element_type, flag->pointer, flag->alignment, "cleanup.active");
-  }
-  if (!condition) {
-    return EmitDestroy(cleanup.address, *cleanup.type);
-  }
-  auto* destroy = CreateBasicBlock("cleanup.destroy");
-  auto* continuation = CreateBasicBlock("cleanup.end");
-  builder_.CreateCondBr(condition, destroy, continuation);
-  builder_.ClearInsertionPoint();
-  EmitBlock(destroy);
-  if (!EmitDestroy(cleanup.address, *cleanup.type)) {
-    return false;
-  }
-  EmitBlock(continuation);
-  return true;
-}
-
-bool CodeGenFunction::EmitTemporaryCleanups(std::size_t depth) {
-  for (std::size_t index = temporary_cleanups_.size(); index > depth; --index) {
-    if (!EmitCleanup(temporary_cleanups_[index - 1])) {
-      return false;
-    }
-  }
-  temporary_cleanups_.resize(depth);
-  return true;
-}
-
-bool CodeGenFunction::EmitLocalCleanups(std::size_t depth) {
-  if (!HaveInsertPoint()) {
-    return true;
-  }
-  // Emitting an exit must not consume the state needed to emit another reachable path.
-  for (std::size_t index = local_cleanups_.size(); index > depth; --index) {
-    const auto& cleanup = local_cleanups_[index - 1];
-    if (!cleanup.active) {
-      continue;
-    }
-    if (cleanup.kind == LocalCleanup::Kind::ExitVirtualDispatch) {
-      if (!EmitVTablePointer(cleanup.address, *cleanup.type->AsStructType()->GetDeclaration())) return false;
-    } else if (!EmitDestroy(cleanup.address, *cleanup.type, cleanup.structor_kind)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool CodeGenFunction::EmitFullExpr(const Expr& expression) {
-  const auto depth = temporary_cleanups_.size();
-  return EmitIgnoredExpr(expression) && EmitTemporaryCleanups(depth);
-}
-
 bool CodeGenFunction::EmitCondition(const Expr& expression, llvm::BasicBlock* true_block,
                                     llvm::BasicBlock* false_block) {
   const auto depth = temporary_cleanups_.size();
@@ -458,27 +546,81 @@ bool CodeGenFunction::EmitCondition(const Expr& expression, llvm::BasicBlock* tr
   return true;
 }
 
-bool CodeGenFunction::EmitArrayLoop(std::uint64_t count, bool reverse, llvm::StringRef name,
-                                    llvm::function_ref<bool(llvm::Value*)> emit_element) {
-  if (count == 0) {
+bool CodeGenFunction::EmitFullExpr(const Expr& expression) {
+  const auto depth = temporary_cleanups_.size();
+  return EmitIgnoredExpr(expression) && EmitTemporaryCleanups(depth);
+}
+
+void CodeGenFunction::AddTemporaryCleanup(Address address, const Type& type) {
+  if (type.GetTriviality() != TypeTriviality::NonTrivial) {
+    return;
+  }
+  Cleanup cleanup{address, &type, {}};
+  if (conditional_condition_) {
+    if (conditional_inverted_) {
+      llvm::IRBuilder<> before_branch(conditional_entry_->getTerminator());
+      conditional_condition_ = before_branch.CreateNot(conditional_condition_, "cleanup.condition");
+      conditional_inverted_ = false;
+    }
+    cleanup.condition = conditional_condition_;
+  } else if (conditional_entry_) {
+    Address flag = CreateStorage(builder_.getInt1Ty(), "cleanup.active");
+    llvm::IRBuilder<> reset(conditional_entry_->getTerminator());
+    reset.CreateAlignedStore(builder_.getFalse(), flag.pointer, flag.alignment);
+    builder_.CreateAlignedStore(builder_.getTrue(), flag.pointer, flag.alignment);
+    cleanup.condition = flag;
+  }
+  temporary_cleanups_.push_back(cleanup);
+}
+
+bool CodeGenFunction::EmitTemporaryCleanups(std::size_t depth) {
+  for (std::size_t index = temporary_cleanups_.size(); index > depth; --index) {
+    if (!EmitCleanup(temporary_cleanups_[index - 1])) {
+      return false;
+    }
+  }
+  temporary_cleanups_.resize(depth);
+  return true;
+}
+
+bool CodeGenFunction::EmitLocalCleanups(std::size_t depth) {
+  if (!HaveInsertPoint()) {
     return true;
   }
-  auto* predecessor = builder_.GetInsertBlock();
-  auto* body = CreateBasicBlock(name);
-  auto* end = CreateBasicBlock("array.end");
-  EmitBlock(body);
-  auto* cursor = builder_.CreatePHI(GetTargetIndexType(), 2, "array.index");
-  cursor->addIncoming(GetTargetIndex(reverse ? count : 0), predecessor);
-  auto* index = reverse ? builder_.CreateSub(cursor, GetTargetIndex(1), "array.previous") : cursor;
-  if (!emit_element(index)) {
+  // Emitting an exit must not consume the state needed to emit another reachable path.
+  for (std::size_t index = local_cleanups_.size(); index > depth; --index) {
+    const auto& cleanup = local_cleanups_[index - 1];
+    if (!cleanup.active) {
+      continue;
+    }
+    if (cleanup.kind == LocalCleanup::Kind::ExitVirtualDispatch) {
+      if (!EmitVTablePointer(cleanup.address, *cleanup.type->AsStructType()->GetDeclaration())) return false;
+    } else if (!EmitDestroy(cleanup.address, *cleanup.type, cleanup.structor_kind)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool CodeGenFunction::EmitCleanup(const Cleanup& cleanup) {
+  llvm::Value* condition = nullptr;
+  if (const auto* value = std::get_if<llvm::Value*>(&cleanup.condition)) {
+    condition = *value;
+  } else if (const auto* flag = std::get_if<Address>(&cleanup.condition)) {
+    condition = builder_.CreateAlignedLoad(flag->element_type, flag->pointer, flag->alignment, "cleanup.active");
+  }
+  if (!condition) {
+    return EmitDestroy(cleanup.address, *cleanup.type);
+  }
+  auto* destroy = CreateBasicBlock("cleanup.destroy");
+  auto* continuation = CreateBasicBlock("cleanup.end");
+  builder_.CreateCondBr(condition, destroy, continuation);
+  builder_.ClearInsertionPoint();
+  EmitBlock(destroy);
+  if (!EmitDestroy(cleanup.address, *cleanup.type)) {
     return false;
   }
-  auto* next = reverse ? index : builder_.CreateAdd(index, GetTargetIndex(1), "array.next");
-  cursor->addIncoming(next, builder_.GetInsertBlock());
-  auto* finished = builder_.CreateICmpEQ(next, GetTargetIndex(reverse ? 0 : count), "array.finished");
-  builder_.CreateCondBr(finished, end, body);
-  builder_.ClearInsertionPoint();
-  EmitBlock(end);
+  EmitBlock(continuation);
   return true;
 }
 
@@ -499,6 +641,38 @@ bool CodeGenFunction::EmitDestroy(Address address, const Type& type, CodeGen::St
   return EmitStructorCall(*codegen_.destructors_.at(structure->GetDeclaration()), address, {}, kind);
 }
 
+void CodeGenFunction::EnterDestructorCleanups(const DestructorDecl& declaration) {
+  const auto& structure = *declaration.target_type->GetDeclaration();
+  // These entries enclose the user body, so every return destroys locals before subobjects.
+  if (structure.base_type) {
+    local_cleanups_.push_back({EmitBase(this_address_, structure), structure.base_type, nullptr, true,
+                               LocalCleanup::Kind::Destroy, CodeGen::StructorKind::Base});
+  }
+  for (const auto& field : structure.Fields) {
+    if (field->type.GetTypePtr()->GetTriviality() == TypeTriviality::NonTrivial) {
+      local_cleanups_.push_back({EmitField(this_address_, structure, *field), field->type.GetTypePtr(), nullptr, true});
+    }
+  }
+  if (structure.base_type && structure.base_type->GetDeclaration()->IsPolymorphic()) {
+    local_cleanups_.push_back({EmitBase(this_address_, structure), structure.base_type, nullptr, true,
+                               LocalCleanup::Kind::ExitVirtualDispatch});
+  }
+}
+
+bool CodeGenFunction::RegisterGlobalDestructor(const VarDecl& declaration) {
+  if (!CodeGen::NeedsGlobalDestruction(*declaration.type.GetTypePtr())) {
+    return true;
+  }
+  auto* destructor = codegen_.GetGlobalDestructor(declaration);
+  if (!destructor) {
+    return false;
+  }
+  auto* call =
+      builder_.CreateCall(codegen_.cxa_atexit_, {destructor, codegen_.globals_.at(&declaration), codegen_.dso_handle_});
+  call->setDoesNotThrow();
+  return true;
+}
+
 bool CodeGenFunction::EmitVTablePointer(Address object, const StructDecl& stage) {
   if (stage.IsPolymorphic()) {
     auto* table = codegen_.GetVTableAddressPoint(stage);
@@ -506,15 +680,6 @@ bool CodeGenFunction::EmitVTablePointer(Address object, const StructDecl& stage)
     builder_.CreateAlignedStore(table, object.pointer, object.alignment);
   }
   return true;
-}
-
-llvm::Value* CodeGenFunction::EmitVirtualPointerIsNotNull(llvm::Value* pointer) {
-  auto* offset = builder_.CreateExtractValue(pointer, 0, "slot.offset");
-  auto* adjustment = builder_.CreateExtractValue(pointer, 1, "slot.adjustment");
-  auto* has_offset = builder_.CreateICmpNE(offset, llvm::ConstantInt::get(offset->getType(), 0));
-  auto* virtual_bit = builder_.CreateAnd(adjustment, llvm::ConstantInt::get(adjustment->getType(), 1));
-  auto* is_virtual = builder_.CreateICmpNE(virtual_bit, llvm::ConstantInt::get(virtual_bit->getType(), 0));
-  return builder_.CreateOr(has_offset, is_virtual, "slot.nonnull");
 }
 
 llvm::Value* CodeGenFunction::EmitVirtualCallee(const VirtualFunctionDecl& declaration, llvm::Value* receiver) {
@@ -546,178 +711,13 @@ llvm::Value* CodeGenFunction::EmitVirtualCallee(llvm::Value* pointer, llvm::Valu
   return builder_.CreateAlignedLoad(builder_.getPtrTy(), slot, pointer_alignment, "virtual.callee");
 }
 
-void CodeGenFunction::GenerateThunk(const VTableEntry& entry, const CodeGen::FunctionInfo& info,
-                                    llvm::Function& implementation) {
-  StartFunction();
-  // Overrides preserve parameters. Forward the ABI values and result slot directly;
-  // a thunk must not introduce parameter objects or their cleanup.
-  BOOST_ASSERT(function_.getFunctionType() == implementation.getFunctionType());
-  std::vector<llvm::Value*> arguments;
-  for (auto& argument : function_.args()) {
-    arguments.push_back(&argument);
-  }
-  auto* call = builder_.CreateCall(implementation.getFunctionType(), &implementation, arguments);
-  NameCallResult(*call);
-  call->setAttributes(implementation.getAttributes());
-  llvm::Value* result = call;
-  if (entry.return_adjustment != 0) {
-    auto* adjusted =
-        builder_.CreateGEP(builder_.getInt8Ty(), result, GetTargetOffset(entry.return_adjustment), "return.adjusted",
-                           llvm::GEPNoWrapFlags::inBounds() | llvm::GEPNoWrapFlags::noUnsignedWrap());
-    const auto* return_type = entry.interface->type.GetTypePtr()->AsFunctionType()->GetReturnType();
-    result = return_type->AsPointerType() ? builder_.CreateSelect(builder_.CreateIsNull(result),
-                                                                  llvm::ConstantPointerNull::get(builder_.getPtrTy()),
-                                                                  adjusted, "return.nullable")
-                                          : adjusted;
-  }
-  EmitReturnBlock();
-  if (info.type->getReturnType()->isVoidTy()) {
-    builder_.CreateRetVoid();
-  } else {
-    builder_.CreateRet(result);
-  }
-  builder_.ClearInsertionPoint();
-}
-
-void CodeGenFunction::EnterDestructorCleanups(const DestructorDecl& declaration) {
-  const auto& structure = *declaration.target_type->GetDeclaration();
-  // These entries enclose the user body, so every return destroys locals before subobjects.
-  if (structure.base_type) {
-    local_cleanups_.push_back({EmitBase(this_address_, structure), structure.base_type, nullptr, true,
-                               LocalCleanup::Kind::Destroy, CodeGen::StructorKind::Base});
-  }
-  for (const auto& field : structure.Fields) {
-    if (field->type.GetTypePtr()->GetTriviality() == TypeTriviality::NonTrivial) {
-      local_cleanups_.push_back({EmitField(this_address_, structure, *field), field->type.GetTypePtr(), nullptr, true});
-    }
-  }
-  if (structure.base_type && structure.base_type->GetDeclaration()->IsPolymorphic()) {
-    local_cleanups_.push_back({EmitBase(this_address_, structure), structure.base_type, nullptr, true,
-                               LocalCleanup::Kind::ExitVirtualDispatch});
-  }
-}
-
-void CodeGenFunction::StartFunction() {
-  BOOST_ASSERT(function_.empty());
-  builder_.SetInsertPoint(llvm::BasicBlock::Create(*codegen_.llvm_context_, "entry", &function_));
-  return_block_ = CreateBasicBlock("return");
-}
-
-void CodeGenFunction::FinishFunction() {
-  EmitReturnBlock();
-  if (HaveInsertPoint()) {
-    builder_.CreateRetVoid();
-    builder_.ClearInsertionPoint();
-  }
-}
-
-bool CodeGenFunction::Generate(const FunctionDecl& declaration, const CodeGen::FunctionInfo& function_info,
-                               CodeGen::StructorKind kind) {
-  structor_kind_ = kind;
-  StartFunction();
-  if (function_info.this_index) {
-    auto* target = function_.getArg(*function_info.this_index);
-    target->setName("this");
-    const StructType* this_type = declaration.GetKind() == NodeKind::ConstructorDecl
-                                      ? static_cast<const ConstructorDecl&>(declaration).target_type
-                                      : static_cast<const DestructorDecl&>(declaration).target_type;
-    this_address_ = MakeAddress(target, function_info.this_type, this_type);
-  }
-  if (!declaration.type.GetTypePtr()->AsFunctionType()->GetReturnType()->IsVoid()) {
-    if (!declaration.ReturnVar) {
-      return codegen_.InternalError(declaration, "function has no result declaration");
-    }
-    const auto& result = *declaration.ReturnVar;
-    const llvm::StringRef name = result.name.empty() ? ".result" : llvm::StringRef(result.name);
-    if (function_info.result_index) {
-      auto* address = function_.getArg(*function_info.result_index);
-      address->setName(name);
-      locals_.emplace(&result, MakeAddress(address, function_info.result.memory_type, result.type.GetTypePtr(),
-                                           Overlap::DoesNotOverlap));
-    } else if (!DeclareVariable(result, name)) {
-      return false;
-    }
-  }
-  for (std::size_t index = 0; index < declaration.ParmVars.size(); ++index) {
-    const auto& parameter = *declaration.ParmVars[index];
-    const auto& info = function_info.parameters[index];
-    llvm::Argument* argument = info.llvm_index ? function_.getArg(*info.llvm_index) : nullptr;
-    if (info.abi.kind == CodeGen::ABIArgInfo::Kind::Indirect) {
-      // The caller has already formed this parameter's independent value object.
-      argument->setName(parameter.name);
-      locals_.emplace(&parameter, MakeAddress(argument, info.abi.memory_type, parameter.type.GetTypePtr(),
-                                              Overlap::DoesNotOverlap));
-      continue;
-    }
-    const bool aggregate = IsAggregate(*parameter.type.GetTypePtr());
-    const bool coerced = argument && aggregate && info.abi.direct_type != info.abi.memory_type;
-    Address storage = DeclareVariable(parameter, argument && !coerced ? parameter.name + ".addr" : parameter.name);
-    if (!storage) {
-      return false;
-    }
-    if (argument) {
-      argument->setName(coerced ? parameter.name + ".coerce" : parameter.name);
-      if (aggregate) {
-        EmitCoercedStore(argument, storage);
-      } else {
-        EmitStoreOfScalar(argument, storage, *parameter.type.GetTypePtr());
-      }
-    }
-  }
-  if (declaration.GetKind() == NodeKind::DestructorDecl) {
-    if (!EmitVTablePointer(this_address_,
-                           *static_cast<const DestructorDecl&>(declaration).target_type->GetDeclaration()))
-      return false;
-    EnterDestructorCleanups(static_cast<const DestructorDecl&>(declaration));
-  }
-  if (!EmitCompound(*declaration.Body) || !EmitLocalCleanups(0)) {
-    return false;
-  }
-  return EmitFunctionReturn(declaration, function_info);
-}
-
-bool CodeGenFunction::GenerateGlobalVarInit(const VarGroupDecl& declaration) {
-  StartFunction();
-  if (!EmitVarGroup(declaration)) {
-    return false;
-  }
-  FinishFunction();
-  return true;
-}
-
-void CodeGenFunction::GenerateGlobalInit(llvm::ArrayRef<llvm::Function*> initializers) {
-  StartFunction();
-  for (auto* initializer : initializers) {
-    builder_.CreateCall(initializer);
-  }
-  FinishFunction();
-}
-
-bool CodeGenFunction::GenerateGlobalDestructor(const VarDecl& declaration) {
-  StartFunction();
-  auto* object = function_.getArg(0);
-  object->setName("object");
-  auto* type = codegen_.globals_.at(&declaration)->getValueType();
-  if (!EmitDestroy(MakeAddress(object, type, declaration.type.GetTypePtr(), Overlap::DoesNotOverlap),
-                   *declaration.type.GetTypePtr())) {
-    return false;
-  }
-  FinishFunction();
-  return true;
-}
-
-bool CodeGenFunction::RegisterGlobalDestructor(const VarDecl& declaration) {
-  if (!CodeGen::NeedsGlobalDestruction(*declaration.type.GetTypePtr())) {
-    return true;
-  }
-  auto* destructor = codegen_.GetGlobalDestructor(declaration);
-  if (!destructor) {
-    return false;
-  }
-  auto* call =
-      builder_.CreateCall(codegen_.cxa_atexit_, {destructor, codegen_.globals_.at(&declaration), codegen_.dso_handle_});
-  call->setDoesNotThrow();
-  return true;
+llvm::Value* CodeGenFunction::EmitVirtualPointerIsNotNull(llvm::Value* pointer) {
+  auto* offset = builder_.CreateExtractValue(pointer, 0, "slot.offset");
+  auto* adjustment = builder_.CreateExtractValue(pointer, 1, "slot.adjustment");
+  auto* has_offset = builder_.CreateICmpNE(offset, llvm::ConstantInt::get(offset->getType(), 0));
+  auto* virtual_bit = builder_.CreateAnd(adjustment, llvm::ConstantInt::get(adjustment->getType(), 1));
+  auto* is_virtual = builder_.CreateICmpNE(virtual_bit, llvm::ConstantInt::get(virtual_bit->getType(), 0));
+  return builder_.CreateOr(has_offset, is_virtual, "slot.nonnull");
 }
 
 bool CodeGenFunction::EmitCompound(const CompoundStmt& statement) {
@@ -2033,6 +2033,43 @@ llvm::Value* CodeGenFunction::EmitConditionalExpr(const ConditionalOperator& exp
   return result;
 }
 
+bool CodeGenFunction::EmitCallArguments(const FunctionType& signature, const CodeGen::FunctionInfo& info,
+                                        llvm::ArrayRef<const Expr*> sources, EvaluationOrder order,
+                                        std::vector<llvm::Value*>& arguments) {
+  const auto& parameters = signature.GetParameterTypes();
+  BOOST_ASSERT(sources.size() == parameters.size());
+  for (std::size_t position = 0; position < sources.size(); ++position) {
+    // Evaluation order controls formation and cleanup registration, not ABI parameter positions.
+    const auto index = order == EvaluationOrder::LeftToRight ? position : sources.size() - position - 1;
+    const auto& parameter = info.parameters[index];
+    if (parameter.abi.kind == CodeGen::ABIArgInfo::Kind::Ignore) {
+      if (!EmitIgnoredExpr(*sources[index])) {
+        return false;
+      }
+      continue;
+    }
+    llvm::Value* value = nullptr;
+    if (IsAggregate(*parameters[index])) {
+      Address storage = CreateStorage(parameter.abi.memory_type, "argument", parameters[index]);
+      if (!EmitAggExpr(*sources[index], storage)) {
+        return false;
+      }
+      AddTemporaryCleanup(storage, *parameters[index]);
+      value = parameter.abi.kind == CodeGen::ABIArgInfo::Kind::Indirect
+                  ? storage.pointer
+                  : EmitCoercedLoad(storage, parameter.abi.direct_type);
+    } else {
+      value =
+          parameters[index]->AsReferenceType() ? EmitLValue(*sources[index]).pointer : EmitScalarExpr(*sources[index]);
+    }
+    if (!value) {
+      return false;
+    }
+    arguments[*parameter.llvm_index] = value;
+  }
+  return true;
+}
+
 std::optional<RValue> CodeGenFunction::EmitCall(const CallExpr& expression, ReturnValueSlot slot) {
   const Expr* callee = expression.Callee->IgnoreParens();
   const Decl* declaration =
@@ -2138,43 +2175,6 @@ RValue CodeGenFunction::EmitCall(const FunctionType& signature, const CodeGen::F
     return RValue{result_address};
   }
   return RValue{static_cast<llvm::Value*>(call)};
-}
-
-bool CodeGenFunction::EmitCallArguments(const FunctionType& signature, const CodeGen::FunctionInfo& info,
-                                        llvm::ArrayRef<const Expr*> sources, EvaluationOrder order,
-                                        std::vector<llvm::Value*>& arguments) {
-  const auto& parameters = signature.GetParameterTypes();
-  BOOST_ASSERT(sources.size() == parameters.size());
-  for (std::size_t position = 0; position < sources.size(); ++position) {
-    // Evaluation order controls formation and cleanup registration, not ABI parameter positions.
-    const auto index = order == EvaluationOrder::LeftToRight ? position : sources.size() - position - 1;
-    const auto& parameter = info.parameters[index];
-    if (parameter.abi.kind == CodeGen::ABIArgInfo::Kind::Ignore) {
-      if (!EmitIgnoredExpr(*sources[index])) {
-        return false;
-      }
-      continue;
-    }
-    llvm::Value* value = nullptr;
-    if (IsAggregate(*parameters[index])) {
-      Address storage = CreateStorage(parameter.abi.memory_type, "argument", parameters[index]);
-      if (!EmitAggExpr(*sources[index], storage)) {
-        return false;
-      }
-      AddTemporaryCleanup(storage, *parameters[index]);
-      value = parameter.abi.kind == CodeGen::ABIArgInfo::Kind::Indirect
-                  ? storage.pointer
-                  : EmitCoercedLoad(storage, parameter.abi.direct_type);
-    } else {
-      value =
-          parameters[index]->AsReferenceType() ? EmitLValue(*sources[index]).pointer : EmitScalarExpr(*sources[index]);
-    }
-    if (!value) {
-      return false;
-    }
-    arguments[*parameter.llvm_index] = value;
-  }
-  return true;
 }
 
 }  // namespace cw::codegen_detail

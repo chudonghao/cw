@@ -113,46 +113,63 @@ class CodeGenFunction {
   bool GenerateGlobalDestructor(const VarDecl& declaration);
 
  private:
+  // Target index type and its unsigned index and signed offset constants.
   llvm::IntegerType* GetTargetIndexType() const;
   llvm::ConstantInt* GetTargetIndex(std::uint64_t value) const;
   llvm::ConstantInt* GetTargetOffset(std::int64_t value) const;
+
+  // Entry and return blocks around function emission.
   void StartFunction();
   void FinishFunction();
+
+  // Address construction, entry-block storage, and variable storage lookup.
   Address MakeAddress(llvm::Value* pointer, llvm::Type* element_type, const Type* semantic_type = nullptr,
                       Overlap overlap = Overlap::MayOverlap) const;
   Address CreateStorage(llvm::Type* type, llvm::StringRef name, const Type* semantic_type = nullptr);
   Address DeclareVariable(const VarDecl& declaration, llvm::StringRef name = {});
   Address GetStorage(const VarDecl& declaration);
+
+  // Array element, struct element, base, and field addresses.
   Address EmitArrayElement(Address array, llvm::Value* index, bool in_bounds = false);
   Address EmitStructElement(Address object, unsigned index, llvm::StringRef name);
   Address EmitBase(Address object, const StructDecl& declaration);
   Address EmitField(Address object, const StructDecl& declaration, const FieldDecl& field);
+
+  // Loads, stores, aggregate copies, and per-element array loops.
   std::uint64_t GetOperationSize(Address address) const;
   void EmitAggregateCopy(Address destination, Address source);
   llvm::Value* EmitCoercedLoad(Address source, llvm::Type* type);
   void EmitCoercedStore(llvm::Value* value, Address destination);
   llvm::Value* EmitLoadOfScalar(Address address, const Type& type);
   void EmitStoreOfScalar(llvm::Value* value, Address address, const Type& type);
+  bool EmitArrayLoop(std::uint64_t count, bool reverse, llvm::StringRef name,
+                     llvm::function_ref<bool(llvm::Value*)> emit_element);
+
+  // Basic blocks, branches, and boolean conditions.
   llvm::BasicBlock* CreateBasicBlock(llvm::StringRef name);
   bool HaveInsertPoint() const;
   void EmitBranch(llvm::BasicBlock* target);
   void EmitBlock(llvm::BasicBlock* block, bool is_finished = false);
   bool EmitBranchOnBoolExpr(const Expr& expression, llvm::BasicBlock* true_block, llvm::BasicBlock* false_block);
   bool EmitCondition(const Expr& expression, llvm::BasicBlock* true_block, llvm::BasicBlock* false_block);
+
+  // Full expressions, temporary and local cleanups, and object destruction.
   bool EmitFullExpr(const Expr& expression);
   void AddTemporaryCleanup(Address address, const Type& type);
   bool EmitTemporaryCleanups(std::size_t depth);
   bool EmitLocalCleanups(std::size_t depth);
   bool EmitCleanup(const Cleanup& cleanup);
   bool EmitDestroy(Address address, const Type& type, CodeGen::StructorKind kind = CodeGen::StructorKind::Complete);
+  void EnterDestructorCleanups(const DestructorDecl& declaration);
+  bool RegisterGlobalDestructor(const VarDecl& declaration);
+
+  // Virtual table pointers and virtual dispatch.
   bool EmitVTablePointer(Address object, const StructDecl& stage);
   llvm::Value* EmitVirtualCallee(const VirtualFunctionDecl& declaration, llvm::Value* receiver);
   llvm::Value* EmitVirtualCallee(llvm::Value* pointer, llvm::Value*& receiver);
   llvm::Value* EmitVirtualPointerIsNotNull(llvm::Value* pointer);
-  void EnterDestructorCleanups(const DestructorDecl& declaration);
-  bool RegisterGlobalDestructor(const VarDecl& declaration);
-  bool EmitArrayLoop(std::uint64_t count, bool reverse, llvm::StringRef name,
-                     llvm::function_ref<bool(llvm::Value*)> emit_element);
+
+  // Statements, variable initialization, and function returns.
   bool EmitCompound(const CompoundStmt& statement);
   bool EmitStmt(const Stmt& statement);
   bool EmitIfStmt(const IfStmt& statement);
@@ -162,12 +179,16 @@ class CodeGenFunction {
   bool EmitInitialization(Address target, const Type& type, const Expr& source);
   void EmitReturnBlock();
   bool EmitFunctionReturn(const FunctionDecl& declaration, const CodeGen::FunctionInfo& function_info);
+
+  // Discarded expressions and lvalues.
   bool EmitIgnoredExpr(const Expr& expression);
   bool EmitIgnoredConditionalExpr(const ConditionalOperator& expression);
   Address EmitLValue(const Expr& expression);
   Address EmitBaseSubobject(const Expr& source, const std::vector<const StructDecl*>& path, bool through_pointer);
   Address EmitMemberExpr(const MemberExpr& expression);
   Address EmitConditionalLValue(const ConditionalOperator& expression);
+
+  // Aggregate expressions, object construction, and structor calls.
   bool EmitAggExpr(const Expr& expression, Address destination);
   bool EmitConstruction(const ConstructionExpr& expression, Address destination);
   bool EmitArrayConstruction(Address destination, Address source, const ArrayType& type,
@@ -176,9 +197,8 @@ class CodeGenFunction {
                            const ArrayAssignmentExpr& assignment);
   bool EmitStructorCall(const FunctionDecl& declaration, Address target, llvm::ArrayRef<const Expr*> sources,
                         CodeGen::StructorKind kind = CodeGen::StructorKind::Complete);
-  bool EmitCallArguments(const FunctionType& signature, const CodeGen::FunctionInfo& info,
-                         llvm::ArrayRef<const Expr*> sources, EvaluationOrder order,
-                         std::vector<llvm::Value*>& arguments);
+
+  // Scalar expressions, pointer arithmetic, and numeric operators.
   llvm::Value* EmitScalarExpr(const Expr& expression);
   llvm::Value* EmitScalarIncrementDecrement(const UnaryOperator& expression, Address target);
   llvm::Value* EmitPointerOffset(const Expr& expression, llvm::Value* pointer, llvm::Value* offset,
@@ -190,6 +210,11 @@ class CodeGenFunction {
   llvm::Value* EmitIntegerDivRem(llvm::Value* lhs, llvm::Value* rhs, bool is_division, bool is_signed);
   llvm::Value* EmitLogicalExpr(const BinaryOperator& expression);
   llvm::Value* EmitConditionalExpr(const ConditionalOperator& expression);
+
+  // Call argument lowering and call emission.
+  bool EmitCallArguments(const FunctionType& signature, const CodeGen::FunctionInfo& info,
+                         llvm::ArrayRef<const Expr*> sources, EvaluationOrder order,
+                         std::vector<llvm::Value*>& arguments);
   std::optional<RValue> EmitCall(const CallExpr& expression, ReturnValueSlot slot = {});
   RValue EmitCall(const FunctionType& signature, const CodeGen::FunctionInfo& info, llvm::Value* target,
                   std::vector<llvm::Value*>& arguments, ReturnValueSlot slot);

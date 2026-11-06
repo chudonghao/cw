@@ -172,31 +172,44 @@ class CodeGen {
   std::unique_ptr<llvm::Module> operator()(std::string_view module_name = "cw");
 
  private:
+  // Target ABI selection and pointer index type.
   TargetABI GetTargetABI() const;
   llvm::IntegerType* GetPointerIndexType() const;
+
+  // Type layout and lowering to LLVM types.
   TypeLayout GetTypeLayoutForMem(const Type& type) const;
   TypeConversionResult ConvertType(const Type& type);
   TypeConversionResult ConvertTypeForMem(const Type& type);
   TypeConversionResult ConvertStructType(const StructDecl& declaration);
+
+  // ABI classification and function signatures.
   ABIArgInfoResult ClassifyTypeForABI(const Type& type, bool is_return);
   ABIArgInfo ClassifyDarwinAggregate(const Type& type, llvm::Type* memory_type, bool is_return);
   ABIArgInfo ClassifyWasmAggregate(const Type& type, llvm::Type* memory_type, bool is_return);
   FunctionInfoResult GetFunctionInfo(const FunctionType& type, const StructType* this_type = nullptr);
   FunctionInfoResult GetFunctionInfo(const FunctionDecl& declaration, StructorKind kind = StructorKind::Complete);
   llvm::AttributeList GetFunctionAttributes(const FunctionType& type, const FunctionInfo& info) const;
-  llvm::GlobalVariable* GetAddrOfStringLiteral(const StringLiteral& literal);
+
+  // Function names and declarations.
+  std::string GetFunctionName(const FunctionDecl& declaration, StructorKind kind) const;
+  llvm::Function* GetOrCreateFunction(const FunctionDecl& declaration, StructorKind kind = StructorKind::Complete);
+
+  // Virtual tables, address points, and entries.
   llvm::GlobalVariable* GetOrCreateVTable(const StructDecl& declaration);
   bool EmitVTableDefinition(const StructDecl& declaration);
   llvm::Constant* GetVTableAddressPoint(const StructDecl& declaration);
   llvm::Constant* GetVirtualFunctionPointer(const VirtualFunctionDecl& declaration);
   llvm::Function* GetVTableEntry(const VTableEntry& entry);
-  std::string GetFunctionName(const FunctionDecl& declaration, StructorKind kind) const;
-  llvm::Function* GetOrCreateFunction(const FunctionDecl& declaration, StructorKind kind = StructorKind::Complete);
+
+  // String literals, global variables, and global initialization and destruction.
+  llvm::GlobalVariable* GetAddrOfStringLiteral(const StringLiteral& literal);
   bool DeclareGlobalVariable(const VarDecl& declaration);
   static bool NeedsGlobalDestruction(const Type& type);
   void DeclareGlobalDestructionRuntime();
   llvm::Function* GetGlobalDestructor(const VarDecl& declaration);
   bool EmitGlobalInitializers(const TranslationUnitDecl& declaration);
+
+  // Diagnostics for type conversion failures, unsupported features, and internal errors.
   bool DiagnoseTypeConversionFailure(const Node& node, TypeConversionFailure failure, std::string_view feature);
   bool Unsupported(const Node& node, std::string_view feature);
   bool InternalError(const Node& node, std::string_view message);
