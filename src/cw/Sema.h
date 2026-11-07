@@ -277,8 +277,7 @@ class Sema {
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeUnaryOperator(std::unique_ptr<Expr> expression);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeBinaryOperator(std::unique_ptr<Expr> expression);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeOverloadableOperator(std::unique_ptr<Expr> expression,
-                                                                  expr::ExprGrammarSymbol op,
-                                                                  SourceRange operator_range,
+                                                                  OverloadedOperatorKind op, SourceRange operator_range,
                                                                   const std::vector<std::unique_ptr<Expr>*>& operands);
   void AnalyzeBuiltinUnaryOperator(UnaryOperator& expression);
   void AnalyzeBuiltinBinaryOperator(BinaryOperator& expression);

@@ -6,7 +6,9 @@
 #include "ExprParser.h"
 
 #include <algorithm>
+#include <array>
 #include <iostream>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -28,6 +30,284 @@ enum HandleSymbolResult {
   kHandleSymbolResultError,
 };
 
+// Token kinds outside the expression grammar end an expression; the switch names every kind so that a new token
+// must decide whether it is a terminal.
+std::optional<expr::ExprGrammarSymbol> GetGrammarTerminal(tok::TokenType type) {
+  switch (type) {
+    case tok::identifier:
+      return expr::identifier;
+    case tok::null_literal:
+      return expr::null_literal;
+    case tok::bool_literal:
+      return expr::bool_literal;
+    case tok::integer_literal:
+      return expr::integer_literal;
+    case tok::character_literal:
+      return expr::character_literal;
+    case tok::float_literal:
+      return expr::float_literal;
+    case tok::string_literal:
+      return expr::string_literal;
+    case tok::move_:
+      return expr::move_;
+    case tok::operator_:
+      return expr::operator_;
+    case tok::builtin_type:
+      return expr::builtin_type;
+    case tok::this_:
+      return expr::this_;
+    case tok::ctor:
+      return expr::ctor_;
+    case tok::dtor:
+      return expr::dtor_;
+    case tok::nonvirtual_:
+      return expr::nonvirtual_;
+    case tok::period:
+      return expr::period;
+    case tok::arrow:
+      return expr::arrow;
+    case tok::amp:
+      return expr::amp;
+    case tok::ampamp:
+      return expr::ampamp;
+    case tok::star:
+      return expr::star;
+    case tok::plus:
+      return expr::plus;
+    case tok::plusplus:
+      return expr::plusplus;
+    case tok::minus:
+      return expr::minus;
+    case tok::minusminus:
+      return expr::minusminus;
+    case tok::tilde:
+      return expr::tilde;
+    case tok::exclaim:
+      return expr::exclaim;
+    case tok::exclaimequal:
+      return expr::exclaimequal;
+    case tok::slash:
+      return expr::slash;
+    case tok::percent:
+      return expr::percent;
+    case tok::less:
+      return expr::less;
+    case tok::lessequal:
+      return expr::lessequal;
+    case tok::lessless:
+      return expr::lessless;
+    case tok::greater:
+      return expr::greater;
+    case tok::greaterequal:
+      return expr::greaterequal;
+    case tok::greatergreater:
+      return expr::greatergreater;
+    case tok::caret:
+      return expr::caret;
+    case tok::pipe:
+      return expr::pipe;
+    case tok::pipepipe:
+      return expr::pipepipe;
+    case tok::question:
+      return expr::question;
+    case tok::colon:
+      return expr::colon;
+    case tok::colonequal:
+      return expr::colonequal;
+    case tok::coloncolon:
+      return expr::coloncolon;
+    case tok::equal:
+      return expr::equal;
+    case tok::plusequal:
+      return expr::plusequal;
+    case tok::minusequal:
+      return expr::minusequal;
+    case tok::starequal:
+      return expr::starequal;
+    case tok::slashequal:
+      return expr::slashequal;
+    case tok::percentequal:
+      return expr::percentequal;
+    case tok::lesslessequal:
+      return expr::lesslessequal;
+    case tok::greatergreaterequal:
+      return expr::greatergreaterequal;
+    case tok::ampequal:
+      return expr::ampequal;
+    case tok::caretequal:
+      return expr::caretequal;
+    case tok::pipeequal:
+      return expr::pipeequal;
+    case tok::equalequal:
+      return expr::equalequal;
+    case tok::comma:
+      return expr::comma;
+    case tok::semi:
+      return expr::semi;
+    case tok::l_square:
+      return expr::l_square;
+    case tok::r_square:
+      return expr::r_square;
+    case tok::l_paren:
+      return expr::l_paren;
+    case tok::r_paren:
+      return expr::r_paren;
+    case tok::l_brace:
+      return expr::l_brace;
+    case tok::r_brace:
+      return expr::r_brace;
+    case tok::invalid:
+    case tok::const_:
+    case tok::mut:
+    case tok::copy:
+    case tok::struct_:
+    case tok::trivial_:
+    case tok::virtual_:
+    case tok::abstract_:
+    case tok::override_:
+    case tok::func:
+    case tok::var:
+    case tok::alias:
+    case tok::namespace_:
+    case tok::export_:
+    case tok::import_:
+    case tok::if_:
+    case tok::else_:
+    case tok::while_:
+    case tok::for_:
+    case tok::break_:
+    case tok::continue_:
+    case tok::return_:
+    case tok::comment:
+    case tok::blank:
+    case tok::eol:
+    case tok::eof:
+    case tok::eos:
+    case tok::undefined:
+      return std::nullopt;
+  }
+  return std::nullopt;
+}
+
+// Diagnostics describe expected terminals by token. The inverse is built from GetGrammarTerminal, so that switch stays
+// the only table relating the two.
+tok::TokenType GetTerminalToken(expr::ExprGrammarSymbol terminal) {
+  static const auto kTokens = [] {
+    std::array<tok::TokenType, expr::num_symbols> tokens{};
+    tokens.fill(tok::invalid);
+    for (int value = tok::invalid; value <= tok::undefined; ++value) {
+      const auto type = static_cast<tok::TokenType>(value);
+      if (const auto mapped = GetGrammarTerminal(type)) tokens[*mapped] = type;
+    }
+    return tokens;
+  }();
+  BOOST_ASSERT(kTokens[terminal] != tok::invalid);
+  return kTokens[terminal];
+}
+
+// The grammar reduces only these tokens into operators, so the mappings below are total over their callers.
+UnaryOperatorKind GetPrefixOperatorKind(tok::TokenType type) {
+  switch (type) {
+    case tok::plusplus:
+      return UnaryOperatorKind::PreIncrement;
+    case tok::minusminus:
+      return UnaryOperatorKind::PreDecrement;
+    case tok::plus:
+      return UnaryOperatorKind::Plus;
+    case tok::minus:
+      return UnaryOperatorKind::Minus;
+    case tok::exclaim:
+      return UnaryOperatorKind::LogicalNot;
+    case tok::tilde:
+      return UnaryOperatorKind::BitwiseNot;
+    case tok::star:
+      return UnaryOperatorKind::Dereference;
+    case tok::amp:
+      return UnaryOperatorKind::AddressOf;
+    case tok::move_:
+      return UnaryOperatorKind::Move;
+    default:
+      BOOST_ASSERT(false && "token is not a prefix operator");
+      return UnaryOperatorKind::Plus;
+  }
+}
+
+UnaryOperatorKind GetPostfixOperatorKind(tok::TokenType type) {
+  BOOST_ASSERT(type == tok::plusplus || type == tok::minusminus);
+  return type == tok::plusplus ? UnaryOperatorKind::PostIncrement : UnaryOperatorKind::PostDecrement;
+}
+
+BinaryOperatorKind GetBinaryOperatorKind(tok::TokenType type) {
+  switch (type) {
+    case tok::star:
+      return BinaryOperatorKind::Multiply;
+    case tok::slash:
+      return BinaryOperatorKind::Divide;
+    case tok::percent:
+      return BinaryOperatorKind::Remainder;
+    case tok::plus:
+      return BinaryOperatorKind::Add;
+    case tok::minus:
+      return BinaryOperatorKind::Subtract;
+    case tok::lessless:
+      return BinaryOperatorKind::ShiftLeft;
+    case tok::greatergreater:
+      return BinaryOperatorKind::ShiftRight;
+    case tok::less:
+      return BinaryOperatorKind::Less;
+    case tok::lessequal:
+      return BinaryOperatorKind::LessEqual;
+    case tok::greater:
+      return BinaryOperatorKind::Greater;
+    case tok::greaterequal:
+      return BinaryOperatorKind::GreaterEqual;
+    case tok::equalequal:
+      return BinaryOperatorKind::Equal;
+    case tok::exclaimequal:
+      return BinaryOperatorKind::NotEqual;
+    case tok::amp:
+      return BinaryOperatorKind::BitwiseAnd;
+    case tok::caret:
+      return BinaryOperatorKind::BitwiseXor;
+    case tok::pipe:
+      return BinaryOperatorKind::BitwiseOr;
+    case tok::ampamp:
+      return BinaryOperatorKind::LogicalAnd;
+    case tok::pipepipe:
+      return BinaryOperatorKind::LogicalOr;
+    case tok::equal:
+      return BinaryOperatorKind::Assign;
+    case tok::starequal:
+      return BinaryOperatorKind::MultiplyAssign;
+    case tok::slashequal:
+      return BinaryOperatorKind::DivideAssign;
+    case tok::percentequal:
+      return BinaryOperatorKind::RemainderAssign;
+    case tok::plusequal:
+      return BinaryOperatorKind::AddAssign;
+    case tok::minusequal:
+      return BinaryOperatorKind::SubtractAssign;
+    case tok::lesslessequal:
+      return BinaryOperatorKind::ShiftLeftAssign;
+    case tok::greatergreaterequal:
+      return BinaryOperatorKind::ShiftRightAssign;
+    case tok::ampequal:
+      return BinaryOperatorKind::BitwiseAndAssign;
+    case tok::caretequal:
+      return BinaryOperatorKind::BitwiseXorAssign;
+    case tok::pipeequal:
+      return BinaryOperatorKind::BitwiseOrAssign;
+    default:
+      BOOST_ASSERT(false && "token is not a binary operator");
+      return BinaryOperatorKind::Add;
+  }
+}
+
+MemberAccessKind GetMemberAccessKind(tok::TokenType type) {
+  BOOST_ASSERT(type == tok::period || type == tok::arrow);
+  return type == tok::arrow ? MemberAccessKind::Arrow : MemberAccessKind::Dot;
+}
+
 constexpr expr::ExprGrammarSymbol kExpressionTerminators[] = {
     expr::comma, expr::semi, expr::l_brace, expr::r_brace, expr::r_square,
 };
@@ -44,7 +324,7 @@ ExprParser::ExprParser(Parser* parent) : LRStateMachine(ExprGrammar(), ExprParse
     BOOST_ASSERT(terminator < parse_table_.num_symbols());
     for (int state = 0; state < parse_table_.num_states(); ++state) {
       auto& action = parse_table_(state, terminator);
-      if (action.type == lang::kActionError) {
+      if (action.type == grammar::kActionError) {
         action = parse_table_(state, expr::$);
       }
     }
@@ -69,8 +349,8 @@ std::unique_ptr<Expr> ExprParser::operator()() {
     HandleSymbolResult result = kHandleSymbolResultError;
     if (token.type == tok::eos || token.type == tok::eof) {
       result = static_cast<HandleSymbolResult>(LRStateMachine::operator()(expr::$));
-    } else if (is_terminal(static_cast<expr::ExprGrammarSymbol>(token.type))) {
-      result = static_cast<HandleSymbolResult>(LRStateMachine::operator()(token.type));
+    } else if (const auto terminal = GetGrammarTerminal(token.type)) {
+      result = static_cast<HandleSymbolResult>(LRStateMachine::operator()(*terminal));
     } else {
       const int state = state_stack_.empty() ? 0 : state_stack_.back();
       ReportError(state);
@@ -113,7 +393,7 @@ int ExprParser::OnReduced(int production_id, int, int) {
 
 int ExprParser::OnErrored(int state, int symbol) {
   // At an operand position, delegate an array type (including its length expression) to Parser.
-  if (symbol == expr::l_square && parse_table_(state, expr::type).type == lang::kActionShift) {
+  if (symbol == expr::l_square && parse_table_(state, expr::type).type == grammar::kActionShift) {
     auto parsed_type = parent_->Type_();
     pending_type_ = parsed_type.Take();
     if (!pending_type_) {
@@ -149,7 +429,7 @@ std::vector<tok::TokenType> ExprParser::ExpectedTokens(int state) const {
 
   std::vector<tok::TokenType> expected;
   for (int symbol = expr::terminals_start; symbol < expr::terminals_end; ++symbol) {
-    if (parse_table_(state, symbol).type == lang::kActionError) {
+    if (parse_table_(state, symbol).type == grammar::kActionError) {
       continue;
     }
 
@@ -160,7 +440,7 @@ std::vector<tok::TokenType> ExprParser::ExpectedTokens(int state) const {
     } else if (symbol == expr::$) {
       expected.push_back(tok::eos);
     } else {
-      expected.push_back(static_cast<tok::TokenType>(symbol));
+      expected.push_back(GetTerminalToken(static_cast<expr::ExprGrammarSymbol>(symbol)));
     }
   }
   BOOST_ASSERT(!expected.empty());
@@ -170,7 +450,7 @@ std::vector<tok::TokenType> ExprParser::ExpectedTokens(int state) const {
 void ExprParser::HandleExpect(std::vector<tok::TokenType> expected) { parent_->HandleExpect(expected); }
 
 void ExprParser::SetupRealReduceFunctions() {
-  using Production = lang::Production<expr::ExprGrammarSymbol>;
+  using Production = grammar::Production<expr::ExprGrammarSymbol>;
   using ReduceFunction = int (ExprParser::*)();
 
   std::unordered_map<Production, ReduceFunction, boost::hash<Production>> map;
@@ -310,7 +590,7 @@ void ExprParser::SetupRealReduceFunctions() {
   map[Production(expr::T16, {expr::T15, expr::pipeequal, expr::T16})] = &ExprParser::Reduce_T16__T15_pipeequal_T16;
   // clang-format on
 
-  lang::ProductionTransform<int, expr::ExprGrammarSymbol> transform;
+  grammar::ProductionTransform<int, expr::ExprGrammarSymbol> transform;
   real_reduce_functions_.resize(grammar_.NumProductions());
   for (int production_id = 0; production_id < grammar_.NumProductions(); ++production_id) {
     real_reduce_functions_[production_id] = map[transform(grammar_.P(production_id))];
@@ -494,8 +774,7 @@ int ExprParser::Reduce_OperatorFunctionName__operator_operator() {
 
   auto reference = std::make_unique<DeclRefExpr>();
   reference->range = {keyword.range.begin, operation.range.end};
-  reference->name =
-      NameSyntax::Operator(expr::to_string(static_cast<expr::ExprGrammarSymbol>(operation.type)), reference->range);
+  reference->name = NameSyntax::Operator(tok::to_string(operation.type), reference->range);
   real_symbol_stack_.pop_back();
   real_symbol_stack_.pop_back();
   real_symbol_stack_.emplace_back(SymbolValue{std::unique_ptr<Expr>(std::move(reference))});
@@ -723,8 +1002,7 @@ int ExprParser::Reduce_PostfixExpr__PostfixExpr_access_identifier() {
   member->member = std::get<IdentifierProperty>(identifier.property).name;
   member->member_range = identifier.range;
   member->operator_range = access.range;
-  member->op = static_cast<expr::ExprGrammarSymbol>(access.type);
-  BOOST_ASSERT(member->op == expr::period || member->op == expr::arrow);
+  member->op = GetMemberAccessKind(access.type);
 
   real_symbol_stack_.pop_back();
   real_symbol_stack_.pop_back();
@@ -752,8 +1030,7 @@ int ExprParser::Reduce_PostfixExpr__PostfixExpr_access_NonVirtualCallName_Parent
   call->range = {receiver->range.begin, arguments.range.end};
   call->Receiver = std::move(receiver);
   call->operator_range = access.range;
-  call->op = static_cast<expr::ExprGrammarSymbol>(access.type);
-  BOOST_ASSERT(call->op == expr::period || call->op == expr::arrow);
+  call->op = GetMemberAccessKind(access.type);
   call->Callee = std::move(callee);
   call->Args = std::move(arguments.arguments);
   call->is_nonvirtual = true;
@@ -905,19 +1182,18 @@ int ExprParser::Reduce_UnaryOperator() {
   const bool is_postfix = std::holds_alternative<Token>(second.value);
 
   auto unary = std::make_unique<UnaryOperator>();
-  unary->is_postfix = is_postfix;
   if (is_postfix) {
     auto operand = std::move(std::get<std::unique_ptr<Expr>>(first.value));
     const auto& operation = std::get<Token>(second.value);
     unary->range = {operand->range.begin, operation.range.end};
-    unary->op = static_cast<expr::ExprGrammarSymbol>(operation.type);
+    unary->op = GetPostfixOperatorKind(operation.type);
     unary->operator_range = operation.range;
     unary->Operand = std::move(operand);
   } else {
     const auto& operation = std::get<Token>(first.value);
     auto operand = std::move(std::get<std::unique_ptr<Expr>>(second.value));
     unary->range = {operation.range.begin, operand->range.end};
-    unary->op = static_cast<expr::ExprGrammarSymbol>(operation.type);
+    unary->op = GetPrefixOperatorKind(operation.type);
     unary->operator_range = operation.range;
     unary->Operand = std::move(operand);
   }
@@ -937,7 +1213,7 @@ int ExprParser::Reduce_BinaryOperator() {
   auto binary = std::make_unique<BinaryOperator>();
   binary->range = {left->range.begin, right->range.end};
   binary->LHS = std::move(left);
-  binary->op = static_cast<expr::ExprGrammarSymbol>(operation.type);
+  binary->op = GetBinaryOperatorKind(operation.type);
   binary->operator_range = operation.range;
   binary->RHS = std::move(right);
   real_symbol_stack_.pop_back();

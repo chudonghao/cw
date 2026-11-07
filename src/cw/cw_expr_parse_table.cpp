@@ -11,31 +11,31 @@
 #include <boost/program_options.hpp>
 
 #include "cw/ExprGrammar.h"
-#include "cw/lang/Grammar.h"
-#include "cw/lang/GrammarAnalyzer.h"
-#include "lang/LRParseTable.h"
+#include "cw/grammar/Grammar.h"
+#include "cw/grammar/GrammarAnalyzer.h"
+#include "grammar/LRParseTable.h"
 
 namespace po = boost::program_options;
 
 void print_header() {
   using namespace cw;
 
-  lang::Grammar g = ExprGrammar();
-  auto ga = lang::GrammarAnalyzer::Analyze(g, lang::GrammarAnalyzer::SLR);
+  grammar::Grammar g = ExprGrammar();
+  auto ga = grammar::GrammarAnalyzer::Analyze(g, grammar::GrammarAnalyzer::SLR);
 
-  lang::LRParseTable table = ga.CreateLRParseTable();
+  grammar::LRParseTable table = ga.CreateLRParseTable();
 
   std::cout << "// Auto generated file, do not edit!\n";
-  std::cout << "#include \"cw/lang/LRParseTable.h\"\n";
+  std::cout << "#include \"cw/grammar/LRParseTable.h\"\n";
   std::cout << "namespace cw {\n";
-  std::cout << "inline lang::LRParseTable ExprParseTable() {\n";
-  std::cout << "  lang::LRParseTable table;\n";
+  std::cout << "inline grammar::LRParseTable ExprParseTable() {\n";
+  std::cout << "  grammar::LRParseTable table;\n";
   std::cout << "  table.Resize(" << table.num_states() << ", " << table.num_symbols() << ");\n";
 
   for (int s = 0; s < table.num_states(); ++s) {
     for (int i = 0; i < table.num_symbols(); ++i) {
       auto action = table(s, i);
-      std::cout << "table(" << s << "," << i << ") = " << "{static_cast<lang::LRActionType>(" << action.type << "), "
+      std::cout << "table(" << s << "," << i << ") = " << "{static_cast<grammar::LRActionType>(" << action.type << "), "
                 << action.state << "};\n";
     }
   }
@@ -48,8 +48,8 @@ void print_header() {
 void print_table() {
   using namespace cw;
 
-  lang::Grammar g = ExprGrammar();
-  auto ga = lang::GrammarAnalyzer::Analyze(g, lang::GrammarAnalyzer::SLR);
+  grammar::Grammar g = ExprGrammar();
+  auto ga = grammar::GrammarAnalyzer::Analyze(g, grammar::GrammarAnalyzer::SLR);
 
   ga.DumpSLRParseTable(std::cout);
 }

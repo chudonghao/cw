@@ -205,7 +205,7 @@ class CodeGenFunction {
                                  const PointerType& type, bool subtract, llvm::StringRef name = "add.ptr");
   llvm::Value* EmitPointerDifference(llvm::Value* lhs, llvm::Value* rhs, const PointerType& type);
   llvm::Value* EmitNumericConversion(llvm::Value* value, const BuiltinType& source, const BuiltinType& target);
-  llvm::Value* EmitNumericBinaryOperator(const Expr& expression, expr::ExprGrammarSymbol op, llvm::Value* lhs,
+  llvm::Value* EmitNumericBinaryOperator(const Expr& expression, BinaryOperatorKind op, llvm::Value* lhs,
                                          llvm::Value* rhs, const BuiltinType& type);
   llvm::Value* EmitIntegerDivRem(llvm::Value* lhs, llvm::Value* rhs, bool is_division, bool is_signed);
   llvm::Value* EmitLogicalExpr(const BinaryOperator& expression);

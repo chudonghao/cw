@@ -687,14 +687,14 @@ class AnalysisEngine {
             current->GetKind() == NodeKind::SubscriptExpr || AsObjectBaseSubobjectCast(current))) {
       if (current->GetKind() == NodeKind::MemberExpr) {
         const auto& member = static_cast<const MemberExpr&>(*current);
-        if (member.op == expr::arrow || !member.declaration) {
+        if (member.op == MemberAccessKind::Arrow || !member.declaration) {
           return access;
         }
         segments.push_back(PathSegment::Field(*member.declaration));
         current = SkipLocatingWrappers(member.Base.get());
       } else if (current->GetKind() == NodeKind::BaseSubobjectExpr) {
         const auto& base = static_cast<const BaseSubobjectExpr&>(*current);
-        if (base.op == expr::arrow || base.base_path.empty()) {
+        if (base.op == MemberAccessKind::Arrow || base.base_path.empty()) {
           return access;
         }
         for (auto declaration = base.base_path.rbegin(); declaration != base.base_path.rend(); ++declaration) {
@@ -1094,7 +1094,7 @@ class AnalysisEngine {
       case NodeKind::MemberExpr: {
         const auto& member = static_cast<const MemberExpr&>(expression);
         if (member.Base) {
-          if (member.op == expr::arrow) {
+          if (member.op == MemberAccessKind::Arrow) {
             WalkExpression(*member.Base, environment, collect);
           } else {
             WalkLocatingBase(*member.Base, environment, collect);
@@ -1106,7 +1106,7 @@ class AnalysisEngine {
       case NodeKind::BaseSubobjectExpr: {
         const auto& base = static_cast<const BaseSubobjectExpr&>(expression);
         if (base.Base) {
-          if (base.op == expr::arrow) {
+          if (base.op == MemberAccessKind::Arrow) {
             WalkExpression(*base.Base, environment, collect);
           } else {
             WalkLocatingBase(*base.Base, environment, collect);
@@ -1204,7 +1204,7 @@ class AnalysisEngine {
         if (!member.Base) {
           return;
         }
-        if (member.op == expr::arrow) {
+        if (member.op == MemberAccessKind::Arrow) {
           WalkExpression(*member.Base, environment, collect);
         } else {
           WalkLocatingBase(*member.Base, environment, collect);
@@ -1216,7 +1216,7 @@ class AnalysisEngine {
         if (!base.Base) {
           return;
         }
-        if (base.op == expr::arrow) {
+        if (base.op == MemberAccessKind::Arrow) {
           WalkExpression(*base.Base, environment, collect);
         } else {
           WalkLocatingBase(*base.Base, environment, collect);
@@ -1261,7 +1261,7 @@ class AnalysisEngine {
       case NodeKind::MemberExpr: {
         const auto& member = static_cast<const MemberExpr&>(expression);
         if (member.Base) {
-          if (member.op == expr::arrow) {
+          if (member.op == MemberAccessKind::Arrow) {
             WalkExpression(*member.Base, environment, collect);
           } else {
             WalkLocatingBase(*member.Base, environment, collect);
@@ -1272,7 +1272,7 @@ class AnalysisEngine {
       case NodeKind::BaseSubobjectExpr: {
         const auto& base = static_cast<const BaseSubobjectExpr&>(expression);
         if (base.Base) {
-          if (base.op == expr::arrow) {
+          if (base.op == MemberAccessKind::Arrow) {
             WalkExpression(*base.Base, environment, collect);
           } else {
             WalkLocatingBase(*base.Base, environment, collect);

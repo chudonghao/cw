@@ -1,8 +1,8 @@
 include(GoogleTest)
 
-add_executable(lang_test lang_test.cpp)
-target_link_libraries(lang_test GTest::gtest_main cw.lang)
-gtest_discover_tests(lang_test)
+add_executable(grammar_test grammar_test.cpp)
+target_link_libraries(grammar_test GTest::gtest_main cw.grammar)
+gtest_discover_tests(grammar_test)
 
 add_executable(lexer_test lexer_test.cpp)
 target_link_libraries(lexer_test GTest::gtest_main cw)

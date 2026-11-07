@@ -14,9 +14,12 @@
 #include "ASTDumpTest.h"
 #include "cw/ASTContext.h"
 #include "cw/Diagnostic.h"
+#include "cw/ExprGrammar.h"
 #include "cw/Lexer.h"
 #include "cw/Parser.h"
 #include "cw/Source.h"
+#include "cw/grammar/Grammar.h"
+#include "cw/grammar/GrammarAnalyzer.h"
 
 class ParserTest : public ::testing::Test {
   std::vector<cw::Source> sources_;
@@ -1782,4 +1785,13 @@ TEST_F(ParserTest, DoesNotCarryImportModifierAcrossFiles) {
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-FunctionDecl {{address}} <last.cw:1:1, col:12> F
   `-CompoundStmt {{address}} <col:10, col:12>)");
+}
+
+TEST(Grammar, CW_Expr) {
+  using namespace cw;
+
+  grammar::Grammar g = ExprGrammar();
+  auto ga = grammar::GrammarAnalyzer::Analyze(g, grammar::GrammarAnalyzer::ALL);
+  ASSERT_FALSE(ga.IsLR0());
+  ASSERT_TRUE(ga.IsSLR());
 }

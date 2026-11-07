@@ -15,7 +15,7 @@
 #include "Grammar.h"
 #include "LRParseTable.h"
 
-namespace cw::lang {
+namespace cw::grammar {
 
 struct LRItem {
   /// Production index; -1 selects the augmented start production.
@@ -165,4 +165,4 @@ class GrammarAnalyzer {
   LRParseTable ConvertToSingleActionLRParseTable(const MultiActionLRParseTable& table) const;
 };
 
-}  // namespace cw::lang
+}  // namespace cw::grammar

@@ -13,7 +13,7 @@
 
 #include "Grammar.h"
 
-namespace cw::lang {
+namespace cw::grammar {
 
 const char* kLRItemPlaceHolderString = "·";
 
@@ -407,9 +407,9 @@ MultiActionLRParseTable SLR_PARSE_TABLE(const Grammar& g, const FOLLOWS_db& foll
   return LRk_PARSE_TABLE(g, lr_items, C, SLRReduceFunc(follows_db));
 }
 
-}  // namespace cw::lang
+}  // namespace cw::grammar
 
-namespace cw::lang {
+namespace cw::grammar {
 
 GrammarAnalyzer GrammarAnalyzer::Analyze(const Grammar& g, unsigned int GRAMMAR_TYPE) {
   GrammarAnalyzer ga(g);
@@ -588,4 +588,4 @@ LRParseTable GrammarAnalyzer::ConvertToSingleActionLRParseTable(const MultiActio
   return parse_table;
 }
 
-}  // namespace cw::lang
+}  // namespace cw::grammar

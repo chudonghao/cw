@@ -7,7 +7,7 @@
 
 #include <iostream>
 
-namespace cw::lang {
+namespace cw::grammar {
 
 void Grammar::Dump(std::ostream& os) const {
   os << "G: " << std::endl;
@@ -44,4 +44,4 @@ void Grammar::DumpProduction(std::ostream& os, int pi) const {
   }
 }
 
-}  // namespace cw::lang
+}  // namespace cw::grammar

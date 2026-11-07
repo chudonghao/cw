@@ -12,7 +12,7 @@
 
 #include "NameSyntax.h"
 #include "Token.h"
-#include "lang/LRStateMachine.h"
+#include "grammar/LRStateMachine.h"
 
 namespace cw {
 
@@ -22,7 +22,7 @@ class DiagnosticEngine;
 class Parser;
 struct TypeSyntax;
 
-class ExprParser : public lang::LRStateMachine {
+class ExprParser : public grammar::LRStateMachine {
   struct ParsedArgumentList {
     std::vector<std::unique_ptr<Expr>> arguments;
     SourceRange range{};

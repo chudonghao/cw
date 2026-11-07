@@ -13,7 +13,6 @@
 #include <llvm/ADT/APSInt.h>
 
 #include "BuiltinTypes.h"
-#include "ExprGrammar.h"
 #include "Source.h"
 
 namespace cw {
@@ -30,84 +29,81 @@ enum TokenType {
   invalid,  // invalid
 
   // Identifiers
-  identifier = expr::identifier,  // abc_123, etc.
+  identifier,  // abc_123, etc.
 
   // Constants
-  null_literal = expr::null_literal,            // null
-  bool_literal = expr::bool_literal,            // true, false
-  integer_literal = expr::integer_literal,      // 123, 0xFF, etc.
-  character_literal = expr::character_literal,  // 'a', '\n', etc.
-  float_literal = expr::float_literal,          // 1.23f32, 0.0, etc.
-  string_literal = expr::string_literal,        // "abc", etc.
+  null_literal,       // null
+  bool_literal,       // true, false
+  integer_literal,    // 123, 0xFF, etc.
+  character_literal,  // 'a', '\n', etc.
+  float_literal,      // 1.23f32, 0.0, etc.
+  string_literal,     // "abc", etc.
 
   // Keyword operators
-  move_ = expr::move_,          // move value
-  operator_ = expr::operator_,  // operator function name
+  move_,      // move value
+  operator_,  // operator function name
 
   // Type keywords
-  builtin_type = expr::builtin_type,  // void, bool, i8, etc.
+  builtin_type,  // void, bool, i8, etc.
 
   // Reserved object expression
-  this_ = expr::this_,  // current object
+  this_,  // current object
 
   // Keyword-led calls
-  ctor = expr::ctor_,               // ctor (address) T(arguments)
-  dtor = expr::dtor_,               // dtor (address) T()
-  nonvirtual_ = expr::nonvirtual_,  // explicit non-virtual named call
+  ctor,         // ctor (address) T(arguments)
+  dtor,         // dtor (address) T()
+  nonvirtual_,  // explicit non-virtual named call
 
   // Operators
-  period = expr::period,                            // .
-  arrow = expr::arrow,                              // ->
-  amp = expr::amp,                                  // &
-  ampamp = expr::ampamp,                            // &&
-  star = expr::star,                                // *
-  plus = expr::plus,                                // +
-  plusplus = expr::plusplus,                        // ++
-  minus = expr::minus,                              // -
-  minusminus = expr::minusminus,                    // --
-  tilde = expr::tilde,                              // ~
-  exclaim = expr::exclaim,                          // !
-  exclaimequal = expr::exclaimequal,                // !=
-  slash = expr::slash,                              // /
-  percent = expr::percent,                          // %
-  less = expr::less,                                // <
-  lessequal = expr::lessequal,                      // <=
-  lessless = expr::lessless,                        // <<
-  greater = expr::greater,                          // >
-  greaterequal = expr::greaterequal,                // >=
-  greatergreater = expr::greatergreater,            // >>
-  caret = expr::caret,                              // ^
-  pipe = expr::pipe,                                // |
-  pipepipe = expr::pipepipe,                        // ||
-  question = expr::question,                        // ?
-  colon = expr::colon,                              // :
-  colonequal = expr::colonequal,                    // :=
-  coloncolon = expr::coloncolon,                    // ::
-  equal = expr::equal,                              // =
-  plusequal = expr::plusequal,                      // +=
-  minusequal = expr::minusequal,                    // -=
-  starequal = expr::starequal,                      // *=
-  slashequal = expr::slashequal,                    // /=
-  percentequal = expr::percentequal,                // %=
-  lesslessequal = expr::lesslessequal,              // <<=
-  greatergreaterequal = expr::greatergreaterequal,  // >>=
-  ampequal = expr::ampequal,                        // &=
-  caretequal = expr::caretequal,                    // ^=
-  pipeequal = expr::pipeequal,                      // |=
-  equalequal = expr::equalequal,                    // ==
-  comma = expr::comma,                              // ,
+  period,               // .
+  arrow,                // ->
+  amp,                  // &
+  ampamp,               // &&
+  star,                 // *
+  plus,                 // +
+  plusplus,             // ++
+  minus,                // -
+  minusminus,           // --
+  tilde,                // ~
+  exclaim,              // !
+  exclaimequal,         // !=
+  slash,                // /
+  percent,              // %
+  less,                 // <
+  lessequal,            // <=
+  lessless,             // <<
+  greater,              // >
+  greaterequal,         // >=
+  greatergreater,       // >>
+  caret,                // ^
+  pipe,                 // |
+  pipepipe,             // ||
+  question,             // ?
+  colon,                // :
+  colonequal,           // :=
+  coloncolon,           // ::
+  equal,                // =
+  plusequal,            // +=
+  minusequal,           // -=
+  starequal,            // *=
+  slashequal,           // /=
+  percentequal,         // %=
+  lesslessequal,        // <<=
+  greatergreaterequal,  // >>=
+  ampequal,             // &=
+  caretequal,           // ^=
+  pipeequal,            // |=
+  equalequal,           // ==
+  comma,                // ,
 
   // Separators
-  semi = expr::semi,          // ;
-  l_square = expr::l_square,  // [
-  r_square = expr::r_square,  // ]
-  l_paren = expr::l_paren,    // (
-  r_paren = expr::r_paren,    // )
-  l_brace = expr::l_brace,    // {
-  r_brace = expr::r_brace,    // }
-
-  // Statement keywords.
-  NonExprTokenStart = expr::num_symbols,
+  semi,      // ;
+  l_square,  // [
+  r_square,  // ]
+  l_paren,   // (
+  r_paren,   // )
+  l_brace,   // {
+  r_brace,   // }
 
   // Keywords
   const_,      // const

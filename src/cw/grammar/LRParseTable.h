@@ -11,7 +11,7 @@
 
 #include <boost/assert.hpp>
 
-namespace cw::lang {
+namespace cw::grammar {
 
 enum LRActionType : int {
   kActionError,
@@ -109,4 +109,4 @@ void Write(std::ostream& os, const Grammar& grammar, const MultiActionLRParseTab
 
 void Write(std::ostream& os, const Grammar& grammar, const LRParseTable& table);
 
-}  // namespace cw::lang
+}  // namespace cw::grammar

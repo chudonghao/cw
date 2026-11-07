@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "lang/Grammar.h"
+#include "grammar/Grammar.h"
 
 namespace cw::expr {
 
@@ -601,19 +601,19 @@ inline bool is_terminal(ExprGrammarSymbol symbol) { return symbol >= terminals_s
 
 }  // namespace cw::expr
 
-namespace cw::lang {
+namespace cw::grammar {
 
 template <>
 inline expr::ExprGrammarSymbol from_string<expr::ExprGrammarSymbol>(const char* str) {
   return from_string(expr::ExprGrammarSymbol{}, str);
 }
 
-}  // namespace cw::lang
+}  // namespace cw::grammar
 
 namespace cw {
 
-inline lang::ProductionVec<expr::ExprGrammarSymbol> ExprGrammarProductions() {
-  lang::ProductionVec<expr::ExprGrammarSymbol> P;
+inline grammar::ProductionVec<expr::ExprGrammarSymbol> ExprGrammarProductions() {
+  grammar::ProductionVec<expr::ExprGrammarSymbol> P;
   P("Expr", "T16");
   P("StringLiterals", "string_literal");
   P("StringLiterals", "StringLiterals", "string_literal");
@@ -777,9 +777,9 @@ inline lang::ProductionVec<expr::ExprGrammarSymbol> ExprGrammarProductions() {
   return P;
 }
 
-inline lang::Grammar ExprGrammar() {
-  return lang::Grammar::Create("CW Expr Grammar", ExprGrammarProductions(), expr::ExprGrammarSymbol::num_symbols,
-                               "Expr", "ε", "$");
+inline grammar::Grammar ExprGrammar() {
+  return grammar::Grammar::Create("CW Expr Grammar", ExprGrammarProductions(), expr::ExprGrammarSymbol::num_symbols,
+                                  "Expr", "ε", "$");
 }
 
 }  // namespace cw

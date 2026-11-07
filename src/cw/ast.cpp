@@ -14,12 +14,17 @@ namespace cw {
 
 namespace {
 
-constexpr std::pair<expr::ExprGrammarSymbol, expr::ExprGrammarSymbol> kCompoundAssignmentOperators[] = {
-    {expr::plusequal, expr::plus},         {expr::minusequal, expr::minus},
-    {expr::starequal, expr::star},         {expr::slashequal, expr::slash},
-    {expr::percentequal, expr::percent},   {expr::ampequal, expr::amp},
-    {expr::pipeequal, expr::pipe},         {expr::caretequal, expr::caret},
-    {expr::lesslessequal, expr::lessless}, {expr::greatergreaterequal, expr::greatergreater},
+constexpr std::pair<BinaryOperatorKind, BinaryOperatorKind> kCompoundAssignmentOperators[] = {
+    {BinaryOperatorKind::AddAssign, BinaryOperatorKind::Add},
+    {BinaryOperatorKind::SubtractAssign, BinaryOperatorKind::Subtract},
+    {BinaryOperatorKind::MultiplyAssign, BinaryOperatorKind::Multiply},
+    {BinaryOperatorKind::DivideAssign, BinaryOperatorKind::Divide},
+    {BinaryOperatorKind::RemainderAssign, BinaryOperatorKind::Remainder},
+    {BinaryOperatorKind::BitwiseAndAssign, BinaryOperatorKind::BitwiseAnd},
+    {BinaryOperatorKind::BitwiseOrAssign, BinaryOperatorKind::BitwiseOr},
+    {BinaryOperatorKind::BitwiseXorAssign, BinaryOperatorKind::BitwiseXor},
+    {BinaryOperatorKind::ShiftLeftAssign, BinaryOperatorKind::ShiftLeft},
+    {BinaryOperatorKind::ShiftRightAssign, BinaryOperatorKind::ShiftRight},
 };
 
 template <typename Declaration>
@@ -218,6 +223,304 @@ const char* to_string(ConstructionKind kind) {
   return "unknown";
 }
 
+const char* to_string(UnaryOperatorKind kind) {
+  switch (kind) {
+    case UnaryOperatorKind::PreIncrement:
+    case UnaryOperatorKind::PostIncrement:
+      return "++";
+    case UnaryOperatorKind::PreDecrement:
+    case UnaryOperatorKind::PostDecrement:
+      return "--";
+    case UnaryOperatorKind::Plus:
+      return "+";
+    case UnaryOperatorKind::Minus:
+      return "-";
+    case UnaryOperatorKind::LogicalNot:
+      return "!";
+    case UnaryOperatorKind::BitwiseNot:
+      return "~";
+    case UnaryOperatorKind::Dereference:
+      return "*";
+    case UnaryOperatorKind::AddressOf:
+      return "&";
+    case UnaryOperatorKind::Move:
+      return "move";
+  }
+  return "unknown";
+}
+
+const char* to_string(BinaryOperatorKind kind) {
+  switch (kind) {
+    case BinaryOperatorKind::Multiply:
+      return "*";
+    case BinaryOperatorKind::Divide:
+      return "/";
+    case BinaryOperatorKind::Remainder:
+      return "%";
+    case BinaryOperatorKind::Add:
+      return "+";
+    case BinaryOperatorKind::Subtract:
+      return "-";
+    case BinaryOperatorKind::ShiftLeft:
+      return "<<";
+    case BinaryOperatorKind::ShiftRight:
+      return ">>";
+    case BinaryOperatorKind::Less:
+      return "<";
+    case BinaryOperatorKind::LessEqual:
+      return "<=";
+    case BinaryOperatorKind::Greater:
+      return ">";
+    case BinaryOperatorKind::GreaterEqual:
+      return ">=";
+    case BinaryOperatorKind::Equal:
+      return "==";
+    case BinaryOperatorKind::NotEqual:
+      return "!=";
+    case BinaryOperatorKind::BitwiseAnd:
+      return "&";
+    case BinaryOperatorKind::BitwiseXor:
+      return "^";
+    case BinaryOperatorKind::BitwiseOr:
+      return "|";
+    case BinaryOperatorKind::LogicalAnd:
+      return "&&";
+    case BinaryOperatorKind::LogicalOr:
+      return "||";
+    case BinaryOperatorKind::Assign:
+      return "=";
+    case BinaryOperatorKind::MultiplyAssign:
+      return "*=";
+    case BinaryOperatorKind::DivideAssign:
+      return "/=";
+    case BinaryOperatorKind::RemainderAssign:
+      return "%=";
+    case BinaryOperatorKind::AddAssign:
+      return "+=";
+    case BinaryOperatorKind::SubtractAssign:
+      return "-=";
+    case BinaryOperatorKind::ShiftLeftAssign:
+      return "<<=";
+    case BinaryOperatorKind::ShiftRightAssign:
+      return ">>=";
+    case BinaryOperatorKind::BitwiseAndAssign:
+      return "&=";
+    case BinaryOperatorKind::BitwiseXorAssign:
+      return "^=";
+    case BinaryOperatorKind::BitwiseOrAssign:
+      return "|=";
+  }
+  return "unknown";
+}
+
+const char* to_string(MemberAccessKind kind) {
+  switch (kind) {
+    case MemberAccessKind::Dot:
+      return ".";
+    case MemberAccessKind::Arrow:
+      return "->";
+  }
+  return "unknown";
+}
+
+const char* to_string(OverloadedOperatorKind kind) {
+  switch (kind) {
+    case OverloadedOperatorKind::Plus:
+      return "+";
+    case OverloadedOperatorKind::Minus:
+      return "-";
+    case OverloadedOperatorKind::PlusPlus:
+      return "++";
+    case OverloadedOperatorKind::MinusMinus:
+      return "--";
+    case OverloadedOperatorKind::Exclaim:
+      return "!";
+    case OverloadedOperatorKind::Tilde:
+      return "~";
+    case OverloadedOperatorKind::Amp:
+      return "&";
+    case OverloadedOperatorKind::Pipe:
+      return "|";
+    case OverloadedOperatorKind::Caret:
+      return "^";
+    case OverloadedOperatorKind::LessLess:
+      return "<<";
+    case OverloadedOperatorKind::GreaterGreater:
+      return ">>";
+    case OverloadedOperatorKind::Star:
+      return "*";
+    case OverloadedOperatorKind::Slash:
+      return "/";
+    case OverloadedOperatorKind::Percent:
+      return "%";
+    case OverloadedOperatorKind::Less:
+      return "<";
+    case OverloadedOperatorKind::LessEqual:
+      return "<=";
+    case OverloadedOperatorKind::Greater:
+      return ">";
+    case OverloadedOperatorKind::GreaterEqual:
+      return ">=";
+    case OverloadedOperatorKind::EqualEqual:
+      return "==";
+    case OverloadedOperatorKind::ExclaimEqual:
+      return "!=";
+    case OverloadedOperatorKind::Equal:
+      return "=";
+    case OverloadedOperatorKind::PlusEqual:
+      return "+=";
+    case OverloadedOperatorKind::MinusEqual:
+      return "-=";
+    case OverloadedOperatorKind::StarEqual:
+      return "*=";
+    case OverloadedOperatorKind::SlashEqual:
+      return "/=";
+    case OverloadedOperatorKind::PercentEqual:
+      return "%=";
+    case OverloadedOperatorKind::AmpEqual:
+      return "&=";
+    case OverloadedOperatorKind::PipeEqual:
+      return "|=";
+    case OverloadedOperatorKind::CaretEqual:
+      return "^=";
+    case OverloadedOperatorKind::LessLessEqual:
+      return "<<=";
+    case OverloadedOperatorKind::GreaterGreaterEqual:
+      return ">>=";
+    case OverloadedOperatorKind::Call:
+      return "()";
+  }
+  return "unknown";
+}
+
+std::optional<OverloadedOperatorKind> GetOverloadedOperatorKind(std::string_view name) {
+  constexpr OverloadedOperatorKind kKinds[] = {
+      OverloadedOperatorKind::Plus,
+      OverloadedOperatorKind::Minus,
+      OverloadedOperatorKind::PlusPlus,
+      OverloadedOperatorKind::MinusMinus,
+      OverloadedOperatorKind::Exclaim,
+      OverloadedOperatorKind::Tilde,
+      OverloadedOperatorKind::Amp,
+      OverloadedOperatorKind::Pipe,
+      OverloadedOperatorKind::Caret,
+      OverloadedOperatorKind::LessLess,
+      OverloadedOperatorKind::GreaterGreater,
+      OverloadedOperatorKind::Star,
+      OverloadedOperatorKind::Slash,
+      OverloadedOperatorKind::Percent,
+      OverloadedOperatorKind::Less,
+      OverloadedOperatorKind::LessEqual,
+      OverloadedOperatorKind::Greater,
+      OverloadedOperatorKind::GreaterEqual,
+      OverloadedOperatorKind::EqualEqual,
+      OverloadedOperatorKind::ExclaimEqual,
+      OverloadedOperatorKind::Equal,
+      OverloadedOperatorKind::PlusEqual,
+      OverloadedOperatorKind::MinusEqual,
+      OverloadedOperatorKind::StarEqual,
+      OverloadedOperatorKind::SlashEqual,
+      OverloadedOperatorKind::PercentEqual,
+      OverloadedOperatorKind::AmpEqual,
+      OverloadedOperatorKind::PipeEqual,
+      OverloadedOperatorKind::CaretEqual,
+      OverloadedOperatorKind::LessLessEqual,
+      OverloadedOperatorKind::GreaterGreaterEqual,
+      OverloadedOperatorKind::Call,
+  };
+  for (const auto kind : kKinds) {
+    if (name == to_string(kind)) return kind;
+  }
+  return std::nullopt;
+}
+
+std::optional<OverloadedOperatorKind> GetOverloadedOperator(UnaryOperatorKind op) {
+  switch (op) {
+    case UnaryOperatorKind::PreIncrement:
+    case UnaryOperatorKind::PostIncrement:
+      return OverloadedOperatorKind::PlusPlus;
+    case UnaryOperatorKind::PreDecrement:
+    case UnaryOperatorKind::PostDecrement:
+      return OverloadedOperatorKind::MinusMinus;
+    case UnaryOperatorKind::Plus:
+      return OverloadedOperatorKind::Plus;
+    case UnaryOperatorKind::Minus:
+      return OverloadedOperatorKind::Minus;
+    case UnaryOperatorKind::LogicalNot:
+      return OverloadedOperatorKind::Exclaim;
+    case UnaryOperatorKind::BitwiseNot:
+      return OverloadedOperatorKind::Tilde;
+    case UnaryOperatorKind::Dereference:
+    case UnaryOperatorKind::AddressOf:
+    case UnaryOperatorKind::Move:
+      return std::nullopt;
+  }
+  return std::nullopt;
+}
+
+std::optional<OverloadedOperatorKind> GetOverloadedOperator(BinaryOperatorKind op) {
+  switch (op) {
+    case BinaryOperatorKind::Multiply:
+      return OverloadedOperatorKind::Star;
+    case BinaryOperatorKind::Divide:
+      return OverloadedOperatorKind::Slash;
+    case BinaryOperatorKind::Remainder:
+      return OverloadedOperatorKind::Percent;
+    case BinaryOperatorKind::Add:
+      return OverloadedOperatorKind::Plus;
+    case BinaryOperatorKind::Subtract:
+      return OverloadedOperatorKind::Minus;
+    case BinaryOperatorKind::ShiftLeft:
+      return OverloadedOperatorKind::LessLess;
+    case BinaryOperatorKind::ShiftRight:
+      return OverloadedOperatorKind::GreaterGreater;
+    case BinaryOperatorKind::Less:
+      return OverloadedOperatorKind::Less;
+    case BinaryOperatorKind::LessEqual:
+      return OverloadedOperatorKind::LessEqual;
+    case BinaryOperatorKind::Greater:
+      return OverloadedOperatorKind::Greater;
+    case BinaryOperatorKind::GreaterEqual:
+      return OverloadedOperatorKind::GreaterEqual;
+    case BinaryOperatorKind::Equal:
+      return OverloadedOperatorKind::EqualEqual;
+    case BinaryOperatorKind::NotEqual:
+      return OverloadedOperatorKind::ExclaimEqual;
+    case BinaryOperatorKind::BitwiseAnd:
+      return OverloadedOperatorKind::Amp;
+    case BinaryOperatorKind::BitwiseXor:
+      return OverloadedOperatorKind::Caret;
+    case BinaryOperatorKind::BitwiseOr:
+      return OverloadedOperatorKind::Pipe;
+    case BinaryOperatorKind::LogicalAnd:
+    case BinaryOperatorKind::LogicalOr:
+      return std::nullopt;
+    case BinaryOperatorKind::Assign:
+      return OverloadedOperatorKind::Equal;
+    case BinaryOperatorKind::MultiplyAssign:
+      return OverloadedOperatorKind::StarEqual;
+    case BinaryOperatorKind::DivideAssign:
+      return OverloadedOperatorKind::SlashEqual;
+    case BinaryOperatorKind::RemainderAssign:
+      return OverloadedOperatorKind::PercentEqual;
+    case BinaryOperatorKind::AddAssign:
+      return OverloadedOperatorKind::PlusEqual;
+    case BinaryOperatorKind::SubtractAssign:
+      return OverloadedOperatorKind::MinusEqual;
+    case BinaryOperatorKind::ShiftLeftAssign:
+      return OverloadedOperatorKind::LessLessEqual;
+    case BinaryOperatorKind::ShiftRightAssign:
+      return OverloadedOperatorKind::GreaterGreaterEqual;
+    case BinaryOperatorKind::BitwiseAndAssign:
+      return OverloadedOperatorKind::AmpEqual;
+    case BinaryOperatorKind::BitwiseXorAssign:
+      return OverloadedOperatorKind::CaretEqual;
+    case BinaryOperatorKind::BitwiseOrAssign:
+      return OverloadedOperatorKind::PipeEqual;
+  }
+  return std::nullopt;
+}
+
 bool IsOperatorFunctionName(std::string_view name) {
   return IsAssignmentOperator(name) || name == "." || name == "->" || name == "&" || name == "&&" || name == "*" ||
          name == "+" || name == "++" || name == "-" || name == "--" || name == "~" || name == "!" || name == "!=" ||
@@ -226,25 +529,38 @@ bool IsOperatorFunctionName(std::string_view name) {
          name == ":=" || name == "==" || name == "," || name == "[]" || name == "()";
 }
 
-bool IsIncrementDecrementOperator(expr::ExprGrammarSymbol op) { return op == expr::plusplus || op == expr::minusminus; }
+bool IsIncrementDecrementOperator(UnaryOperatorKind op) {
+  return op == UnaryOperatorKind::PreIncrement || op == UnaryOperatorKind::PreDecrement ||
+         op == UnaryOperatorKind::PostIncrement || op == UnaryOperatorKind::PostDecrement;
+}
 
-bool IsLogicalBinaryOperator(expr::ExprGrammarSymbol op) { return op == expr::ampamp || op == expr::pipepipe; }
+bool IsPostfixOperator(UnaryOperatorKind op) {
+  return op == UnaryOperatorKind::PostIncrement || op == UnaryOperatorKind::PostDecrement;
+}
 
-bool IsShiftBinaryOperator(expr::ExprGrammarSymbol op) { return op == expr::lessless || op == expr::greatergreater; }
+bool IsLogicalBinaryOperator(BinaryOperatorKind op) {
+  return op == BinaryOperatorKind::LogicalAnd || op == BinaryOperatorKind::LogicalOr;
+}
 
-bool IsCompoundAssignmentOperator(expr::ExprGrammarSymbol op) { return GetComputationOp(op) != op; }
+bool IsShiftBinaryOperator(BinaryOperatorKind op) {
+  return op == BinaryOperatorKind::ShiftLeft || op == BinaryOperatorKind::ShiftRight;
+}
 
-bool IsAssignmentOperator(expr::ExprGrammarSymbol op) { return op == expr::equal || IsCompoundAssignmentOperator(op); }
+bool IsCompoundAssignmentOperator(BinaryOperatorKind op) { return GetComputationOp(op) != op; }
+
+bool IsAssignmentOperator(BinaryOperatorKind op) {
+  return op == BinaryOperatorKind::Assign || IsCompoundAssignmentOperator(op);
+}
 
 bool IsAssignmentOperator(std::string_view name) {
   if (name == "=") return true;
   for (const auto& assignment : kCompoundAssignmentOperators) {
-    if (name == expr::to_string(assignment.first)) return true;
+    if (name == to_string(assignment.first)) return true;
   }
   return false;
 }
 
-expr::ExprGrammarSymbol GetComputationOp(expr::ExprGrammarSymbol op) {
+BinaryOperatorKind GetComputationOp(BinaryOperatorKind op) {
   for (const auto& [assignment, computation] : kCompoundAssignmentOperators) {
     if (op == assignment) return computation;
   }
@@ -256,7 +572,7 @@ bool IsRawObjectPointerType(QualType type) {
   return pointer && pointer->GetPointee().GetTypePtr()->IsObject();
 }
 
-PointerArithmeticKind ClassifyPointerArithmetic(expr::ExprGrammarSymbol op, QualType lhs, QualType rhs) {
+PointerArithmeticKind ClassifyPointerArithmetic(BinaryOperatorKind op, QualType lhs, QualType rhs) {
   const auto is_size_integer = [](QualType type) {
     const auto* builtin = type ? type.GetTypePtr()->AsBuiltinType() : nullptr;
     return builtin && builtin->IsSizeInteger();
@@ -264,15 +580,15 @@ PointerArithmeticKind ClassifyPointerArithmetic(expr::ExprGrammarSymbol op, Qual
   const bool pointer_lhs = IsRawObjectPointerType(lhs);
   const bool pointer_rhs = IsRawObjectPointerType(rhs);
   switch (op) {
-    case expr::plus:
+    case BinaryOperatorKind::Add:
       return (pointer_lhs && is_size_integer(rhs)) || (is_size_integer(lhs) && pointer_rhs)
                  ? PointerArithmeticKind::Offset
                  : PointerArithmeticKind::None;
-    case expr::minus:
+    case BinaryOperatorKind::Subtract:
       if (pointer_lhs && is_size_integer(rhs)) return PointerArithmeticKind::Offset;
       return pointer_lhs && pointer_rhs ? PointerArithmeticKind::Difference : PointerArithmeticKind::None;
-    case expr::plusequal:
-    case expr::minusequal:
+    case BinaryOperatorKind::AddAssign:
+    case BinaryOperatorKind::SubtractAssign:
       // Compound assignment writes back to its target, so only the pointer can be on the left.
       return pointer_lhs && is_size_integer(rhs) ? PointerArithmeticKind::Offset : PointerArithmeticKind::None;
     default:

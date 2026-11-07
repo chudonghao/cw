@@ -854,8 +854,8 @@ void ASTDumper::Visit(ParenExpr& n) {
 void ASTDumper::Visit(UnaryOperator& n) {
   PrintNode("UnaryOperator", n);
   PrintExprType(n);
-  os_ << " '" << expr::to_string(n.op) << "'";
-  if (n.is_postfix) {
+  os_ << " '" << to_string(n.op) << "'";
+  if (IsPostfixOperator(n.op)) {
     os_ << " postfix";
   }
   PrintErrorMark(n);
@@ -866,7 +866,7 @@ void ASTDumper::Visit(UnaryOperator& n) {
 void ASTDumper::Visit(BinaryOperator& n) {
   PrintNode("BinaryOperator", n);
   PrintExprType(n);
-  os_ << " '" << expr::to_string(n.op) << "'";
+  os_ << " '" << to_string(n.op) << "'";
   PrintErrorMark(n);
   os_ << "\n";
   VisitChild(n.LHS.get(), false);
@@ -906,7 +906,7 @@ void ASTDumper::Visit(ConditionalOperator& n) {
 void ASTDumper::Visit(MemberExpr& n) {
   PrintNode("MemberExpr", n);
   PrintExprType(n);
-  os_ << " " << expr::to_string(n.op) << n.member;
+  os_ << " " << to_string(n.op) << n.member;
   if (n.declaration) {
     PrintDeclReference(*n.declaration);
   }
@@ -918,7 +918,7 @@ void ASTDumper::Visit(MemberExpr& n) {
 void ASTDumper::Visit(BaseSubobjectExpr& n) {
   PrintNode("BaseSubobjectExpr", n);
   PrintExprType(n);
-  os_ << " " << expr::to_string(n.op);
+  os_ << " " << to_string(n.op);
   if (const StructDecl* declaration = n.GetDeclaration()) {
     os_ << declaration->name;
     if (n.base_path.size() == 1) {
@@ -1104,7 +1104,7 @@ void ASTDumper::Visit(DestructorCallExpr& n) {
 void ASTDumper::Visit(ReceiverCallExpr& n) {
   PrintNode("ReceiverCallExpr", n);
   PrintExprType(n);
-  os_ << " " << expr::to_string(n.op);
+  os_ << " " << to_string(n.op);
   if (n.is_nonvirtual) {
     os_ << " nonvirtual";
   }

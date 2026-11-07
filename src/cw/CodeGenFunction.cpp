@@ -467,14 +467,14 @@ bool CodeGenFunction::EmitBranchOnBoolExpr(const Expr& expression, llvm::BasicBl
   const Expr& condition = *expression.IgnoreParens();
   if (condition.GetKind() == NodeKind::UnaryOperator) {
     const auto& unary = static_cast<const UnaryOperator&>(condition);
-    if (unary.op == expr::exclaim) {
+    if (unary.op == UnaryOperatorKind::LogicalNot) {
       return EmitBranchOnBoolExpr(*unary.Operand, false_block, true_block);
     }
   }
   if (condition.GetKind() == NodeKind::BinaryOperator) {
     const auto& binary = static_cast<const BinaryOperator&>(condition);
     if (IsLogicalBinaryOperator(binary.op)) {
-      const bool is_and = binary.op == expr::ampamp;
+      const bool is_and = binary.op == BinaryOperatorKind::LogicalAnd;
       auto* rhs = CreateBasicBlock(is_and ? "land.rhs" : "lor.rhs");
       auto* entry = builder_.GetInsertBlock();
       if (!EmitBranchOnBoolExpr(*binary.LHS, is_and ? rhs : true_block, is_and ? false_block : rhs)) {
@@ -1131,7 +1131,7 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
       return EmitMemberExpr(static_cast<const MemberExpr&>(expression));
     case NodeKind::BaseSubobjectExpr: {
       const auto& base = static_cast<const BaseSubobjectExpr&>(expression);
-      return EmitBaseSubobject(*base.Base, base.base_path, base.op == expr::arrow);
+      return EmitBaseSubobject(*base.Base, base.base_path, base.op == MemberAccessKind::Arrow);
     }
     case NodeKind::ImplicitCastExpr: {
       const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
@@ -1147,14 +1147,14 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
     case NodeKind::UnaryOperator: {
       const auto& unary = static_cast<const UnaryOperator&>(expression);
       if (IsIncrementDecrementOperator(unary.op)) {
-        BOOST_ASSERT(!unary.is_postfix);
+        BOOST_ASSERT(!IsPostfixOperator(unary.op));
         Address target = EmitLValue(*unary.Operand);
         return target && EmitScalarIncrementDecrement(unary, target) ? target : Address{};
       }
-      if (unary.op == expr::move_) {
+      if (unary.op == UnaryOperatorKind::Move) {
         return EmitLValue(*unary.Operand);
       }
-      if (unary.op == expr::star) {
+      if (unary.op == UnaryOperatorKind::Dereference) {
         auto* pointer = EmitScalarExpr(*unary.Operand);
         if (!pointer) {
           return {};
@@ -1243,7 +1243,8 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
               PointerArithmeticKind::Offset) {
         const auto& pointer_type = *assignment.LHS->type.GetTypePtr()->AsPointerType();
         auto* pointer = EmitLoadOfScalar(target, pointer_type);
-        value = EmitPointerOffset(assignment, pointer, value, pointer_type, assignment.op == expr::minusequal);
+        value = EmitPointerOffset(assignment, pointer, value, pointer_type,
+                                  assignment.op == BinaryOperatorKind::SubtractAssign);
         if (!value) {
           return {};
         }
@@ -1347,7 +1348,7 @@ Address CodeGenFunction::EmitBaseSubobject(const Expr& source, const std::vector
 
 Address CodeGenFunction::EmitMemberExpr(const MemberExpr& expression) {
   const Type* base_type = expression.Base->type.GetTypePtr();
-  if (expression.op == expr::arrow) {
+  if (expression.op == MemberAccessKind::Arrow) {
     base_type = base_type->AsPointerType()->GetPointee().GetTypePtr();
   }
   const auto* declaration = base_type->AsStructType()->GetDeclaration();
@@ -1356,7 +1357,7 @@ Address CodeGenFunction::EmitMemberExpr(const MemberExpr& expression) {
     codegen_.DiagnoseTypeConversionFailure(expression, *failure, "this member access type");
     return {};
   }
-  Address base = expression.op == expr::arrow
+  Address base = expression.op == MemberAccessKind::Arrow
                      ? MakeAddress(EmitScalarExpr(*expression.Base), std::get<llvm::Type*>(conversion), base_type)
                      : EmitLValue(*expression.Base);
   if (!base) {
@@ -1700,26 +1701,27 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
     case NodeKind::UnaryOperator: {
       const auto& unary = static_cast<const UnaryOperator&>(expression);
       if (IsIncrementDecrementOperator(unary.op)) {
-        BOOST_ASSERT(unary.is_postfix);
+        BOOST_ASSERT(IsPostfixOperator(unary.op));
         Address target = EmitLValue(*unary.Operand);
         return target ? EmitScalarIncrementDecrement(unary, target) : nullptr;
       }
-      if (unary.op == expr::amp) {
+      if (unary.op == UnaryOperatorKind::AddressOf) {
         return EmitLValue(*unary.Operand).pointer;
       }
-      if (unary.op == expr::exclaim || unary.op == expr::tilde || unary.op == expr::plus || unary.op == expr::minus) {
+      if (unary.op == UnaryOperatorKind::LogicalNot || unary.op == UnaryOperatorKind::BitwiseNot ||
+          unary.op == UnaryOperatorKind::Plus || unary.op == UnaryOperatorKind::Minus) {
         auto* operand = EmitScalarExpr(*unary.Operand);
         if (!operand) {
           return nullptr;
         }
-        if (unary.op == expr::exclaim || unary.op == expr::tilde) {
+        if (unary.op == UnaryOperatorKind::LogicalNot || unary.op == UnaryOperatorKind::BitwiseNot) {
           return builder_.CreateNot(operand);
         }
         if (unary.Operand->type.GetTypePtr()->AsBuiltinType()->IsFloatingPoint()) {
-          return unary.op == expr::minus ? builder_.CreateFNeg(operand, "fneg") : operand;
+          return unary.op == UnaryOperatorKind::Minus ? builder_.CreateFNeg(operand, "fneg") : operand;
         }
         // Ordinary typed negation wraps, including when IRBuilder folds a constant.
-        return unary.op == expr::minus ? builder_.CreateNeg(operand, "sub") : operand;
+        return unary.op == UnaryOperatorKind::Minus ? builder_.CreateNeg(operand, "sub") : operand;
       }
       break;
     }
@@ -1730,7 +1732,7 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
       }
       if (binary.LHS->type.GetTypePtr()->AsNullType() && binary.RHS->type.GetTypePtr()->AsNullType()) {
         // Untyped nulls have no runtime object or pointer type to evaluate.
-        return builder_.getInt1(binary.op == expr::equalequal);
+        return builder_.getInt1(binary.op == BinaryOperatorKind::Equal);
       }
       // Finish the left value's loads and conversions before any right-side effects.
       auto* lhs = EmitScalarExpr(*binary.LHS);
@@ -1747,7 +1749,7 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
           const bool pointer_first = IsRawObjectPointerType(binary.LHS->type);
           const auto& pointer_type = *(pointer_first ? binary.LHS : binary.RHS)->type.GetTypePtr()->AsPointerType();
           return EmitPointerOffset(binary, pointer_first ? lhs : rhs, pointer_first ? rhs : lhs, pointer_type,
-                                   binary.op == expr::minus);
+                                   binary.op == BinaryOperatorKind::Subtract);
         }
         case PointerArithmeticKind::Difference:
           return EmitPointerDifference(lhs, rhs, *binary.LHS->type.GetTypePtr()->AsPointerType());
@@ -1759,14 +1761,14 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
         // Sema permits virtual interface pointers to be compared only with null.
         auto* left = EmitVirtualPointerIsNotNull(lhs);
         auto* right = EmitVirtualPointerIsNotNull(rhs);
-        return binary.op == expr::equalequal ? builder_.CreateICmpEQ(left, right, "cmp")
-                                             : builder_.CreateICmpNE(left, right, "cmp");
+        return binary.op == BinaryOperatorKind::Equal ? builder_.CreateICmpEQ(left, right, "cmp")
+                                                      : builder_.CreateICmpNE(left, right, "cmp");
       }
       if (binary.LHS->type.GetTypePtr()->AsPointerType()) {
-        if (binary.op == expr::equalequal) {
+        if (binary.op == BinaryOperatorKind::Equal) {
           return builder_.CreateICmpEQ(lhs, rhs, "cmp");
         }
-        if (binary.op == expr::exclaimequal) {
+        if (binary.op == BinaryOperatorKind::NotEqual) {
           return builder_.CreateICmpNE(lhs, rhs, "cmp");
         }
         break;
@@ -1783,10 +1785,12 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
 }
 
 llvm::Value* CodeGenFunction::EmitScalarIncrementDecrement(const UnaryOperator& expression, Address target) {
+  const bool is_increment =
+      expression.op == UnaryOperatorKind::PreIncrement || expression.op == UnaryOperatorKind::PostIncrement;
   if (IsRawObjectPointerType(expression.Operand->type)) {
     const auto& pointer_type = *expression.Operand->type.GetTypePtr()->AsPointerType();
     auto* old_value = EmitLoadOfScalar(target, pointer_type);
-    auto* step = GetTargetOffset(expression.op == expr::plusplus ? 1 : -1);
+    auto* step = GetTargetOffset(is_increment ? 1 : -1);
     auto* value = EmitPointerOffset(expression, old_value, step, pointer_type, false, "incdec.ptr");
     if (!value) {
       return nullptr;
@@ -1798,7 +1802,7 @@ llvm::Value* CodeGenFunction::EmitScalarIncrementDecrement(const UnaryOperator& 
   auto* old_value = EmitLoadOfScalar(target, type);
   llvm::Value* one = type.IsFloatingPoint() ? llvm::ConstantFP::get(old_value->getType(), 1.0)
                                             : llvm::ConstantInt::get(old_value->getType(), 1);
-  const auto op = expression.op == expr::plusplus ? expr::plus : expr::minus;
+  const auto op = is_increment ? BinaryOperatorKind::Add : BinaryOperatorKind::Subtract;
   auto* value = EmitNumericBinaryOperator(expression, op, old_value, one, type);
   if (!value) {
     return nullptr;
@@ -1856,30 +1860,30 @@ llvm::Value* CodeGenFunction::EmitNumericConversion(llvm::Value* value, const Bu
   return builder_.CreateIntrinsic(intrinsic, {result_type, value->getType()}, {value}, {}, "conv");
 }
 
-llvm::Value* CodeGenFunction::EmitNumericBinaryOperator(const Expr& expression, expr::ExprGrammarSymbol op,
-                                                        llvm::Value* lhs, llvm::Value* rhs, const BuiltinType& type) {
+llvm::Value* CodeGenFunction::EmitNumericBinaryOperator(const Expr& expression, BinaryOperatorKind op, llvm::Value* lhs,
+                                                        llvm::Value* rhs, const BuiltinType& type) {
   if (type.IsFloatingPoint()) {
     // Keep default IEEE behavior and per-operation rounding; do not grant fast-math permissions.
     switch (op) {
-      case expr::plus:
+      case BinaryOperatorKind::Add:
         return builder_.CreateFAdd(lhs, rhs, "add");
-      case expr::minus:
+      case BinaryOperatorKind::Subtract:
         return builder_.CreateFSub(lhs, rhs, "sub");
-      case expr::star:
+      case BinaryOperatorKind::Multiply:
         return builder_.CreateFMul(lhs, rhs, "mul");
-      case expr::slash:
+      case BinaryOperatorKind::Divide:
         return builder_.CreateFDiv(lhs, rhs, "div");
-      case expr::equalequal:
+      case BinaryOperatorKind::Equal:
         return builder_.CreateFCmpOEQ(lhs, rhs, "cmp");
-      case expr::exclaimequal:
+      case BinaryOperatorKind::NotEqual:
         return builder_.CreateFCmpUNE(lhs, rhs, "cmp");
-      case expr::less:
+      case BinaryOperatorKind::Less:
         return builder_.CreateFCmpOLT(lhs, rhs, "cmp");
-      case expr::lessequal:
+      case BinaryOperatorKind::LessEqual:
         return builder_.CreateFCmpOLE(lhs, rhs, "cmp");
-      case expr::greater:
+      case BinaryOperatorKind::Greater:
         return builder_.CreateFCmpOGT(lhs, rhs, "cmp");
-      case expr::greaterequal:
+      case BinaryOperatorKind::GreaterEqual:
         return builder_.CreateFCmpOGE(lhs, rhs, "cmp");
       default:
         break;
@@ -1888,43 +1892,43 @@ llvm::Value* CodeGenFunction::EmitNumericBinaryOperator(const Expr& expression, 
     const bool is_signed = type.IsSignedInteger();
     // Do not attach overflow flags: ordinary integer arithmetic wraps at its type width.
     switch (op) {
-      case expr::lessless:
-      case expr::greatergreater: {
+      case BinaryOperatorKind::ShiftLeft:
+      case BinaryOperatorKind::ShiftRight: {
         // Normalize in the count's own type before adapting to LLVM's equal-width operands.
         const unsigned width = lhs->getType()->getIntegerBitWidth();
         rhs = builder_.CreateAnd(rhs, llvm::ConstantInt::get(rhs->getType(), width - 1), "shift.count");
         rhs = builder_.CreateZExtOrTrunc(rhs, lhs->getType(), "shift.cast");
-        if (op == expr::lessless) {
+        if (op == BinaryOperatorKind::ShiftLeft) {
           return builder_.CreateShl(lhs, rhs, "shl");
         }
         return is_signed ? builder_.CreateAShr(lhs, rhs, "ashr") : builder_.CreateLShr(lhs, rhs, "lshr");
       }
-      case expr::amp:
+      case BinaryOperatorKind::BitwiseAnd:
         return builder_.CreateAnd(lhs, rhs, "and");
-      case expr::pipe:
+      case BinaryOperatorKind::BitwiseOr:
         return builder_.CreateOr(lhs, rhs, "or");
-      case expr::caret:
+      case BinaryOperatorKind::BitwiseXor:
         return builder_.CreateXor(lhs, rhs, "xor");
-      case expr::plus:
+      case BinaryOperatorKind::Add:
         return builder_.CreateAdd(lhs, rhs, "add");
-      case expr::minus:
+      case BinaryOperatorKind::Subtract:
         return builder_.CreateSub(lhs, rhs, "sub");
-      case expr::star:
+      case BinaryOperatorKind::Multiply:
         return builder_.CreateMul(lhs, rhs, "mul");
-      case expr::slash:
-      case expr::percent:
-        return EmitIntegerDivRem(lhs, rhs, op == expr::slash, is_signed);
-      case expr::equalequal:
+      case BinaryOperatorKind::Divide:
+      case BinaryOperatorKind::Remainder:
+        return EmitIntegerDivRem(lhs, rhs, op == BinaryOperatorKind::Divide, is_signed);
+      case BinaryOperatorKind::Equal:
         return builder_.CreateICmpEQ(lhs, rhs, "cmp");
-      case expr::exclaimequal:
+      case BinaryOperatorKind::NotEqual:
         return builder_.CreateICmpNE(lhs, rhs, "cmp");
-      case expr::less:
+      case BinaryOperatorKind::Less:
         return is_signed ? builder_.CreateICmpSLT(lhs, rhs, "cmp") : builder_.CreateICmpULT(lhs, rhs, "cmp");
-      case expr::lessequal:
+      case BinaryOperatorKind::LessEqual:
         return is_signed ? builder_.CreateICmpSLE(lhs, rhs, "cmp") : builder_.CreateICmpULE(lhs, rhs, "cmp");
-      case expr::greater:
+      case BinaryOperatorKind::Greater:
         return is_signed ? builder_.CreateICmpSGT(lhs, rhs, "cmp") : builder_.CreateICmpUGT(lhs, rhs, "cmp");
-      case expr::greaterequal:
+      case BinaryOperatorKind::GreaterEqual:
         return is_signed ? builder_.CreateICmpSGE(lhs, rhs, "cmp") : builder_.CreateICmpUGE(lhs, rhs, "cmp");
       default:
         break;
@@ -1971,7 +1975,7 @@ llvm::Value* CodeGenFunction::EmitIntegerDivRem(llvm::Value* lhs, llvm::Value* r
 
 llvm::Value* CodeGenFunction::EmitLogicalExpr(const BinaryOperator& expression) {
   auto* entry = builder_.GetInsertBlock();
-  const bool is_and = expression.op == expr::ampamp;
+  const bool is_and = expression.op == BinaryOperatorKind::LogicalAnd;
   auto* rhs = CreateBasicBlock(is_and ? "land.rhs" : "lor.rhs");
   auto* continuation = CreateBasicBlock(is_and ? "land.end" : "lor.end");
   if (!EmitBranchOnBoolExpr(*expression.LHS, is_and ? rhs : continuation, is_and ? continuation : rhs)) {

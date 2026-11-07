@@ -1,21 +1,21 @@
 add_library(
-  cw.lang
+  cw.grammar
   STATIC 
-  lang/Grammar.h lang/Grammar.cpp
-  lang/LRParseTable.h lang/LRParseTable.cpp
-  lang/LRStateMachine.h lang/LRStateMachine.cpp
-  lang/GrammarAnalyzer.h lang/GrammarAnalyzer.cpp
+  grammar/Grammar.h grammar/Grammar.cpp
+  grammar/LRParseTable.h grammar/LRParseTable.cpp
+  grammar/LRStateMachine.h grammar/LRStateMachine.cpp
+  grammar/GrammarAnalyzer.h grammar/GrammarAnalyzer.cpp
 )
 
-target_link_libraries(cw.lang PUBLIC Boost::boost)
-target_include_directories(cw.lang PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../)
+target_link_libraries(cw.grammar PUBLIC Boost::boost)
+target_include_directories(cw.grammar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../)
 
 add_executable(
   cw_expr_parse_table
   ExprGrammar.h
   cw_expr_parse_table.cpp
 )
-target_link_libraries(cw_expr_parse_table cw.lang Boost::boost Boost::program_options)
+target_link_libraries(cw_expr_parse_table cw.grammar Boost::boost Boost::program_options)
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ExprParseTable.h
@@ -60,7 +60,7 @@ add_library(
   Backend.h Backend.cpp
   Interface.h Interface.cpp
 )
-target_link_libraries(cw PUBLIC cw.lang LLVM PRIVATE fmt::fmt Boost::charconv)
+target_link_libraries(cw PUBLIC cw.grammar LLVM PRIVATE fmt::fmt Boost::charconv)
 target_include_directories(cw PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../ ${CMAKE_CURRENT_BINARY_DIR})
 target_include_directories(cw SYSTEM PUBLIC ${LLVM_INCLUDE_DIRS})
 target_compile_options(cw PRIVATE "SHELL:${LLVM_DEFINITIONS}")

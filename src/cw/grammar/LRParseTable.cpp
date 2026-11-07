@@ -9,7 +9,7 @@
 
 #include "Grammar.h"
 
-namespace cw::lang {
+namespace cw::grammar {
 
 template <typename Action>
 void Write_(std::ostream& os, const Grammar& grammar, const BasicLRParseTable<Action>& table) {
@@ -52,4 +52,4 @@ void Write(std::ostream& os, const Grammar& grammar, const MultiActionLRParseTab
 
 void Write(std::ostream& os, const Grammar& grammar, const LRParseTable& table) { Write_(os, grammar, table); }
 
-}  // namespace cw::lang
+}  // namespace cw::grammar
