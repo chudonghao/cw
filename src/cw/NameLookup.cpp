@@ -8,10 +8,30 @@
 #include <boost/assert.hpp>
 
 #include "NamespaceContext.h"
-#include "SymbolTable.h"
 #include "ast.h"
 
 namespace cw {
+
+void LocalScopeStack::PushScope() { scopes_.emplace_back(); }
+
+void LocalScopeStack::PopScope() {
+  BOOST_ASSERT(!scopes_.empty());
+  scopes_.pop_back();
+}
+
+std::pair<const VarDecl*, bool> LocalScopeStack::InsertLocal(const VarDecl& declaration) {
+  BOOST_ASSERT(!scopes_.empty() && !declaration.name.empty());
+  const auto [entry, inserted] = scopes_.back().emplace(declaration.name, &declaration);
+  return {entry->second, inserted};
+}
+
+const VarDecl* LocalScopeStack::LookupLocal(const std::string& name) const {
+  for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
+    const auto found = scope->find(name);
+    if (found != scope->end()) return found->second;
+  }
+  return nullptr;
+}
 
 StructDecl* LookupResult::GetType() const {
   if (!*this) return nullptr;

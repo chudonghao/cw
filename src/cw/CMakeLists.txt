@@ -40,8 +40,6 @@ add_library(
   SemaOverload.h SemaOverload.cpp
   NameSyntax.h NameLookup.h NameLookup.cpp
   NamespaceContext.h NamespaceContext.cpp
-  GlobalInitLookup.h
-  SymbolTable.h SymbolTable.cpp
   ASTContext.h ASTContext.cpp
   TargetInfo.h TargetInfo.cpp
   TypeLayout.h TypeLayout.cpp
@@ -50,7 +48,6 @@ add_library(
   Diagnostic.h Diagnostic.cpp
   ParseResult.h
   CFG.h CFG.cpp
-  CFGBuilder.h CFGBuilder.cpp
   DefiniteInitialization.h DefiniteInitialization.cpp
   ast.h ast.cpp
   ASTVisitor.h ASTVisitor.cpp

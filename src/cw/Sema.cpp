@@ -28,10 +28,9 @@
 
 #include "ASTContext.h"
 #include "ASTVisitor.h"
-#include "CFGBuilder.h"
+#include "CFG.h"
 #include "ConstantEvaluation.h"
 #include "DefiniteInitialization.h"
-#include "GlobalInitLookup.h"
 #include "NamespaceContext.h"
 #include "SemaConversion.h"
 #include "SemaOverload.h"
@@ -2756,7 +2755,7 @@ void Sema::AnalyzeDeclarationBodies(TranslationUnitDecl& translation_unit) {
   PrepareGlobalBindings();
   {
     GlobalInitLookup global_lookup;
-    llvm::SaveAndRestore<SymbolTable*> local_scope(local_symbols_, &global_lookup.GetLocals());
+    llvm::SaveAndRestore<LocalScopeStack*> local_scope(local_symbols_, &global_lookup.GetLocals());
     // The entire source-ordered global pass finishes before any function body.
     for (auto* declaration : declarations_) {
       if (declaration->GetKind() != NodeKind::VarGroupDecl) continue;
@@ -2787,9 +2786,9 @@ void Sema::AnalyzeDeclarationBodies(TranslationUnitDecl& translation_unit) {
 }
 
 void Sema::AnalyzeFunction(FunctionDecl& declaration) {
-  SymbolTable locals;
+  LocalScopeStack locals;
   const LookupContext lookup_context{declaration.owning_namespace, &locals};
-  llvm::SaveAndRestore<SymbolTable*> local_scope(local_symbols_, &locals);
+  llvm::SaveAndRestore<LocalScopeStack*> local_scope(local_symbols_, &locals);
   llvm::SaveAndRestore<const LookupContext*> lookup_scope(lookup_context_, &lookup_context);
   BOOST_ASSERT(loop_depth_ == 0);
   BOOST_ASSERT(!current_function_);
@@ -2864,7 +2863,7 @@ class ConstructorCompletionInserter final : public ASTVisitor {
 }  // namespace
 
 void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) {
-  const auto global_cfg = CFGBuilder::Build(translation_unit);
+  const auto global_cfg = CFG::Build(translation_unit);
   for (const auto& finding : DefiniteInitializationAnalysis::Run(translation_unit, *global_cfg).findings) {
     BOOST_ASSERT(finding.owner);
     Diagnose(*const_cast<Node*>(finding.owner), kErrorDiagnostic, finding.range,
@@ -2884,7 +2883,7 @@ void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) 
       continue;
     }
 
-    std::unique_ptr<CFG> cfg = CFGBuilder::Build(function);
+    std::unique_ptr<CFG> cfg = CFG::Build(function);
     BOOST_ASSERT(cfg);
     const ConstructorPrologueStatus constructor_prologue_status =
         function.GetKind() == NodeKind::ConstructorDecl

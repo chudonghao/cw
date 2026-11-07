@@ -237,6 +237,16 @@ class CFG {
   std::size_t next_program_point_{1};
 
  public:
+  /// \brief Builds the source-level CFG for one function definition from a type-complete Semantic AST.
+  ///
+  /// Building does not mutate the AST and does not perform data-flow analysis.
+  /// Blocks split only at statement-level control flow; each statement-level
+  /// expression becomes one event because initialization happens only in statements.
+  /// Returns null for a function declaration without a body.
+  static std::unique_ptr<CFG> Build(const FunctionDecl& function);
+  /// \brief Builds one CFG for the translation unit's ordered global initialization.
+  static std::unique_ptr<CFG> Build(const TranslationUnitDecl& translation_unit);
+
   CFG();
   ~CFG();
 

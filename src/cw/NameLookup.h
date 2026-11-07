@@ -8,6 +8,8 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -16,18 +18,30 @@
 namespace cw {
 
 class NamespaceContext;
-class SymbolTable;
 struct NamedDecl;
 struct StructDecl;
 struct VarDecl;
 struct FunctionDecl;
+
+/// A transient local scope stack. Declarations remain owned by the AST.
+class LocalScopeStack {
+  using Scope = std::unordered_map<std::string, const VarDecl*>;
+  std::vector<Scope> scopes_;
+
+ public:
+  void PushScope();
+  void PopScope();
+  /// Inserts in the innermost scope, retaining the first declaration on conflict.
+  std::pair<const VarDecl*, bool> InsertLocal(const VarDecl& declaration);
+  const VarDecl* LookupLocal(const std::string& name) const;
+};
 
 enum class LookupFailure { None, NotFound, NotNamespace, MissingMember, Unbound };
 
 /// A synchronous query borrows its scope and snapshots the global visibility bound.
 struct LookupContext {
   const NamespaceContext* from;
-  const SymbolTable* locals{};
+  const LocalScopeStack* locals{};
   std::optional<std::size_t> visible_global_groups{};
 };
 
