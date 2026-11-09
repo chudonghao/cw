@@ -5,6 +5,8 @@
 
 #include "Lexer.h"
 
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -21,6 +23,7 @@ namespace cw {
 
 namespace {
 
+/// \brief Iterates over one source file's content, tracking the line and column of each position.
 class CharIterator {
  public:
   using value_type = char;
@@ -30,7 +33,7 @@ class CharIterator {
   using iterator_category = std::forward_iterator_tag;
 
  private:
-  const std::vector<cw::Source>* sources_{nullptr};
+  const std::string* content_{};
   int source_{-1};
   int pos_{0};
   int line_{0};
@@ -39,56 +42,23 @@ class CharIterator {
  public:
   CharIterator() = default;
 
-  CharIterator(const std::vector<Source>* sources, int source, int pos)
-      : sources_(sources), source_(source), pos_(pos), line_(0), column_(0) {
-    Normalize();
-  }
-
-  static CharIterator begin(const std::vector<Source>* sources) {
-    BOOST_ASSERT(sources);
-    if (sources->empty()) {
-      return end(sources);
-    }
-    return CharIterator(sources, 0, 0);
-  }
-
-  static CharIterator end(const std::vector<Source>* sources) {
-    BOOST_ASSERT(sources);
-    return CharIterator(sources, sources->size(), 0);
-  }
+  CharIterator(const std::string& content, int source, int pos) : content_(&content), source_(source), pos_(pos) {}
 
   reference operator*() const {
-    BOOST_ASSERT(sources_ && 0 <= source_ && source_ < static_cast<int>(sources_->size()));
-    const auto& content = (*sources_)[source_].content;
-    BOOST_ASSERT(0 <= pos_ && pos_ <= static_cast<int>(content.size()));
-    // std::string exposes its terminating NUL at content[size()].
-    return content[pos_];
+    BOOST_ASSERT(content_ && 0 <= pos_ && pos_ < static_cast<int>(content_->size()));
+    return (*content_)[pos_];
   }
 
-  pointer operator->() const {
-    BOOST_ASSERT(sources_ && 0 <= source_ && source_ < static_cast<int>(sources_->size()));
-    const auto& content = (*sources_)[source_].content;
-    BOOST_ASSERT(0 <= pos_ && pos_ <= static_cast<int>(content.size()));
-    // std::string exposes its terminating NUL at content[size()].
-    return &content[pos_];
-  }
+  pointer operator->() const { return &**this; }
 
   CharIterator& operator++() {
-    BOOST_ASSERT(sources_ && 0 <= source_ && source_ < static_cast<int>(sources_->size()));
-
-    const auto& content = (*sources_)[source_].content;
-    if (pos_ < static_cast<int>(content.size())) {
-      char ch = content[pos_];
-      if (ch == '\n') {
-        ++line_;
-        column_ = 0;
-      } else {
-        ++column_;
-      }
+    if (**this == '\n') {
+      ++line_;
+      column_ = 0;
+    } else {
+      ++column_;
     }
-
     ++pos_;
-    Normalize();
     return *this;
   }
 
@@ -99,46 +69,20 @@ class CharIterator {
   }
 
   friend bool operator==(const CharIterator& lhs, const CharIterator& rhs) {
-    if (lhs.sources_ != rhs.sources_) {
-      return false;
-    }
-    if (lhs.source_ != rhs.source_) {
-      return false;
-    }
-    return lhs.pos_ == rhs.pos_;
+    return lhs.content_ == rhs.content_ && lhs.pos_ == rhs.pos_;
   }
 
   friend bool operator!=(const CharIterator& lhs, const CharIterator& rhs) { return !(lhs == rhs); }
 
-  int Source() const { return source_; }
   int Pos() const { return pos_; }
-  int Line() const { return line_; }
-  int Column() const { return column_; }
-
- private:
-  void Normalize() {
-    if (!sources_ || source_ < 0) {
-      return;
-    }
-
-    while (source_ < static_cast<int>(sources_->size())) {
-      const auto& content = (*sources_)[source_].content;
-      // Expose one NUL per file so the lexer emits eof before moving to the next source.
-      if (pos_ <= static_cast<int>(content.size())) {
-        break;
-      }
-      ++source_;
-      pos_ = 0;
-      line_ = 0;
-      column_ = 0;
-    }
-  }
+  SourceLocation Location() const { return {source_, pos_, line_, column_}; }
 };
 
-}  // namespace
+/// \brief Whitespace, comments and line breaks only separate tokens and are never returned.
+bool IsTrivia(tok::TokenType type) { return type == tok::comment || type == tok::blank || type == tok::eol; }
 
-struct MultiSourceLexer : lex::lexer<lex::lexertl::lexer<lex::lexertl::token<CharIterator>>> {
-  MultiSourceLexer() {
+struct LexerRules : lex::lexer<lex::lexertl::lexer<lex::lexertl::token<CharIterator>>> {
+  LexerRules() {
     const auto& rules = this->self;
 
     // Line comments.
@@ -253,79 +197,88 @@ struct MultiSourceLexer : lex::lexer<lex::lexertl::lexer<lex::lexertl::token<Cha
     rules.add(R"(\{)", tok::l_brace);
     rules.add(R"(\})", tok::r_brace);
 
-    // Whitespace and per-file boundaries.
+    // Whitespace. U+0000 is not a source character anywhere, so comments and literals above stop before it.
     rules.add(R"([ \t\v\f]+)", tok::blank);
     rules.add(R"(\r?\n)", tok::eol);
-    rules.add(R"(\0)", tok::eof);
+    rules.add(R"(\0)", tok::undefined);
     rules.add(R"(.)", tok::undefined);
   }
 };
 
-struct Lexer::Impl {
-  MultiSourceLexer multi_source_lexer{};
-  CharIterator char_iter{};
-  CharIterator char_end{};
-  MultiSourceLexer::iterator_type token_iter{};
-  MultiSourceLexer::iterator_type token_end{};
+/// \brief Returns the rules shared by every Lexer; lexertl builds their state machine once, on first use.
+const LexerRules& GetLexerRules() {
+  static const LexerRules rules;
+  return rules;
+}
 
+}  // namespace
+
+struct Lexer::Impl {
   const std::vector<Source>* sources_{};
-  cw::Token token{};
+  int source_{};              ///< Source being lexed; equals the source count once all are exhausted.
+  CharIterator char_iter_{};  ///< Position within the current source; token_iter_ advances it.
+  CharIterator char_end_{};   ///< End of the current source's content.
+  LexerRules::iterator_type token_iter_{};
+  LexerRules::iterator_type token_end_{};
+  SourceLocation source_end_{};  ///< End of the last token consumed in the current source.
+  cw::Token token_{};
 
   const std::vector<Source>* Sources() const { return sources_; }
 
   void Reset(const std::vector<Source>* sources) {
+    BOOST_ASSERT(sources);
     sources_ = sources;
-    char_iter = CharIterator::begin(sources);
-    char_end = CharIterator::end(sources);
-    token_iter = multi_source_lexer.begin(char_iter, char_end);
-    token_end = multi_source_lexer.end();
-
+    StartSource(0);
+    SkipTrivia();
     TakeToken();
   }
 
-  bool IterValid() { return token_iter != token_end; }
-
-  tok::TokenType IterType() { return static_cast<tok::TokenType>(token_iter->id()); }
-
-  void SkipBlankComment() {
-    while (IterValid() && IsBlankOrComment(IterType())) {
-      ++token_iter;
+  void Advance() {
+    if (AtEndOfSources()) {
+      return;
     }
-
+    if (token_iter_ != token_end_) {
+      Step();
+    } else {
+      // Only an explicit advance leaves a source's eof for the next source.
+      StartSource(source_ + 1);
+    }
+    SkipTrivia();
     TakeToken();
   }
 
-  void SkipLine() {
-    for (; IterValid();) {
-      bool is_line_end = IterType() == tok::eol || IterType() == tok::eof;
-
-      ++token_iter;
-
-      if (is_line_end) {
-        break;
-      }
-    }
-
-    TakeToken();
-  }
-
-  void Advance(bool skip_blank_comment) {
-    if (IterValid()) {
-      ++token_iter;
-    }
-
-    if (skip_blank_comment) {
-      while (IterValid() && IsBlankOrComment(IterType())) {
-        ++token_iter;
-      }
-    }
-
-    TakeToken();
-  }
-
-  const cw::Token& Token() const { return token; }
+  const cw::Token& Token() const { return token_; }
 
  private:
+  bool AtEndOfSources() const { return !sources_ || source_ >= static_cast<int>(sources_->size()); }
+
+  tok::TokenType IterType() const { return static_cast<tok::TokenType>(token_iter_->id()); }
+
+  void StartSource(int source) {
+    source_ = source;
+    token_iter_ = token_end_ = {};
+    if (AtEndOfSources()) {
+      return;
+    }
+    const std::string& content = (*sources_)[source_].content;
+    char_iter_ = CharIterator(content, source_, 0);
+    char_end_ = CharIterator(content, source_, static_cast<int>(content.size()));
+    token_iter_ = GetLexerRules().begin(char_iter_, char_end_);
+    token_end_ = GetLexerRules().end();
+    source_end_ = char_iter_.Location();
+  }
+
+  void Step() {
+    source_end_ = token_iter_->value().end().Location();
+    ++token_iter_;
+  }
+
+  void SkipTrivia() {
+    while (token_iter_ != token_end_ && IsTrivia(IterType())) {
+      Step();
+    }
+  }
+
   template <typename Property>
   static Token::Property ToTokenProperty(std::optional<Property> property) {
     if (property) {
@@ -367,47 +320,25 @@ struct Lexer::Impl {
   }
 
   void TakeToken() {
-    // eof comes from each file's NUL; eos is synthesized after all sources are exhausted.
-    if (IterValid()) {
-      auto char_begin = token_iter->value().begin();
-      auto char_end = token_iter->value().end();
-
-      size_t size{};
-      if (char_begin.Source() == char_end.Source()) {
-        size = char_end.Pos() - char_begin.Pos();
-      } else {
-        BOOST_ASSERT(IterType() == tok::eof);
-        size = 0;
-      }
-
-      token.range.begin.file = char_begin.Source();
-      token.range.begin.pos = char_begin.Pos();
-      token.range.begin.line = char_begin.Line();
-      token.range.begin.column = char_begin.Column();
-      token.range.end.file = char_end.Source();
-      token.range.end.pos = char_end.Pos();
-      token.range.end.line = char_end.Line();
-      token.range.end.column = char_end.Column();
-
-      if (IterType() == tok::eof) token.range.end = token.range.begin;
-      token.source_view = std::string_view(&*char_begin, size);
-
-      token.type = IterType();
+    if (AtEndOfSources()) {
+      // eos follows the last source's eof and is anchored past the last source.
+      const SourceLocation end{sources_ ? static_cast<int>(sources_->size()) : 0, 0, 0, 0};
+      token_.range = {end, end};
+      token_.source_view = std::string_view();
+      token_.type = tok::eos;
+    } else if (token_iter_ == token_end_) {
+      // Each source ends with one zero-width eof after its last token.
+      const std::string& content = (*sources_)[source_].content;
+      token_.range = {source_end_, source_end_};
+      token_.source_view = std::string_view(content.data() + content.size(), 0);
+      token_.type = tok::eof;
     } else {
-      token.range.begin.file = char_iter.Source();
-      token.range.begin.pos = char_iter.Pos();
-      token.range.begin.line = char_iter.Line();
-      token.range.begin.column = char_iter.Column();
-      token.range.end.file = char_end.Source();
-      token.range.end.pos = char_end.Pos();
-      token.range.end.line = char_end.Line();
-      token.range.end.column = char_end.Column();
-
-      token.source_view = std::string_view();
-
-      token.type = tok::eos;
+      const auto& value = token_iter_->value();
+      token_.range = {value.begin().Location(), value.end().Location()};
+      token_.source_view = std::string_view(&*value.begin(), value.end().Pos() - value.begin().Pos());
+      token_.type = IterType();
     }
-    UpdateTokenProperty(token);
+    UpdateTokenProperty(token_);
   }
 };
 
@@ -419,13 +350,7 @@ const std::vector<Source>* Lexer::Sources() const { return impl_->Sources(); }
 
 void Lexer::Reset(const std::vector<Source>* sources) { impl_->Reset(sources); }
 
-void Lexer::SkipBlankComment() { impl_->SkipBlankComment(); }
-
-void Lexer::SkipLine() { impl_->SkipLine(); }
-
-void Lexer::Advance() { impl_->Advance(true); }
-
-void Lexer::Advance(bool skip_blank_comment) { impl_->Advance(skip_blank_comment); }
+void Lexer::Advance() { impl_->Advance(); }
 
 const Token& Lexer::Token() const { return impl_->Token(); }
 
