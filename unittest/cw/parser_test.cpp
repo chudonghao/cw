@@ -64,7 +64,8 @@ class ParserTest : public ::testing::Test {
   }
 
   void ExpectAstDump(std::string_view expected_dump) {
-    cw::test::ExpectAstDump(*ast_context_.GetTranslationUnitDecl(), sources_, expected_dump);
+    cw::test::ExpectAstDump(*ast_context_.GetTranslationUnitDecl(), sources_, cw::ASTDumper::Stage::Parsed,
+                            expected_dump);
   }
 
   void TearDown() override {
@@ -1181,7 +1182,7 @@ TEST_F(ParserTest, DistinguishesConstructionAndDestructionCallNodes) {
     |-ExprStmt {{address}} <col:18, col:23>
     | `-DeclRefExpr {{address}} <col:18, col:22> 'this'
     |-ExprStmt {{address}} <col:24, col:41>
-    | `-ConstructionExpr {{address}} <col:24, col:40> complete-object target <col:33, col:34> 'T'
+    | `-ConstructionExpr {{address}} <col:24, col:40> target <col:33, col:34> 'T'
     |   |-DeclRefExpr {{address}} <col:30, col:31> 'p'
     |   |-IntegerLiteral {{address}} <col:35, col:36> 2
     |   `-DeclRefExpr {{address}} <col:38, col:39> 'x'

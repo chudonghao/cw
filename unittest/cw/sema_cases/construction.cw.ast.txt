@@ -20,11 +20,11 @@ TranslationUnitDecl {{address}}
     |   `-ConstructionExpr {{address}} <col:16, col:43> 'ConstructionValue' pure-rvalue complete-object target <col:16, col:33> 'ConstructionValue' Constructor {{address:constructor}} 'ConstructionValue' 'func (i32) void'
     |     `-ImplicitCastExpr {{address}} <col:34, col:42> 'i32' pure-rvalue <IntegerToInteger>
     |       `-ImplicitCastExpr {{address}} <col:34, col:42> 'i16' pure-rvalue <LValueToRValue>
-    |         `-DeclRefExpr {{address}} <col:34, col:42> 'i16' lvalue ParmVar {{address:argument}} 'argument' 'i16'
+    |         `-DeclRefExpr {{address}} <col:34, col:42> 'i16' lvalue 'argument' ParmVar {{address:argument}} 'argument' 'i16'
     `-ExprStmt {{address}} <line:9:3, col:46>
       `-ConstructionExpr {{address}} <col:3, col:45> '*ConstructionValue' pure-rvalue complete-object target <col:18, col:35> 'ConstructionValue' Constructor {{address:constructor}} 'ConstructionValue' 'func (i32) void'
         |-ImplicitCastExpr {{address}} <col:9, col:16> '*ConstructionValue' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:9, col:16> '*ConstructionValue' lvalue ParmVar {{address:address}} 'address' '*ConstructionValue'
+        | `-DeclRefExpr {{address}} <col:9, col:16> '*ConstructionValue' lvalue 'address' ParmVar {{address:address}} 'address' '*ConstructionValue'
         `-ImplicitCastExpr {{address}} <col:36, col:44> 'i32' pure-rvalue <IntegerToInteger>
           `-ImplicitCastExpr {{address}} <col:36, col:44> 'i16' pure-rvalue <LValueToRValue>
-            `-DeclRefExpr {{address}} <col:36, col:44> 'i16' lvalue ParmVar {{address:argument}} 'argument' 'i16'
+            `-DeclRefExpr {{address}} <col:36, col:44> 'i16' lvalue 'argument' ParmVar {{address:argument}} 'argument' 'i16'

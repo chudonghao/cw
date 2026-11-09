@@ -16,19 +16,41 @@ namespace cw {
 
 /// \brief AST dumper that prints AST in tree format.
 ///
+/// The caller names the AST stage, and the dump keeps three kinds of content apart:
+/// - Syntax facts (written names, operators, literals, written base and target names, source
+///   modifiers, type syntax) print identically in both stages; what the source omits is omitted.
+/// - Semantic attributes (expression type and value category, declaration types, reference
+///   targets, construction kinds and constructors, resolved targets of written names) print only in
+///   the semantic stage, and always print there: an empty attribute prints a marker.
+/// - Semantic relations and flags (virtual-declaration, overrides, implementation, a struct's
+///   abstract) print only in the semantic stage, and only when present.
+/// `contains-errors` prints in both stages.
+///
+/// Markers for empty semantic attributes:
+/// - `'<error>'`, or `<error>` outside type positions: not determined because of a front-end error.
+/// - `non-object`: the expression has a type but is not a runtime object.
+/// - `overload-set`: the reference names an overload set rather than one declaration.
+/// - `trivial`: trivial default formation selects no constructor.
+///
 /// Example output:
 /// ```
 /// TranslationUnitDecl 0x1000
 /// `-StructDecl 0x1010 <test.cw:1:1, col:20> S trivial
 /// ```
 class ASTDumper : public ASTVisitor {
+ public:
+  /// \brief AST stage being dumped; the AST does not record its own stage.
+  enum class Stage { Parsed, Semantic };
+
+ private:
   std::ostream& os_;                    ///< Destination stream.
   const std::vector<Source>& sources_;  ///< Source context used to resolve file indices.
+  Stage stage_;                         ///< Stage whose content is printed.
   SourceLocation previous_location_{};  ///< Last valid endpoint printed for location abbreviation.
   std::vector<bool> indent_stack_;      ///< true = last child at this level
 
  public:
-  ASTDumper(std::ostream& os, const std::vector<Source>& sources);
+  ASTDumper(std::ostream& os, const std::vector<Source>& sources, Stage stage);
 
   void Dump(Node& node);
 
@@ -115,12 +137,22 @@ class ASTDumper : public ASTVisitor {
   void PrintEscapedString(std::string_view value);
   void PrintTypeName(QualType type);
   void PrintUnqualifiedTypeName(const Type& type);
+  void PrintWrittenName(const NameSyntax& name);
+  bool IsSemanticStage() const { return stage_ == Stage::Semantic; }
+
+  // Semantic attributes and relations, printed only in the semantic stage.
   void PrintType(QualType type);
   void PrintExprType(const Expr& expression);
+  void PrintDeclType(const ValueDecl& declaration);
+  void PrintReferenceTarget(const ValueDecl* declaration);
+  void PrintSelectedConstructor(const ConstructorDecl* constructor, const Expr& construction);
+  void PrintRelation(const char* label, const ValueDecl* declaration);
+  void PrintSpecialFunctionTarget(const StructType* target_type);
+  void PrintBaseType(const StructType* type, bool is_last);
+
   void PrintDeclReference(const ValueDecl& declaration);
   void PrintStructReference(const StructDecl& declaration);
-  void PrintSpecialFunctionTarget(const StructType* target_type);
-  void PrintBaseType(const StructType& type, bool is_last);
+  void DumpDeclRefExpr(DeclRefExpr& n, bool print_written_name);
   bool IsPrintable(const SourceLocation& location) const;
 
   /// \brief Prints the " exported" marker when \p n carries the source-level `export` modifier.

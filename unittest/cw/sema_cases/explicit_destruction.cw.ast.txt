@@ -15,12 +15,12 @@ TranslationUnitDecl {{address}}
   |     `-NamedType {{address}} <col:74, col:90> 'DestructionValue'
   `-CompoundStmt {{address}} <col:92, line:10:2>
     |-ExprStmt {{address}} <line:8:3, col:37>
-    | `-DestructorCallExpr {{address}} <col:3, col:36> 'void'
+    | `-DestructorCallExpr {{address}} <col:3, col:36> 'void' non-object
     |   |-ImplicitCastExpr {{address}} <col:9, col:16> '*DestructionValue' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:9, col:16> '*DestructionValue' lvalue ParmVar {{address:address}} 'address' '*DestructionValue'
-    |   `-DeclRefExpr {{address}} <col:18, col:34> 'func () void' Destructor {{address:destructor}} 'DestructionValue' 'func () void'
+    |   | `-DeclRefExpr {{address}} <col:9, col:16> '*DestructionValue' lvalue 'address' ParmVar {{address:address}} 'address' '*DestructionValue'
+    |   `-DeclRefExpr {{address}} <col:18, col:34> 'func () void' non-object 'DestructionValue' Destructor {{address:destructor}} 'DestructionValue' 'func () void'
     `-ExprStmt {{address}} <line:9:3, col:43>
-      `-DestructorCallExpr {{address}} <col:3, col:42> 'void'
+      `-DestructorCallExpr {{address}} <col:3, col:42> 'void' non-object
         |-ImplicitCastExpr {{address}} <col:9, col:22> '*const DestructionValue' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:9, col:22> '*const DestructionValue' lvalue ParmVar {{address:const_address}} 'const_address' '*const DestructionValue'
-        `-DeclRefExpr {{address}} <col:24, col:40> 'func () void' Destructor {{address:destructor}} 'DestructionValue' 'func () void'
+        | `-DeclRefExpr {{address}} <col:9, col:22> '*const DestructionValue' lvalue 'const_address' ParmVar {{address:const_address}} 'const_address' '*const DestructionValue'
+        `-DeclRefExpr {{address}} <col:24, col:40> 'func () void' non-object 'DestructionValue' Destructor {{address:destructor}} 'DestructionValue' 'func () void'

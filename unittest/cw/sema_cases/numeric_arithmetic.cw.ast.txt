@@ -24,18 +24,18 @@ TranslationUnitDecl {{address}}
     |   |-VarDecl {{address}} <col:7, col:17> same_small 'i8'
     |   `-BinaryOperator {{address}} <col:21, col:38> 'i8' pure-rvalue '+'
     |     |-ImplicitCastExpr {{address}} <col:21, col:28> 'i8' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:21, col:28> 'i8' lvalue ParmVar {{address:signed8}} 'signed8' 'i8'
+    |     | `-DeclRefExpr {{address}} <col:21, col:28> 'i8' lvalue 'signed8' ParmVar {{address:signed8}} 'signed8' 'i8'
     |     `-ImplicitCastExpr {{address}} <col:31, col:38> 'i8' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:31, col:38> 'i8' lvalue ParmVar {{address:signed8}} 'signed8' 'i8'
+    |       `-DeclRefExpr {{address}} <col:31, col:38> 'i8' lvalue 'signed8' ParmVar {{address:signed8}} 'signed8' 'i8'
     |-DeclStmt {{address}} <line:4:3, col:45>
     | `-VarGroupDecl {{address}} <col:3, col:45>
     |   |-VarDecl {{address}} <col:7, col:20> mixed_integer 'i16'
     |   `-BinaryOperator {{address}} <col:24, col:44> 'i16' pure-rvalue '+'
     |     |-ImplicitCastExpr {{address}} <col:24, col:33> 'i16' pure-rvalue <IntegerToInteger>
     |     | `-ImplicitCastExpr {{address}} <col:24, col:33> 'u8' pure-rvalue <LValueToRValue>
-    |     |   `-DeclRefExpr {{address}} <col:24, col:33> 'u8' lvalue ParmVar {{address:unsigned8}} 'unsigned8' 'u8'
+    |     |   `-DeclRefExpr {{address}} <col:24, col:33> 'u8' lvalue 'unsigned8' ParmVar {{address:unsigned8}} 'unsigned8' 'u8'
     |     `-ImplicitCastExpr {{address}} <col:36, col:44> 'i16' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:36, col:44> 'i16' lvalue ParmVar {{address:signed16}} 'signed16' 'i16'
+    |       `-DeclRefExpr {{address}} <col:36, col:44> 'i16' lvalue 'signed16' ParmVar {{address:signed16}} 'signed16' 'i16'
     |-DeclStmt {{address}} <line:5:3, col:31>
     | `-VarGroupDecl {{address}} <col:3, col:31>
     |   |-VarDecl {{address}} <col:7, col:17> characters 'u8'
@@ -48,18 +48,18 @@ TranslationUnitDecl {{address}}
     |   `-BinaryOperator {{address}} <col:22, col:39> 'f32' pure-rvalue '+'
     |     |-ImplicitCastExpr {{address}} <col:22, col:30> 'f32' pure-rvalue <IntegerToFloat>
     |     | `-ImplicitCastExpr {{address}} <col:22, col:30> 'i32' pure-rvalue <LValueToRValue>
-    |     |   `-DeclRefExpr {{address}} <col:22, col:30> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |     |   `-DeclRefExpr {{address}} <col:22, col:30> 'i32' lvalue 'signed32' ParmVar {{address:signed32}} 'signed32' 'i32'
     |     `-ImplicitCastExpr {{address}} <col:33, col:39> 'f32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:33, col:39> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32'
+    |       `-DeclRefExpr {{address}} <col:33, col:39> 'f32' lvalue 'single' ParmVar {{address:single}} 'single' 'f32'
     |-DeclStmt {{address}} <line:7:3, col:36>
     | `-VarGroupDecl {{address}} <col:3, col:36>
     |   |-VarDecl {{address}} <col:7, col:18> wider_float 'f64'
     |   `-BinaryOperator {{address}} <col:22, col:35> 'f64' pure-rvalue '*'
     |     |-ImplicitCastExpr {{address}} <col:22, col:28> 'f64' pure-rvalue <FloatToFloat>
     |     | `-ImplicitCastExpr {{address}} <col:22, col:28> 'f32' pure-rvalue <LValueToRValue>
-    |     |   `-DeclRefExpr {{address}} <col:22, col:28> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32'
+    |     |   `-DeclRefExpr {{address}} <col:22, col:28> 'f32' lvalue 'single' ParmVar {{address:single}} 'single' 'f32'
     |     `-ImplicitCastExpr {{address}} <col:31, col:35> 'f64' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:31, col:35> 'f64' lvalue ParmVar {{address:wide}} 'wide' 'f64'
+    |       `-DeclRefExpr {{address}} <col:31, col:35> 'f64' lvalue 'wide' ParmVar {{address:wide}} 'wide' 'f64'
     |-DeclStmt {{address}} <line:8:3, col:37>
     | `-VarGroupDecl {{address}} <col:3, col:37>
     |   |-VarDecl {{address}} <col:7, col:20> literal_float 'f64'
@@ -72,43 +72,43 @@ TranslationUnitDecl {{address}}
     |   |-VarDecl {{address}} <col:7, col:25> integer_difference 'i32'
     |   `-BinaryOperator {{address}} <col:29, col:48> 'i32' pure-rvalue '-'
     |     |-ImplicitCastExpr {{address}} <col:29, col:37> 'i32' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:29, col:37> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |     | `-DeclRefExpr {{address}} <col:29, col:37> 'i32' lvalue 'signed32' ParmVar {{address:signed32}} 'signed32' 'i32'
     |     `-ImplicitCastExpr {{address}} <col:40, col:48> 'i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:40, col:48> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |       `-DeclRefExpr {{address}} <col:40, col:48> 'i32' lvalue 'signed32' ParmVar {{address:signed32}} 'signed32' 'i32'
     |-DeclStmt {{address}} <line:10:3, col:47>
     | `-VarGroupDecl {{address}} <col:3, col:47>
     |   |-VarDecl {{address}} <col:7, col:23> integer_quotient 'i32'
     |   `-BinaryOperator {{address}} <col:27, col:46> 'i32' pure-rvalue '/'
     |     |-ImplicitCastExpr {{address}} <col:27, col:35> 'i32' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:27, col:35> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |     | `-DeclRefExpr {{address}} <col:27, col:35> 'i32' lvalue 'signed32' ParmVar {{address:signed32}} 'signed32' 'i32'
     |     `-ImplicitCastExpr {{address}} <col:38, col:46> 'i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:38, col:46> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |       `-DeclRefExpr {{address}} <col:38, col:46> 'i32' lvalue 'signed32' ParmVar {{address:signed32}} 'signed32' 'i32'
     |-DeclStmt {{address}} <line:11:3, col:48>
     | `-VarGroupDecl {{address}} <col:3, col:48>
     |   |-VarDecl {{address}} <col:7, col:24> integer_remainder 'i32'
     |   `-BinaryOperator {{address}} <col:28, col:47> 'i32' pure-rvalue '%'
     |     |-ImplicitCastExpr {{address}} <col:28, col:36> 'i32' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:28, col:36> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |     | `-DeclRefExpr {{address}} <col:28, col:36> 'i32' lvalue 'signed32' ParmVar {{address:signed32}} 'signed32' 'i32'
     |     `-ImplicitCastExpr {{address}} <col:39, col:47> 'i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:39, col:47> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |       `-DeclRefExpr {{address}} <col:39, col:47> 'i32' lvalue 'signed32' ParmVar {{address:signed32}} 'signed32' 'i32'
     |-DeclStmt {{address}} <line:12:3, col:39>
     | `-VarGroupDecl {{address}} <col:3, col:39>
     |   |-VarDecl {{address}} <col:7, col:21> float_quotient 'f64'
     |   `-BinaryOperator {{address}} <col:25, col:38> 'f64' pure-rvalue '/'
     |     |-ImplicitCastExpr {{address}} <col:25, col:29> 'f64' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:25, col:29> 'f64' lvalue ParmVar {{address:wide}} 'wide' 'f64'
+    |     | `-DeclRefExpr {{address}} <col:25, col:29> 'f64' lvalue 'wide' ParmVar {{address:wide}} 'wide' 'f64'
     |     `-ImplicitCastExpr {{address}} <col:32, col:38> 'f64' pure-rvalue <FloatToFloat>
     |       `-ImplicitCastExpr {{address}} <col:32, col:38> 'f32' pure-rvalue <LValueToRValue>
-    |         `-DeclRefExpr {{address}} <col:32, col:38> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32'
+    |         `-DeclRefExpr {{address}} <col:32, col:38> 'f32' lvalue 'single' ParmVar {{address:single}} 'single' 'f32'
     |-DeclStmt {{address}} <line:13:3, col:30>
     | `-VarGroupDecl {{address}} <col:3, col:30>
     |   |-VarDecl {{address}} <col:7, col:12> sizes 'usize'
     |   `-BinaryOperator {{address}} <col:16, col:29> 'usize' pure-rvalue '+'
     |     |-ImplicitCastExpr {{address}} <col:16, col:20> 'usize' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:16, col:20> 'usize' lvalue ParmVar {{address:size}} 'size' 'usize'
+    |     | `-DeclRefExpr {{address}} <col:16, col:20> 'usize' lvalue 'size' ParmVar {{address:size}} 'size' 'usize'
     |     `-ImplicitCastExpr {{address}} <col:23, col:29> 'usize' pure-rvalue <IntegerToInteger>
     |       `-ImplicitCastExpr {{address}} <col:23, col:29> 'isize' pure-rvalue <LValueToRValue>
-    |         `-DeclRefExpr {{address}} <col:23, col:29> 'isize' lvalue ParmVar {{address:offset}} 'offset' 'isize'
+    |         `-DeclRefExpr {{address}} <col:23, col:29> 'isize' lvalue 'offset' ParmVar {{address:offset}} 'offset' 'isize'
     `-DeclStmt {{address}} <line:14:3, col:34>
       `-VarGroupDecl {{address}} <col:3, col:34>
         |-VarDecl {{address}} <col:7, col:13> nested 'i64'
@@ -116,8 +116,8 @@ TranslationUnitDecl {{address}}
           |-ImplicitCastExpr {{address}} <col:17, col:22> 'i64' pure-rvalue <IntegerToInteger>
           | `-BinaryOperator {{address}} <col:17, col:22> 'i32' pure-rvalue '+'
           |   |-ImplicitCastExpr {{address}} <col:17, col:18> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          |   | `-IntegerLiteral {{address}} <col:17, col:18> 'comptime_int' 1
+          |   | `-IntegerLiteral {{address}} <col:17, col:18> 'comptime_int' non-object 1
           |   `-ImplicitCastExpr {{address}} <col:21, col:22> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          |     `-IntegerLiteral {{address}} <col:21, col:22> 'comptime_int' 2
+          |     `-IntegerLiteral {{address}} <col:21, col:22> 'comptime_int' non-object 2
           `-ImplicitCastExpr {{address}} <col:25, col:33> 'i64' pure-rvalue <LValueToRValue>
-            `-DeclRefExpr {{address}} <col:25, col:33> 'i64' lvalue ParmVar {{address:signed64}} 'signed64' 'i64'
+            `-DeclRefExpr {{address}} <col:25, col:33> 'i64' lvalue 'signed64' ParmVar {{address:signed64}} 'signed64' 'i64'

@@ -8,8 +8,8 @@ TranslationUnitDecl {{address}}
 | | `-ReferenceType {{address}} <col:42, col:61> '&copy'
 | |   `-NamedType {{address}} <col:48, col:61> 'OperatorValue'
 | `-CompoundStmt {{address}} <col:62, line:5:2>
-|   `-ImplicitResultInitializationExpr {{address}} <line:4:3, col:7> 'void' ReturnVar {{address:minus_return}} '&copy OperatorValue'
-|     `-DeclRefExpr {{address}} <col:3, col:7> 'const OperatorValue' lvalue ParmVar {{address:minus_value}} 'this' '&copy OperatorValue'
+|   `-ImplicitResultInitializationExpr {{address}} <line:4:3, col:7> 'void' non-object ReturnVar {{address:minus_return}} '&copy OperatorValue'
+|     `-DeclRefExpr {{address}} <col:3, col:7> 'const OperatorValue' lvalue 'this' ParmVar {{address:minus_value}} 'this' '&copy OperatorValue'
 |-FunctionDecl {{address:operator_plus}} <line:7:1, line:9:2> operator+ 'func (&copy OperatorValue, &copy OperatorValue) &copy OperatorValue'
 | |-ParmVarDecl {{address:plus_left}} <line:7:16, col:40> left '&copy OperatorValue'
 | | `-ReferenceType {{address}} <col:21, col:40> '&copy'
@@ -21,8 +21,8 @@ TranslationUnitDecl {{address}}
 | | `-ReferenceType {{address}} <col:69, col:88> '&copy'
 | |   `-NamedType {{address}} <col:75, col:88> 'OperatorValue'
 | `-CompoundStmt {{address}} <col:89, line:9:2>
-|   `-ImplicitResultInitializationExpr {{address}} <line:8:3, col:7> 'void' ReturnVar {{address:plus_return}} '&copy OperatorValue'
-|     `-DeclRefExpr {{address}} <col:3, col:7> 'const OperatorValue' lvalue ParmVar {{address:plus_left}} 'left' '&copy OperatorValue'
+|   `-ImplicitResultInitializationExpr {{address}} <line:8:3, col:7> 'void' non-object ReturnVar {{address:plus_return}} '&copy OperatorValue'
+|     `-DeclRefExpr {{address}} <col:3, col:7> 'const OperatorValue' lvalue 'left' ParmVar {{address:plus_left}} 'left' '&copy OperatorValue'
 `-FunctionDecl {{address}} <line:11:1, line:14:2> OperatorExpression 'func (&copy OperatorValue, &copy OperatorValue) void'
   |-ParmVarDecl {{address:expression_left}} <line:11:25, col:49> left '&copy OperatorValue'
   | `-ReferenceType {{address}} <col:30, col:49> '&copy'
@@ -35,10 +35,10 @@ TranslationUnitDecl {{address}}
   `-CompoundStmt {{address}} <col:83, line:14:2>
     |-ExprStmt {{address}} <line:12:3, col:9>
     | `-OperatorCallExpr {{address}} <col:3, col:8> 'const OperatorValue' lvalue
-    |   |-DeclRefExpr {{address}} <col:3, col:4> 'func (&copy OperatorValue) &copy OperatorValue' Function {{address:operator_minus}} 'operator-' 'func (&copy OperatorValue) &copy OperatorValue'
-    |   `-DeclRefExpr {{address}} <col:4, col:8> 'const OperatorValue' lvalue ParmVar {{address:expression_left}} 'left' '&copy OperatorValue'
+    |   |-DeclRefExpr {{address}} <col:3, col:4> 'func (&copy OperatorValue) &copy OperatorValue' non-object Function {{address:operator_minus}} 'operator-' 'func (&copy OperatorValue) &copy OperatorValue'
+    |   `-DeclRefExpr {{address}} <col:4, col:8> 'const OperatorValue' lvalue 'left' ParmVar {{address:expression_left}} 'left' '&copy OperatorValue'
     `-ExprStmt {{address}} <line:13:3, col:16>
       `-OperatorCallExpr {{address}} <col:3, col:15> 'const OperatorValue' lvalue
-        |-DeclRefExpr {{address}} <col:8, col:9> 'func (&copy OperatorValue, &copy OperatorValue) &copy OperatorValue' Function {{address:operator_plus}} 'operator+' 'func (&copy OperatorValue, &copy OperatorValue) &copy OperatorValue'
-        |-DeclRefExpr {{address}} <col:3, col:7> 'const OperatorValue' lvalue ParmVar {{address:expression_left}} 'left' '&copy OperatorValue'
-        `-DeclRefExpr {{address}} <col:10, col:15> 'const OperatorValue' lvalue ParmVar {{address:expression_right}} 'right' '&copy OperatorValue'
+        |-DeclRefExpr {{address}} <col:8, col:9> 'func (&copy OperatorValue, &copy OperatorValue) &copy OperatorValue' non-object Function {{address:operator_plus}} 'operator+' 'func (&copy OperatorValue, &copy OperatorValue) &copy OperatorValue'
+        |-DeclRefExpr {{address}} <col:3, col:7> 'const OperatorValue' lvalue 'left' ParmVar {{address:expression_left}} 'left' '&copy OperatorValue'
+        `-DeclRefExpr {{address}} <col:10, col:15> 'const OperatorValue' lvalue 'right' ParmVar {{address:expression_right}} 'right' '&copy OperatorValue'

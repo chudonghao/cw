@@ -8,8 +8,8 @@ TranslationUnitDecl {{address}}
 | | `-ReferenceType {{address}} <col:42, col:60> '&copy'
 | |   `-NamedType {{address}} <col:48, col:60> 'AddressValue'
 | `-CompoundStmt {{address}} <col:61, line:5:2>
-|   `-ImplicitResultInitializationExpr {{address}} <line:4:3, col:8> 'void' ReturnVar {{address:operator_return}} '&copy AddressValue'
-|     `-DeclRefExpr {{address}} <col:3, col:8> 'const AddressValue' lvalue ParmVar {{address:operator_value}} 'value' '&copy AddressValue'
+|   `-ImplicitResultInitializationExpr {{address}} <line:4:3, col:8> 'void' non-object ReturnVar {{address:operator_return}} '&copy AddressValue'
+|     `-DeclRefExpr {{address}} <col:3, col:8> 'const AddressValue' lvalue 'value' ParmVar {{address:operator_value}} 'value' '&copy AddressValue'
 `-FunctionDecl {{address}} <line:7:1, line:11:2> OperatorFunctionAddress 'func (&copy AddressValue) &copy AddressValue'
   |-ParmVarDecl {{address:function_value}} <line:7:30, col:54> value '&copy AddressValue'
   | `-ReferenceType {{address}} <col:36, col:54> '&copy'
@@ -28,10 +28,10 @@ TranslationUnitDecl {{address}}
     |   |     `-ReferenceType {{address}} <col:44, col:62> '&copy'
     |   |       `-NamedType {{address}} <col:50, col:62> 'AddressValue'
     |   `-ImplicitOverloadSetSelectionExpr {{address}} <col:66, col:77> '*func (&copy AddressValue) &copy AddressValue' pure-rvalue Function {{address:operator_minus}} 'operator-' 'func (&copy AddressValue) &copy AddressValue'
-    |     `-UnaryOperator {{address}} <col:66, col:77> '<address-of-function-overload-set>' '&'
-    |       `-DeclRefExpr {{address}} <col:67, col:77> '<function-overload-set>' 'operator -'
-    `-ImplicitResultInitializationExpr {{address}} <line:10:3, col:19> 'void' ReturnVar {{address:function_return}} '&copy AddressValue'
+    |     `-UnaryOperator {{address}} <col:66, col:77> '<address-of-function-overload-set>' non-object '&'
+    |       `-DeclRefExpr {{address}} <col:67, col:77> '<function-overload-set>' non-object 'operator-' overload-set
+    `-ImplicitResultInitializationExpr {{address}} <line:10:3, col:19> 'void' non-object ReturnVar {{address:function_return}} '&copy AddressValue'
       `-CallExpr {{address}} <col:3, col:19> 'const AddressValue' lvalue
         |-ImplicitCastExpr {{address}} <col:3, col:12> '*func (&copy AddressValue) &copy AddressValue' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:3, col:12> '*func (&copy AddressValue) &copy AddressValue' lvalue Var {{address:operation}} 'operation' '*func (&copy AddressValue) &copy AddressValue'
-        `-DeclRefExpr {{address}} <col:13, col:18> 'const AddressValue' lvalue ParmVar {{address:function_value}} 'value' '&copy AddressValue'
+        | `-DeclRefExpr {{address}} <col:3, col:12> '*func (&copy AddressValue) &copy AddressValue' lvalue 'operation' Var {{address:operation}} 'operation' '*func (&copy AddressValue) &copy AddressValue'
+        `-DeclRefExpr {{address}} <col:13, col:18> 'const AddressValue' lvalue 'value' ParmVar {{address:function_value}} 'value' '&copy AddressValue'

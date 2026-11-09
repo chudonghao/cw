@@ -25,10 +25,10 @@ TranslationUnitDecl {{address}}
   |   `-NamedType {{address}} <col:23, col:39> 'VirtualFunctions'
   `-CompoundStmt {{address}} <col:41, line:17:2>
     |-ExprStmt {{address}} <line:15:3, col:17>
-    | `-ReceiverCallExpr {{address}} <col:3, col:16> 'void' .
-    |   |-DeclRefExpr {{address}} <col:3, col:9> 'const VirtualFunctions' lvalue ParmVar {{address:use_object}} 'object' '&copy VirtualFunctions'
-    |   `-DeclRefExpr {{address}} <col:10, col:14> 'func (&copy VirtualFunctions) void' VirtualFunction {{address:draw_interface}} 'Draw' 'func (&copy VirtualFunctions) void'
+    | `-ReceiverCallExpr {{address}} <col:3, col:16> 'void' non-object .
+    |   |-DeclRefExpr {{address}} <col:3, col:9> 'const VirtualFunctions' lvalue 'object' ParmVar {{address:use_object}} 'object' '&copy VirtualFunctions'
+    |   `-DeclRefExpr {{address}} <col:10, col:14> 'func (&copy VirtualFunctions) void' non-object 'Draw' VirtualFunction {{address:draw_interface}} 'Draw' 'func (&copy VirtualFunctions) void'
     `-ExprStmt {{address}} <line:16:3, col:20>
-      `-ReceiverCallExpr {{address}} <col:3, col:19> 'void' .
-        |-DeclRefExpr {{address}} <col:3, col:9> 'const VirtualFunctions' lvalue ParmVar {{address:use_object}} 'object' '&copy VirtualFunctions'
-        `-DeclRefExpr {{address}} <col:10, col:17> 'func (&copy VirtualFunctions) void' VirtualFunction {{address:measure_interface}} 'Measure' 'func (&copy VirtualFunctions) void'
+      `-ReceiverCallExpr {{address}} <col:3, col:19> 'void' non-object .
+        |-DeclRefExpr {{address}} <col:3, col:9> 'const VirtualFunctions' lvalue 'object' ParmVar {{address:use_object}} 'object' '&copy VirtualFunctions'
+        `-DeclRefExpr {{address}} <col:10, col:17> 'func (&copy VirtualFunctions) void' non-object 'Measure' VirtualFunction {{address:measure_interface}} 'Measure' 'func (&copy VirtualFunctions) void'

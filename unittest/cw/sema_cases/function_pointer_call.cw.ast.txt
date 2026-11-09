@@ -28,26 +28,26 @@ TranslationUnitDecl {{address}}
     |-ExprStmt {{address}} <line:7:3, col:19>
     | `-CallExpr {{address}} <col:3, col:18> 'i32' pure-rvalue
     |   |-ImplicitCastExpr {{address}} <col:3, col:11> '*func (i16) i32' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:3, col:11> '*func (i16) i32' lvalue ParmVar {{address:callback}} 'callback' '*func (i16) i32'
+    |   | `-DeclRefExpr {{address}} <col:3, col:11> '*func (i16) i32' lvalue 'callback' ParmVar {{address:callback}} 'callback' '*func (i16) i32'
     |   `-ImplicitCastExpr {{address}} <col:12, col:17> 'i16' pure-rvalue <IntegerToInteger>
     |     `-ImplicitCastExpr {{address}} <col:12, col:17> 'i8' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:12, col:17> 'i8' lvalue ParmVar {{address:value}} 'value' 'i8'
+    |       `-DeclRefExpr {{address}} <col:12, col:17> 'i8' lvalue 'value' ParmVar {{address:value}} 'value' 'i8'
     |-ExprStmt {{address}} <line:8:3, col:29>
     | `-CallExpr {{address}} <col:3, col:28> 'i32' pure-rvalue
     |   |-CallExpr {{address}} <col:3, col:21> '*func (i16) i32' pure-rvalue
     |   | `-ImplicitCastExpr {{address}} <col:3, col:19> '*func () *func (i16) i32' pure-rvalue <LValueToRValue>
     |   |   `-ParenExpr {{address}} <col:3, col:19> '*func () *func (i16) i32' lvalue
     |   |     `-MemberExpr {{address}} <col:4, col:18> '*func () *func (i16) i32' lvalue .factory Field {{address:factory_field}} 'factory' '*func () *func (i16) i32'
-    |   |       `-DeclRefExpr {{address}} <col:4, col:10> 'CallbackHolder' lvalue ParmVar {{address:holder}} 'holder' 'CallbackHolder'
+    |   |       `-DeclRefExpr {{address}} <col:4, col:10> 'CallbackHolder' lvalue 'holder' ParmVar {{address:holder}} 'holder' 'CallbackHolder'
     |   `-ImplicitCastExpr {{address}} <col:22, col:27> 'i16' pure-rvalue <IntegerToInteger>
     |     `-ImplicitCastExpr {{address}} <col:22, col:27> 'i8' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:22, col:27> 'i8' lvalue ParmVar {{address:value}} 'value' 'i8'
-    `-ImplicitResultInitializationExpr {{address}} <line:9:3, col:27> 'void' ReturnVar {{address:return}} 'i32'
+    |       `-DeclRefExpr {{address}} <col:22, col:27> 'i8' lvalue 'value' ParmVar {{address:value}} 'value' 'i8'
+    `-ImplicitResultInitializationExpr {{address}} <line:9:3, col:27> 'void' non-object ReturnVar {{address:return}} 'i32'
       `-CallExpr {{address}} <col:3, col:27> 'i32' pure-rvalue
         |-ImplicitCastExpr {{address}} <col:3, col:20> '*func (i16) i32' pure-rvalue <LValueToRValue>
         | `-ParenExpr {{address}} <col:3, col:20> '*func (i16) i32' lvalue
         |   `-MemberExpr {{address}} <col:4, col:19> '*func (i16) i32' lvalue .callback Field {{address:callback_field}} 'callback' '*func (i16) i32'
-        |     `-DeclRefExpr {{address}} <col:4, col:10> 'CallbackHolder' lvalue ParmVar {{address:holder}} 'holder' 'CallbackHolder'
+        |     `-DeclRefExpr {{address}} <col:4, col:10> 'CallbackHolder' lvalue 'holder' ParmVar {{address:holder}} 'holder' 'CallbackHolder'
         `-ImplicitCastExpr {{address}} <col:21, col:26> 'i16' pure-rvalue <IntegerToInteger>
           `-ImplicitCastExpr {{address}} <col:21, col:26> 'i8' pure-rvalue <LValueToRValue>
-            `-DeclRefExpr {{address}} <col:21, col:26> 'i8' lvalue ParmVar {{address:value}} 'value' 'i8'
+            `-DeclRefExpr {{address}} <col:21, col:26> 'i8' lvalue 'value' ParmVar {{address:value}} 'value' 'i8'

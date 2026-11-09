@@ -8,7 +8,7 @@ TranslationUnitDecl {{address}}
 | | `-BuiltinType {{address}} <col:33, col:37> 'void'
 | `-CompoundStmt {{address}} <col:38, line:5:2>
 |   `-ExprStmt {{address}} <line:4:3, col:8>
-|     `-DeclRefExpr {{address}} <col:3, col:7> 'Receiver' lvalue ParmVar {{address:select_mut_receiver}} 'this' '&mut Receiver'
+|     `-DeclRefExpr {{address}} <col:3, col:7> 'Receiver' lvalue 'this' ParmVar {{address:select_mut_receiver}} 'this' '&mut Receiver'
 |-FunctionDecl {{address:select_copy}} <line:7:1, col:45> Select 'func (&copy Receiver) void'
 | |-ParmVarDecl {{address:select_copy_receiver}} <col:13, col:36> receiver '&copy Receiver'
 | | `-ReferenceType {{address}} <col:22, col:36> '&copy'
@@ -27,8 +27,8 @@ TranslationUnitDecl {{address}}
 | |-ReturnVarDecl {{address:make_return}} <line:11:13, col:21> 'Receiver'
 | | `-NamedType {{address}} <col:13, col:21> 'Receiver'
 | `-CompoundStmt {{address}} <col:22, line:13:2>
-|   `-ImplicitResultInitializationExpr {{address}} <line:12:3, col:13> 'void' ReturnVar {{address:make_return}} 'Receiver'
-|     `-ConstructionExpr {{address}} <col:3, col:13> 'Receiver' pure-rvalue complete-object target <col:3, col:11> 'Receiver'
+|   `-ImplicitResultInitializationExpr {{address}} <line:12:3, col:13> 'void' non-object ReturnVar {{address:make_return}} 'Receiver'
+|     `-ConstructionExpr {{address}} <col:3, col:13> 'Receiver' pure-rvalue complete-object target <col:3, col:11> 'Receiver' trivial
 |-FunctionDecl {{address:read_copy}} <line:15:1, col:43> Read 'func (&copy Receiver) void'
 | |-ParmVarDecl {{address:read_receiver}} <col:11, col:34> receiver '&copy Receiver'
 | | `-ReferenceType {{address}} <col:20, col:34> '&copy'
@@ -62,41 +62,41 @@ TranslationUnitDecl {{address}}
   | `-BuiltinType {{address}} <col:116, col:119> 'i32'
   `-CompoundStmt {{address}} <col:121, line:27:2>
     |-ExprStmt {{address}} <line:20:3, col:18>
-    | `-ReceiverCallExpr {{address}} <col:3, col:17> 'void' .
-    |   |-DeclRefExpr {{address}} <col:3, col:8> 'Receiver' lvalue ParmVar {{address:value}} 'value' 'Receiver'
-    |   `-DeclRefExpr {{address}} <col:9, col:15> 'func (&mut Receiver) void' Function {{address:select_mut}} 'Select' 'func (&mut Receiver) void'
+    | `-ReceiverCallExpr {{address}} <col:3, col:17> 'void' non-object .
+    |   |-DeclRefExpr {{address}} <col:3, col:8> 'Receiver' lvalue 'value' ParmVar {{address:value}} 'value' 'Receiver'
+    |   `-DeclRefExpr {{address}} <col:9, col:15> 'func (&mut Receiver) void' non-object 'Select' Function {{address:select_mut}} 'Select' 'func (&mut Receiver) void'
     |-ExprStmt {{address}} <line:21:3, col:18>
-    | `-ReceiverCallExpr {{address}} <col:3, col:17> 'void' .
-    |   |-DeclRefExpr {{address}} <col:3, col:8> 'const Receiver' lvalue ParmVar {{address:fixed}} 'fixed' '&copy Receiver'
-    |   `-DeclRefExpr {{address}} <col:9, col:15> 'func (&copy Receiver) void' Function {{address:select_copy}} 'Select' 'func (&copy Receiver) void'
+    | `-ReceiverCallExpr {{address}} <col:3, col:17> 'void' non-object .
+    |   |-DeclRefExpr {{address}} <col:3, col:8> 'const Receiver' lvalue 'fixed' ParmVar {{address:fixed}} 'fixed' '&copy Receiver'
+    |   `-DeclRefExpr {{address}} <col:9, col:15> 'func (&copy Receiver) void' non-object 'Select' Function {{address:select_copy}} 'Select' 'func (&copy Receiver) void'
     |-ExprStmt {{address}} <line:22:3, col:25>
-    | `-ReceiverCallExpr {{address}} <col:3, col:24> 'void' .
+    | `-ReceiverCallExpr {{address}} <col:3, col:24> 'void' non-object .
     |   |-ParenExpr {{address}} <col:3, col:15> 'Receiver' move-lvalue
     |   | `-UnaryOperator {{address}} <col:4, col:14> 'Receiver' move-lvalue 'move'
-    |   |   `-DeclRefExpr {{address}} <col:9, col:14> 'Receiver' lvalue ParmVar {{address:value}} 'value' 'Receiver'
-    |   `-DeclRefExpr {{address}} <col:16, col:22> 'func (&move Receiver) void' Function {{address:select_move}} 'Select' 'func (&move Receiver) void'
+    |   |   `-DeclRefExpr {{address}} <col:9, col:14> 'Receiver' lvalue 'value' ParmVar {{address:value}} 'value' 'Receiver'
+    |   `-DeclRefExpr {{address}} <col:16, col:22> 'func (&move Receiver) void' non-object 'Select' Function {{address:select_move}} 'Select' 'func (&move Receiver) void'
     |-ExprStmt {{address}} <line:23:3, col:19>
-    | `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' .
+    | `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' non-object .
     |   |-MaterializeTemporaryExpr {{address}} <col:3, col:9> 'Receiver' move-lvalue
     |   | `-CallExpr {{address}} <col:3, col:9> 'Receiver' pure-rvalue
-    |   |   `-DeclRefExpr {{address}} <col:3, col:7> 'func () Receiver' Function {{address:make}} 'Make' 'func () Receiver'
-    |   `-DeclRefExpr {{address}} <col:10, col:16> 'func (&move Receiver) void' Function {{address:select_move}} 'Select' 'func (&move Receiver) void'
+    |   |   `-DeclRefExpr {{address}} <col:3, col:7> 'func () Receiver' non-object 'Make' Function {{address:make}} 'Make' 'func () Receiver'
+    |   `-DeclRefExpr {{address}} <col:10, col:16> 'func (&move Receiver) void' non-object 'Select' Function {{address:select_move}} 'Select' 'func (&move Receiver) void'
     |-ExprStmt {{address}} <line:24:3, col:19>
-    | `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' ->
+    | `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' non-object ->
     |   |-ImplicitCastExpr {{address}} <col:3, col:10> 'const Receiver' lvalue <NoOp>
     |   | `-UnaryOperator {{address}} <col:3, col:10> 'Receiver' lvalue '*'
     |   |   `-ImplicitCastExpr {{address}} <col:3, col:10> '*Receiver' pure-rvalue <LValueToRValue>
-    |   |     `-DeclRefExpr {{address}} <col:3, col:10> '*Receiver' lvalue ParmVar {{address:pointer}} 'pointer' '*Receiver'
-    |   `-DeclRefExpr {{address}} <col:12, col:16> 'func (&copy Receiver) void' Function {{address:read_copy}} 'Read' 'func (&copy Receiver) void'
+    |   |     `-DeclRefExpr {{address}} <col:3, col:10> '*Receiver' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*Receiver'
+    |   `-DeclRefExpr {{address}} <col:12, col:16> 'func (&copy Receiver) void' non-object 'Read' Function {{address:read_copy}} 'Read' 'func (&copy Receiver) void'
     |-ExprStmt {{address}} <line:25:3, col:25>
-    | `-ReceiverCallExpr {{address}} <col:3, col:24> 'void' ->
+    | `-ReceiverCallExpr {{address}} <col:3, col:24> 'void' non-object ->
     |   |-UnaryOperator {{address}} <col:3, col:16> 'const Receiver' lvalue '*'
     |   | `-ImplicitCastExpr {{address}} <col:3, col:16> '*const Receiver' pure-rvalue <LValueToRValue>
-    |   |   `-DeclRefExpr {{address}} <col:3, col:16> '*const Receiver' lvalue ParmVar {{address:const_pointer}} 'const_pointer' '*const Receiver'
-    |   `-DeclRefExpr {{address}} <col:18, col:22> 'func (&copy Receiver) void' Function {{address:read_copy}} 'Read' 'func (&copy Receiver) void'
+    |   |   `-DeclRefExpr {{address}} <col:3, col:16> '*const Receiver' lvalue 'const_pointer' ParmVar {{address:const_pointer}} 'const_pointer' '*const Receiver'
+    |   `-DeclRefExpr {{address}} <col:18, col:22> 'func (&copy Receiver) void' non-object 'Read' Function {{address:read_copy}} 'Read' 'func (&copy Receiver) void'
     `-ExprStmt {{address}} <line:26:3, col:27>
-      `-ReceiverCallExpr {{address}} <col:3, col:26> 'void' .
-        |-DeclRefExpr {{address}} <col:3, col:8> 'Receiver' lvalue ParmVar {{address:value}} 'value' 'Receiver'
-        |-DeclRefExpr {{address}} <col:9, col:16> 'func (&mut Receiver, i32) void' Function {{address:with_arg_mut}} 'WithArg' 'func (&mut Receiver, i32) void'
+      `-ReceiverCallExpr {{address}} <col:3, col:26> 'void' non-object .
+        |-DeclRefExpr {{address}} <col:3, col:8> 'Receiver' lvalue 'value' ParmVar {{address:value}} 'value' 'Receiver'
+        |-DeclRefExpr {{address}} <col:9, col:16> 'func (&mut Receiver, i32) void' non-object 'WithArg' Function {{address:with_arg_mut}} 'WithArg' 'func (&mut Receiver, i32) void'
         `-ImplicitCastExpr {{address}} <col:17, col:25> 'i32' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:17, col:25> 'i32' lvalue ParmVar {{address:argument}} 'argument' 'i32'
+          `-DeclRefExpr {{address}} <col:17, col:25> 'i32' lvalue 'argument' ParmVar {{address:argument}} 'argument' 'i32'

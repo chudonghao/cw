@@ -5,9 +5,9 @@ TranslationUnitDecl {{address}}
   `-CompoundStmt {{address}} <col:36, line:4:2>
     |-IfStmt {{address}} <line:2:3, col:13>
     | |-ImplicitCastExpr {{address}} <col:6, col:10> 'bool' pure-rvalue <LValueToRValue>
-    | | `-DeclRefExpr {{address}} <col:6, col:10> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+    | | `-DeclRefExpr {{address}} <col:6, col:10> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
     | `-CompoundStmt {{address}} <col:11, col:13>
     `-WhileStmt {{address}} <line:3:3, col:16>
       |-ImplicitCastExpr {{address}} <col:9, col:13> 'bool' pure-rvalue <LValueToRValue>
-      | `-DeclRefExpr {{address}} <col:9, col:13> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+      | `-DeclRefExpr {{address}} <col:9, col:13> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
       `-CompoundStmt {{address}} <col:14, col:16>

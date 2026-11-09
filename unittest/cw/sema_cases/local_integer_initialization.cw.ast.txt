@@ -7,25 +7,25 @@ TranslationUnitDecl {{address}}
     | `-VarGroupDecl {{address}} <col:3, col:21>
     |   |-VarDecl {{address}} <col:7, col:15> inferred 'i32'
     |   `-ImplicitCastExpr {{address}} <col:19, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' 1
+    |     `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' non-object 1
     |-DeclStmt {{address}} <line:3:3, col:22>
     | `-VarGroupDecl {{address}} <col:3, col:22>
     |   |-VarDecl {{address}} <col:7, col:15> negative 'i32'
     |   `-ImplicitCastExpr {{address}} <col:19, col:21> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-UnaryOperator {{address}} <col:19, col:21> 'comptime_int' '-'
-    |       `-IntegerLiteral {{address}} <col:20, col:21> 'comptime_int' 1
+    |     `-UnaryOperator {{address}} <col:19, col:21> 'comptime_int' non-object '-'
+    |       `-IntegerLiteral {{address}} <col:20, col:21> 'comptime_int' non-object 1
     |-DeclStmt {{address}} <line:4:3, col:24>
     | `-VarGroupDecl {{address}} <col:3, col:24>
     |   |-VarDecl {{address}} <col:7, col:13> copied 'i32'
     |   `-ImplicitCastExpr {{address}} <col:17, col:23> 'i32' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue ParmVar {{address:source}} 'source' 'i32'
+    |     `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue 'source' ParmVar {{address:source}} 'source' 'i32'
     |-DeclStmt {{address}} <line:5:3, col:29>
     | `-VarGroupDecl {{address}} <col:3, col:29>
     |   |-VarDecl {{address}} <col:7, col:18> widened 'i64'
     |   | `-BuiltinType {{address}} <col:15, col:18> 'i64'
     |   `-ImplicitCastExpr {{address}} <col:22, col:28> 'i64' pure-rvalue <IntegerToInteger>
     |     `-ImplicitCastExpr {{address}} <col:22, col:28> 'i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:22, col:28> 'i32' lvalue ParmVar {{address:source}} 'source' 'i32'
+    |       `-DeclRefExpr {{address}} <col:22, col:28> 'i32' lvalue 'source' ParmVar {{address:source}} 'source' 'i32'
     `-DeclStmt {{address}} <line:6:3, col:24>
       `-VarGroupDecl {{address}} <col:3, col:24>
         |-VarDecl {{address}} <col:7, col:16> character 'u8'
