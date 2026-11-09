@@ -2,7 +2,7 @@ TranslationUnitDecl {{address}}
 |-StructDecl {{address:base}} <single_inheritance.cw:1:1, line:3:2> Base
 | `-FieldDecl {{address:base_value}} <line:2:3, col:13> value 'i32'
 |   `-BuiltinType {{address}} <col:9, col:12> 'i32'
-|-ConstructorDecl {{address:base_constructor}} <line:5:1, line:7:2> Base target Struct {{address:base}} 'Base' 'func (i32) void'
+|-ConstructorDecl {{address:base_constructor}} <line:5:1, line:7:2> Base target Struct {{address:base}} 'Base' 'ctor Base(i32)'
 | |-ParmVarDecl {{address:base_parameter}} <line:5:11, col:20> value 'i32'
 | | `-BuiltinType {{address}} <col:17, col:20> 'i32'
 | `-CompoundStmt {{address}} <col:22, line:7:2>
@@ -13,13 +13,13 @@ TranslationUnitDecl {{address}}
 |   |   `-ImplicitCastExpr {{address}} <col:17, col:22> 'i32' pure-rvalue <LValueToRValue>
 |   |     `-DeclRefExpr {{address}} <col:17, col:22> 'i32' lvalue 'value' ParmVar {{address:base_parameter}} 'value' 'i32'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:9:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-DestructorDecl {{address}} <line:9:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:11:1, line:13:2> SingleInheritance : 'Base'
 | |-BaseType 'Base' Struct {{address:base}} 'Base'
 | `-FieldDecl {{address:own}} <line:12:3, col:11> own 'i32'
 |   `-BuiltinType {{address}} <col:7, col:10> 'i32'
-|-ConstructorDecl {{address:derived_constructor}} <line:15:1, line:18:2> SingleInheritance target Struct {{address:derived}} 'SingleInheritance' 'func (i32) void'
+|-ConstructorDecl {{address:derived_constructor}} <line:15:1, line:18:2> SingleInheritance target Struct {{address:derived}} 'SingleInheritance' 'ctor SingleInheritance(i32)'
 | |-ParmVarDecl {{address:derived_parameter}} <line:15:24, col:33> value 'i32'
 | | `-BuiltinType {{address}} <col:30, col:33> 'i32'
 | `-CompoundStmt {{address}} <col:35, line:18:2>
@@ -27,7 +27,7 @@ TranslationUnitDecl {{address}}
 |   | `-InitializationExpr {{address}} <col:3, col:27> 'void' non-object
 |   |   |-BaseSubobjectExpr {{address}} <col:3, col:12> 'Base' lvalue .Base Struct {{address:base}} 'Base'
 |   |   | `-ThisExpr {{address}} <col:3, col:7> 'SingleInheritance' lvalue this
-|   |   `-ConstructionExpr {{address}} <col:16, col:27> 'Base' pure-rvalue base-subobject target <col:16, col:20> 'Base' Constructor {{address:base_constructor}} 'Base' 'func (i32) void'
+|   |   `-ConstructionExpr {{address}} <col:16, col:27> 'Base' pure-rvalue base-subobject target <col:16, col:20> 'Base' Constructor {{address:base_constructor}} 'Base' 'ctor Base(i32)'
 |   |     `-ImplicitCastExpr {{address}} <col:21, col:26> 'i32' pure-rvalue <LValueToRValue>
 |   |       `-DeclRefExpr {{address}} <col:21, col:26> 'i32' lvalue 'value' ParmVar {{address:derived_parameter}} 'value' 'i32'
 |   |-ExprStmt {{address}} <line:17:3, col:21>
@@ -37,7 +37,7 @@ TranslationUnitDecl {{address}}
 |   |   `-ImplicitCastExpr {{address}} <col:15, col:20> 'i32' pure-rvalue <LValueToRValue>
 |   |     `-DeclRefExpr {{address}} <col:15, col:20> 'i32' lvalue 'value' ParmVar {{address:derived_parameter}} 'value' 'i32'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:20:1, col:28> SingleInheritance target Struct {{address:derived}} 'SingleInheritance' 'func () void'
+|-DestructorDecl {{address}} <line:20:1, col:28> SingleInheritance target Struct {{address:derived}} 'SingleInheritance' 'dtor SingleInheritance()'
 | `-CompoundStmt {{address}} <col:26, col:28>
 |-FunctionDecl {{address}} <line:22:1, line:24:2> ReadBase 'func (&copy SingleInheritance) i32'
 | |-ParmVarDecl {{address:read_parameter}} <line:22:15, col:44> value '&copy SingleInheritance'

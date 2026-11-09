@@ -63,20 +63,20 @@ TranslationUnitDecl {{address}}
 |     `-ReturnVarDecl {{address}} <col:63, col:83> '&move SpecialProduct'
 |       `-ReferenceType {{address}} <col:63, col:83> '&move'
 |         `-NamedType {{address}} <col:69, col:83> 'SpecialProduct'
-|-ConstructorDecl {{address:factory_constructor}} <line:23:1, col:18> Factory target Struct {{address:factory}} 'Factory' 'func () void'
+|-ConstructorDecl {{address:factory_constructor}} <line:23:1, col:18> Factory target Struct {{address:factory}} 'Factory' 'ctor Factory()'
 | `-CompoundStmt {{address}} <col:16, col:18>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:25:1, col:18> Factory target Struct {{address:factory}} 'Factory' 'func () void'
+|-DestructorDecl {{address}} <line:25:1, col:18> Factory target Struct {{address:factory}} 'Factory' 'dtor Factory()'
 | `-CompoundStmt {{address}} <col:16, col:18>
-|-ConstructorDecl {{address}} <line:27:1, line:29:2> SpecialFactory target Struct {{address:special_factory}} 'SpecialFactory' 'func () void'
+|-ConstructorDecl {{address}} <line:27:1, line:29:2> SpecialFactory target Struct {{address:special_factory}} 'SpecialFactory' 'ctor SpecialFactory()'
 | `-CompoundStmt {{address}} <line:27:23, line:29:2>
 |   |-ExprStmt {{address}} <line:28:3, col:29>
 |   | `-InitializationExpr {{address}} <col:3, col:28> 'void' non-object
 |   |   |-BaseSubobjectExpr {{address}} <col:3, col:15> 'Factory' lvalue .Factory Struct {{address:factory}} 'Factory'
 |   |   | `-ThisExpr {{address}} <col:3, col:7> 'SpecialFactory' lvalue this
-|   |   `-ConstructionExpr {{address}} <col:19, col:28> 'Factory' pure-rvalue base-subobject target <col:19, col:26> 'Factory' Constructor {{address:factory_constructor}} 'Factory' 'func () void'
+|   |   `-ConstructionExpr {{address}} <col:19, col:28> 'Factory' pure-rvalue base-subobject target <col:19, col:26> 'Factory' Constructor {{address:factory_constructor}} 'Factory' 'ctor Factory()'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:31:1, col:25> SpecialFactory target Struct {{address:special_factory}} 'SpecialFactory' 'func () void'
+|-DestructorDecl {{address}} <line:31:1, col:25> SpecialFactory target Struct {{address:special_factory}} 'SpecialFactory' 'dtor SpecialFactory()'
 | `-CompoundStmt {{address}} <col:23, col:25>
 |-FunctionDecl {{address:observe_copy}} <line:33:1, col:37> Observe 'func (&copy Product) void'
 | |-ParmVarDecl {{address}} <col:14, col:33> value '&copy Product'

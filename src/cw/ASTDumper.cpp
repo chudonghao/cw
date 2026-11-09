@@ -175,15 +175,9 @@ void ASTDumper::PrintUnqualifiedTypeName(const Type& type) {
       break;
     case TypeKind::Function: {
       const auto& function_type = static_cast<const FunctionType&>(type);
-      os_ << "func (";
-      const auto& parameter_types = function_type.GetParameterTypes();
-      for (std::size_t i = 0; i < parameter_types.size(); ++i) {
-        if (i != 0) {
-          os_ << ", ";
-        }
-        PrintTypeName(QualType(parameter_types[i]));
-      }
-      os_ << ") ";
+      os_ << "func ";
+      PrintParameterTypes(function_type);
+      os_ << " ";
       PrintTypeName(QualType(function_type.GetReturnType()));
       break;
     }
@@ -204,6 +198,18 @@ void ASTDumper::PrintUnqualifiedTypeName(const Type& type) {
       break;
     }
   }
+}
+
+void ASTDumper::PrintParameterTypes(const FunctionType& type) {
+  os_ << "(";
+  const auto& parameter_types = type.GetParameterTypes();
+  for (std::size_t i = 0; i < parameter_types.size(); ++i) {
+    if (i != 0) {
+      os_ << ", ";
+    }
+    PrintTypeName(QualType(parameter_types[i]));
+  }
+  os_ << ")";
 }
 
 void ASTDumper::PrintWrittenName(const NameSyntax& name) {
@@ -242,7 +248,11 @@ void ASTDumper::PrintExprType(const Expr& expression) {
     return;
   }
   PrintType(expression.type);
-  switch (expression.value_category) {
+  PrintValueCategory(expression.value_category);
+}
+
+void ASTDumper::PrintValueCategory(ValueCategory category) {
+  switch (category) {
     case ValueCategory::None:
       os_ << " non-object";
       break;
@@ -260,8 +270,37 @@ void ASTDumper::PrintExprType(const Expr& expression) {
 
 void ASTDumper::PrintDeclType(const ValueDecl& declaration) {
   if (IsSemanticStage()) {
-    PrintType(declaration.type);
+    PrintDeclaredType(declaration);
   }
+}
+
+void ASTDumper::PrintDeclaredType(const ValueDecl& declaration) {
+  const char* keyword = nullptr;
+  const StructType* target = nullptr;
+  switch (declaration.GetKind()) {
+    case NodeKind::ConstructorDecl:
+      keyword = "ctor";
+      target = static_cast<const ConstructorDecl&>(declaration).target_type;
+      break;
+    case NodeKind::DestructorDecl:
+      keyword = "dtor";
+      target = static_cast<const DestructorDecl&>(declaration).target_type;
+      break;
+    default:
+      PrintType(declaration.type);
+      return;
+  }
+  // The declaration form names the target, so a missing target leaves the type undetermined.
+  if (!declaration.type || !target) {
+    os_ << " '<error>'";
+    return;
+  }
+  const auto* function_type = declaration.type.GetTypePtr()->AsFunctionType();
+  BOOST_ASSERT(function_type);
+  os_ << " '" << keyword << " ";
+  PrintTypeName(QualType(target));
+  PrintParameterTypes(*function_type);
+  os_ << "'";
 }
 
 void ASTDumper::PrintReferenceTarget(const ValueDecl* declaration) {
@@ -340,7 +379,7 @@ void ASTDumper::PrintDeclReference(const ValueDecl& declaration) {
       os_ << " '" << declaration.QualifiedName() << "'";
     }
   }
-  PrintType(declaration.type);
+  PrintDeclaredType(declaration);
 }
 
 void ASTDumper::PrintStructReference(const StructDecl& declaration) {
@@ -889,7 +928,13 @@ void ASTDumper::Visit(DeclRefExpr& n) { DumpDeclRefExpr(n, true); }
 
 void ASTDumper::DumpDeclRefExpr(DeclRefExpr& n, bool print_written_name) {
   PrintNode("DeclRefExpr", n);
-  PrintExprType(n);
+  if (IsSemanticStage() && n.declaration && n.type && n.type == n.declaration->type) {
+    // A reference carrying its declaration's type spells it as the declaration does.
+    PrintDeclaredType(*n.declaration);
+    PrintValueCategory(n.value_category);
+  } else {
+    PrintExprType(n);
+  }
   if (print_written_name) {
     PrintWrittenName(n.name);
   }

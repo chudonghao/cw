@@ -477,6 +477,46 @@ TEST_F(SemaTest, RejectsDestructorOutsideTypeNamespace) {
   ExpectError(0, 71, "unknown destructor target type 'T'", 1);
 }
 
+TEST_F(SemaTest, QualifiesNamespacedConstructorAndDestructorTypes) {
+  Analyze(R"(namespace outer::inner {
+struct Item {}
+ctor Item(value i32) {}
+dtor Item() {}
+}
+func Use(pointer *outer::inner::Item) {
+  var item := outer::inner::Item(1);
+  dtor (pointer) outer::inner::Item();
+})");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+|-NamespaceDecl {{address}} <test.cw:1:1, line:5:2> outer
+| `-NamespaceDecl {{address}} <line:1:16, line:5:2> inner nested
+|   |-StructDecl {{address:item}} <line:2:1, col:15> Item
+|   |-ConstructorDecl {{address:constructor}} <line:3:1, col:24> Item target Struct {{address:item}} 'outer::inner::Item' 'ctor outer::inner::Item(i32)'
+|   | |-ParmVarDecl {{address}} <col:11, col:20> value 'i32'
+|   | | `-BuiltinType {{address}} <col:17, col:20> 'i32'
+|   | `-CompoundStmt {{address}} <col:22, col:24>
+|   |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|   `-DestructorDecl {{address:destructor}} <line:4:1, col:15> Item target Struct {{address:item}} 'outer::inner::Item' 'dtor outer::inner::Item()'
+|     `-CompoundStmt {{address}} <col:13, col:15>
+`-FunctionDecl {{address}} <line:6:1, line:9:2> Use 'func (*outer::inner::Item) void'
+  |-ParmVarDecl {{address:pointer}} <line:6:10, col:37> pointer '*outer::inner::Item'
+  | `-PointerType {{address}} <col:18, col:37>
+  |   `-NamedType {{address}} <col:19, col:37> 'outer::inner::Item'
+  `-CompoundStmt {{address}} <col:39, line:9:2>
+    |-DeclStmt {{address}} <line:7:3, col:37>
+    | `-VarGroupDecl {{address}} <col:3, col:37>
+    |   |-VarDecl {{address}} <col:7, col:11> item 'outer::inner::Item'
+    |   `-ConstructionExpr {{address}} <col:15, col:36> 'outer::inner::Item' pure-rvalue complete-object target <col:15, col:33> 'outer::inner::Item' Constructor {{address:constructor}} 'outer::inner::Item' 'ctor outer::inner::Item(i32)'
+    |     `-ImplicitCastExpr {{address}} <col:34, col:35> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    |       `-IntegerLiteral {{address}} <col:34, col:35> 'comptime_int' non-object 1
+    `-ExprStmt {{address}} <line:8:3, col:39>
+      `-DestructorCallExpr {{address}} <col:3, col:38> 'void' non-object
+        |-ImplicitCastExpr {{address}} <col:9, col:16> '*outer::inner::Item' pure-rvalue <LValueToRValue>
+        | `-DeclRefExpr {{address}} <col:9, col:16> '*outer::inner::Item' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*outer::inner::Item'
+        `-DeclRefExpr {{address}} <col:18, col:36> 'dtor outer::inner::Item()' non-object 'outer::inner::Item' Destructor {{address:destructor}} 'outer::inner::Item' 'dtor outer::inner::Item()')");
+}
+
 TEST_F(SemaTest, AcceptsCopyAssignmentOutsideTypeNamespace) {
   Analyze(
       "namespace A { struct T {} ctor T() {} dtor T() {} } namespace B { func operator=(to &mut A::T, from &copy A::T) "
@@ -1531,10 +1571,10 @@ func Use(value &copy Base) {
 |     `-ParmVarDecl {{address}} <col:27, col:46> receiver '&copy Base'
 |       `-ReferenceType {{address}} <col:36, col:46> '&copy'
 |         `-NamedType {{address}} <col:42, col:46> 'Base'
-|-ConstructorDecl {{address}} <line:9:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-ConstructorDecl {{address}} <line:9:1, col:15> Base target Struct {{address:base}} 'Base' 'ctor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:10:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-DestructorDecl {{address}} <line:10:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 `-FunctionDecl {{address}} <line:11:1, line:14:2> Use 'func (&copy Base) void'
   |-ParmVarDecl {{address:value}} <line:11:10, col:26> value '&copy Base'
@@ -1586,10 +1626,10 @@ func G(receiver &copy S, value i32) i32 { value })");
 |     | `-BuiltinType {{address}} <col:25, col:28> 'i32'
 |     `-ReturnVarDecl {{address}} <col:30, col:39> x 'i32' contains-errors
 |       `-BuiltinType {{address}} <col:36, col:39> 'i32'
-|-ConstructorDecl {{address}} <line:7:1, col:12> S target Struct {{address:s}} 'S' 'func () void'
+|-ConstructorDecl {{address}} <line:7:1, col:12> S target Struct {{address:s}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:8:1, col:12> S target Struct {{address:s}} 'S' 'func () void'
+|-DestructorDecl {{address}} <line:8:1, col:12> S target Struct {{address:s}} 'S' 'dtor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 `-FunctionDecl {{address}} <line:9:1, col:50> G 'func (&copy S, i32) i32'
   |-ParmVarDecl {{address}} <col:8, col:24> receiver '&copy S'
@@ -2178,7 +2218,7 @@ dtor S() {})");
 |-StructDecl {{address:s}} <test.cw:1:1, col:20> S
 | `-FieldDecl {{address:x}} <col:12, col:18> x 'i32'
 |   `-BuiltinType {{address}} <col:14, col:17> 'i32'
-|-ConstructorDecl {{address}} <line:2:1, line:8:2> S target Struct {{address:s}} 'S' 'func (bool) void'
+|-ConstructorDecl {{address}} <line:2:1, line:8:2> S target Struct {{address:s}} 'S' 'ctor S(bool)'
 | |-ParmVarDecl {{address:flag}} <line:2:8, col:17> flag 'bool'
 | | `-BuiltinType {{address}} <col:13, col:17> 'bool'
 | `-CompoundStmt {{address}} <col:19, line:8:2>
@@ -2201,7 +2241,7 @@ dtor S() {})");
 |       |   `-ImplicitCastExpr {{address}} <col:15, col:16> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
 |       |     `-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' non-object 2
 |       `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-`-DestructorDecl {{address}} <line:9:1, col:12> S target Struct {{address:s}} 'S' 'func () void'
+`-DestructorDecl {{address}} <line:9:1, col:12> S target Struct {{address:s}} 'S' 'dtor S()'
   `-CompoundStmt {{address}} <col:10, col:12>
 )");
 }
@@ -2214,22 +2254,22 @@ dtor S() {})");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
-|-ConstructorDecl {{address:primary_constructor}} <line:2:1, col:21> S target Struct {{address:structure}} 'S' 'func (i32) void'
+|-ConstructorDecl {{address:primary_constructor}} <line:2:1, col:21> S target Struct {{address:structure}} 'S' 'ctor S(i32)'
 | |-ParmVarDecl {{address}} <col:8, col:17> value 'i32'
 | | `-BuiltinType {{address}} <col:14, col:17> 'i32'
 | `-CompoundStmt {{address}} <col:19, col:21>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-ConstructorDecl {{address}} <line:3:1, col:31> S target Struct {{address:structure}} 'S' 'func () void'
+|-ConstructorDecl {{address}} <line:3:1, col:31> S target Struct {{address:structure}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:31>
 |   `-ExprStmt {{address}} <col:12, col:29>
 |     `-InitializationExpr {{address}} <col:12, col:28> 'void' non-object
 |       |-ThisExpr {{address}} <col:12, col:16> 'S' lvalue this
 |       `-ParenExpr {{address}} <col:20, col:28> 'S' pure-rvalue
 |         `-ParenExpr {{address}} <col:21, col:27> 'S' pure-rvalue
-|           `-ConstructionExpr {{address}} <col:22, col:26> 'S' pure-rvalue delegating target <col:22, col:23> 'S' Constructor {{address:primary_constructor}} 'S' 'func (i32) void'
+|           `-ConstructionExpr {{address}} <col:22, col:26> 'S' pure-rvalue delegating target <col:22, col:23> 'S' Constructor {{address:primary_constructor}} 'S' 'ctor S(i32)'
 |             `-ImplicitCastExpr {{address}} <col:24, col:25> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
 |               `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' non-object 1
-`-DestructorDecl {{address}} <line:4:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+`-DestructorDecl {{address}} <line:4:1, col:12> S target Struct {{address:structure}} 'S' 'dtor S()'
   `-CompoundStmt {{address}} <col:10, col:12>
 )");
 }
@@ -2563,10 +2603,10 @@ func use() {
   ExpectError(4, 8, "use of uninitialized variable 'pointer'", 7);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
-|-ConstructorDecl {{address:constructor}} <line:2:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|-ConstructorDecl {{address:constructor}} <line:2:1, col:12> S target Struct {{address:structure}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <col:13, col:24> S target Struct {{address:structure}} 'S' 'func () void'
+|-DestructorDecl {{address}} <col:13, col:24> S target Struct {{address:structure}} 'S' 'dtor S()'
 | `-CompoundStmt {{address}} <col:22, col:24>
 `-FunctionDecl {{address}} <line:3:1, line:6:2> use 'func () void' contains-errors
   `-CompoundStmt {{address}} <line:3:12, line:6:2> contains-errors
@@ -2576,7 +2616,7 @@ func use() {
     |     `-PointerType {{address}} <col:15, col:17>
     |       `-NamedType {{address}} <col:16, col:17> 'S'
     `-ExprStmt {{address}} <line:5:3, col:22> contains-errors
-      `-ConstructionExpr {{address}} <col:3, col:21> '*S' pure-rvalue complete-object target <col:18, col:19> 'S' Constructor {{address:constructor}} 'S' 'func () void' contains-errors
+      `-ConstructionExpr {{address}} <col:3, col:21> '*S' pure-rvalue complete-object target <col:18, col:19> 'S' Constructor {{address:constructor}} 'S' 'ctor S()' contains-errors
         `-ImplicitCastExpr {{address}} <col:9, col:16> '*S' pure-rvalue <LValueToRValue> contains-errors
           `-DeclRefExpr {{address}} <col:9, col:16> '*S' lvalue 'pointer' Var {{address:pointer}} 'pointer' '*S' contains-errors
 )");
@@ -2593,12 +2633,12 @@ func use(pointer *S) {
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
-|-ConstructorDecl {{address:constructor}} <line:2:1, col:21> S target Struct {{address:structure}} 'S' 'func (i32) void'
+|-ConstructorDecl {{address:constructor}} <line:2:1, col:21> S target Struct {{address:structure}} 'S' 'ctor S(i32)'
 | |-ParmVarDecl {{address}} <col:8, col:17> value 'i32'
 | | `-BuiltinType {{address}} <col:14, col:17> 'i32'
 | `-CompoundStmt {{address}} <col:19, col:21>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <col:22, col:33> S target Struct {{address:structure}} 'S' 'func () void'
+|-DestructorDecl {{address}} <col:22, col:33> S target Struct {{address:structure}} 'S' 'dtor S()'
 | `-CompoundStmt {{address}} <col:31, col:33>
 `-FunctionDecl {{address}} <line:3:1, line:5:2> use 'func (*S) void' contains-errors
   |-ParmVarDecl {{address:pointer}} <line:3:10, col:20> pointer '*S'
@@ -2969,10 +3009,10 @@ func Use(pointer *Value, number i32) {
   ExpectError(5, 2, "cannot initialize receiver of function 'Take': no copy constructor is available for 'Value'", 7);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:value}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address}} <line:2:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
+|-ConstructorDecl {{address}} <line:2:1, col:16> Value target Struct {{address:value}} 'Value' 'ctor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:value}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:take}} <line:4:1, col:40> Take 'func (Value, u8) void'
 | |-ParmVarDecl {{address}} <col:11, col:25> receiver 'Value'
@@ -3108,10 +3148,10 @@ func Use(pointer *Derived, number i32, object &mut Value) { pointer->Consume(num
 |-StructDecl {{address:derived}} <line:2:1, col:33> Derived trivial : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
 |-StructDecl {{address:value}} <line:3:1, col:16> Value
-|-ConstructorDecl {{address:value_constructor}} <line:4:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
+|-ConstructorDecl {{address:value_constructor}} <line:4:1, col:16> Value target Struct {{address:value}} 'Value' 'ctor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:value_destructor}} <line:5:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
+|-DestructorDecl {{address:value_destructor}} <line:5:1, col:16> Value target Struct {{address:value}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:consume}} <line:6:1, col:62> Consume 'func (&copy Base, u8, Value) void'
 | |-ParmVarDecl {{address:consume_receiver}} <col:14, col:33> receiver '&copy Base'
@@ -4103,10 +4143,10 @@ func Use(number i32, object &mut Value) { Consume(number, object); })");
               "cannot initialize parameter 2 of function 'Consume': no copy constructor is available for 'Value'", 6);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'ctor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:consume}} <line:4:1, col:41> Consume 'func (u8, Value) void'
 | |-ParmVarDecl {{address}} <col:14, col:23> number 'u8'
@@ -4139,10 +4179,10 @@ func Use() { Take(Make()); })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'ctor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:make}} <line:4:1, col:38> Make 'func () Value'
 | |-ReturnVarDecl {{address:make_result}} <col:13, col:18> 'Value'
@@ -4150,7 +4190,7 @@ func Use() { Take(Make()); })");
 | `-CompoundStmt {{address}} <col:19, col:38>
 |   `-ReturnStmt {{address}} <col:21, col:36>
 |     `-ImplicitResultInitializationExpr {{address}} <col:28, col:35> 'void' non-object ReturnVar {{address:make_result}} 'Value'
-|       `-ConstructionExpr {{address}} <col:28, col:35> 'Value' pure-rvalue complete-object target <col:28, col:33> 'Value' Constructor {{address:constructor}} 'Value' 'func () void'
+|       `-ConstructionExpr {{address}} <col:28, col:35> 'Value' pure-rvalue complete-object target <col:28, col:33> 'Value' Constructor {{address:constructor}} 'Value' 'ctor Value()'
 |-FunctionDecl {{address:take}} <line:5:1, col:26> Take 'func (Value) void'
 | |-ParmVarDecl {{address}} <col:11, col:22> value 'Value'
 | | `-NamedType {{address}} <col:17, col:22> 'Value'
@@ -4271,7 +4311,7 @@ func Use(source &mut Derived, callback *func (Base) Base) Base {
 |-StructDecl {{address:base}} <test.cw:1:1, col:28> Base
 | `-FieldDecl {{address:base_number}} <col:15, col:26> number 'i32'
 |   `-BuiltinType {{address}} <col:22, col:25> 'i32'
-|-ConstructorDecl {{address:base_value_constructor}} <line:2:1, col:49> Base target Struct {{address:base}} 'Base' 'func (i32) void'
+|-ConstructorDecl {{address:base_value_constructor}} <line:2:1, col:49> Base target Struct {{address:base}} 'Base' 'ctor Base(i32)'
 | |-ParmVarDecl {{address:base_value_constructor_number}} <col:11, col:21> number 'i32'
 | | `-BuiltinType {{address}} <col:18, col:21> 'i32'
 | `-CompoundStmt {{address}} <col:23, col:49>
@@ -4282,7 +4322,7 @@ func Use(source &mut Derived, callback *func (Base) Base) Base {
 |   |   `-ImplicitCastExpr {{address}} <col:40, col:46> 'i32' pure-rvalue <LValueToRValue>
 |   |     `-DeclRefExpr {{address}} <col:40, col:46> 'i32' lvalue 'number' ParmVar {{address:base_value_constructor_number}} 'number' 'i32'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:63> Base target Struct {{address:base}} 'Base' 'func (&copy Base) void'
+|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:63> Base target Struct {{address:base}} 'Base' 'ctor Base(&copy Base)'
 | |-ParmVarDecl {{address:base_copy_constructor_source}} <col:11, col:28> source '&copy Base'
 | | `-ReferenceType {{address}} <col:18, col:28> '&copy'
 | |   `-NamedType {{address}} <col:24, col:28> 'Base'
@@ -4295,7 +4335,7 @@ func Use(source &mut Derived, callback *func (Base) Base) Base {
 |   |     `-MemberExpr {{address}} <col:47, col:60> 'const i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
 |   |       `-DeclRefExpr {{address}} <col:47, col:53> 'const Base' lvalue 'source' ParmVar {{address:base_copy_constructor_source}} 'source' '&copy Base'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-ConstructorDecl {{address:base_move_constructor}} <line:4:1, col:63> Base target Struct {{address:base}} 'Base' 'func (&move Base) void'
+|-ConstructorDecl {{address:base_move_constructor}} <line:4:1, col:63> Base target Struct {{address:base}} 'Base' 'ctor Base(&move Base)'
 | |-ParmVarDecl {{address:base_move_constructor_source}} <col:11, col:28> source '&move Base'
 | | `-ReferenceType {{address}} <col:18, col:28> '&move'
 | |   `-NamedType {{address}} <col:24, col:28> 'Base'
@@ -4308,21 +4348,21 @@ func Use(source &mut Derived, callback *func (Base) Base) Base {
 |   |     `-MemberExpr {{address}} <col:47, col:60> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
 |   |       `-DeclRefExpr {{address}} <col:47, col:53> 'Base' lvalue 'source' ParmVar {{address:base_move_constructor_source}} 'source' '&move Base'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:base_destructor}} <line:5:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-DestructorDecl {{address:base_destructor}} <line:5:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:6:1, col:25> Derived : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
-|-ConstructorDecl {{address:derived_constructor}} <line:7:1, col:41> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-ConstructorDecl {{address:derived_constructor}} <line:7:1, col:41> Derived target Struct {{address:derived}} 'Derived' 'ctor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:41>
 |   |-ExprStmt {{address}} <col:18, col:39>
 |   | `-InitializationExpr {{address}} <col:18, col:38> 'void' non-object
 |   |   |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
 |   |   | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
-|   |   `-ConstructionExpr {{address}} <col:31, col:38> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_value_constructor}} 'Base' 'func (i32) void'
+|   |   `-ConstructionExpr {{address}} <col:31, col:38> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_value_constructor}} 'Base' 'ctor Base(i32)'
 |   |     `-ImplicitCastExpr {{address}} <col:36, col:37> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
 |   |       `-IntegerLiteral {{address}} <col:36, col:37> 'comptime_int' non-object 1
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:derived_destructor}} <line:8:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-DestructorDecl {{address:derived_destructor}} <line:8:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'dtor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:18>
 `-FunctionDecl {{address:use}} <line:9:1, line:15:2> Use 'func (&mut Derived, *func (Base) Base) Base'
   |-ParmVarDecl {{address:use_source}} <line:9:10, col:29> source '&mut Derived'
@@ -4340,7 +4380,7 @@ func Use(source &mut Derived, callback *func (Base) Base) Base {
     | `-VarGroupDecl {{address}} <col:3, col:29>
     |   |-VarDecl {{address}} <col:7, col:18> copied 'Base'
     |   | `-NamedType {{address}} <col:14, col:18> 'Base'
-    |   `-ConstructionExpr {{address}} <col:22, col:28> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'func (&copy Base) void'
+    |   `-ConstructionExpr {{address}} <col:22, col:28> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'ctor Base(&copy Base)'
     |     `-ImplicitCastExpr {{address}} <col:22, col:28> 'const Base' lvalue <NoOp>
     |       `-ImplicitCastExpr {{address}} <col:22, col:28> 'Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |         `-DeclRefExpr {{address}} <col:22, col:28> 'Derived' lvalue 'source' ParmVar {{address:use_source}} 'source' '&mut Derived'
@@ -4348,7 +4388,7 @@ func Use(source &mut Derived, callback *func (Base) Base) Base {
     | `-VarGroupDecl {{address}} <col:3, col:33>
     |   |-VarDecl {{address}} <col:7, col:17> moved 'Base'
     |   | `-NamedType {{address}} <col:13, col:17> 'Base'
-    |   `-ConstructionExpr {{address}} <col:21, col:32> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (&move Base) void'
+    |   `-ConstructionExpr {{address}} <col:21, col:32> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'ctor Base(&move Base)'
     |     `-ImplicitCastExpr {{address}} <col:21, col:32> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |       `-UnaryOperator {{address}} <col:21, col:32> 'Derived' move-lvalue 'move'
     |         `-DeclRefExpr {{address}} <col:26, col:32> 'Derived' lvalue 'source' ParmVar {{address:use_source}} 'source' '&mut Derived'
@@ -4356,23 +4396,23 @@ func Use(source &mut Derived, callback *func (Base) Base) Base {
     | `-VarGroupDecl {{address}} <col:3, col:35>
     |   |-VarDecl {{address}} <col:7, col:21> temporary 'Base'
     |   | `-NamedType {{address}} <col:17, col:21> 'Base'
-    |   `-ConstructionExpr {{address}} <col:25, col:34> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (&move Base) void'
+    |   `-ConstructionExpr {{address}} <col:25, col:34> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'ctor Base(&move Base)'
     |     `-ImplicitCastExpr {{address}} <col:25, col:34> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |       `-MaterializeTemporaryExpr {{address}} <col:25, col:34> 'Derived' move-lvalue
-    |         `-ConstructionExpr {{address}} <col:25, col:34> 'Derived' pure-rvalue complete-object target <col:25, col:32> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'func () void'
+    |         `-ConstructionExpr {{address}} <col:25, col:34> 'Derived' pure-rvalue complete-object target <col:25, col:32> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'ctor Derived()'
     |-ExprStmt {{address}} <line:13:3, col:20>
     | `-CallExpr {{address}} <col:3, col:19> 'Base' pure-rvalue
     |   |-ImplicitCastExpr {{address}} <col:3, col:11> '*func (Base) Base' pure-rvalue <LValueToRValue>
     |   | `-DeclRefExpr {{address}} <col:3, col:11> '*func (Base) Base' lvalue 'callback' ParmVar {{address:use_callback}} 'callback' '*func (Base) Base'
-    |   `-ConstructionExpr {{address}} <col:12, col:18> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'func (&copy Base) void'
+    |   `-ConstructionExpr {{address}} <col:12, col:18> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'ctor Base(&copy Base)'
     |     `-ImplicitCastExpr {{address}} <col:12, col:18> 'const Base' lvalue <NoOp>
     |       `-ImplicitCastExpr {{address}} <col:12, col:18> 'Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |         `-DeclRefExpr {{address}} <col:12, col:18> 'Derived' lvalue 'source' ParmVar {{address:use_source}} 'source' '&mut Derived'
     `-ImplicitResultInitializationExpr {{address}} <line:14:3, col:12> 'void' non-object ReturnVar {{address:use_result}} 'Base'
-      `-ConstructionExpr {{address}} <col:3, col:12> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (&move Base) void'
+      `-ConstructionExpr {{address}} <col:3, col:12> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'ctor Base(&move Base)'
         `-ImplicitCastExpr {{address}} <col:3, col:12> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
           `-MaterializeTemporaryExpr {{address}} <col:3, col:12> 'Derived' move-lvalue
-            `-ConstructionExpr {{address}} <col:3, col:12> 'Derived' pure-rvalue complete-object target <col:3, col:10> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'func () void'
+            `-ConstructionExpr {{address}} <col:3, col:12> 'Derived' pure-rvalue complete-object target <col:3, col:10> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'ctor Derived()'
 )");
 }
 
@@ -4462,22 +4502,22 @@ func Use(source &mut Derived, number i32) { Select(&F, number, source, number); 
               "cannot initialize parameter 3 of function 'Select': no copy constructor is available for 'Base'", 6);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:base}} <test.cw:1:1, col:15> Base
-|-ConstructorDecl {{address:base_constructor}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-ConstructorDecl {{address:base_constructor}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'ctor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:base_destructor}} <line:3:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-DestructorDecl {{address:base_destructor}} <line:3:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:4:1, col:25> Derived : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
-|-ConstructorDecl {{address:derived_constructor}} <line:5:1, col:40> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-ConstructorDecl {{address:derived_constructor}} <line:5:1, col:40> Derived target Struct {{address:derived}} 'Derived' 'ctor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:40>
 |   |-ExprStmt {{address}} <col:18, col:38>
 |   | `-InitializationExpr {{address}} <col:18, col:37> 'void' non-object
 |   |   |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
 |   |   | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
-|   |   `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'func () void'
+|   |   `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'ctor Base()'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:derived_destructor}} <line:6:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-DestructorDecl {{address:derived_destructor}} <line:6:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'dtor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:18>
 |-FunctionDecl {{address:f}} <line:7:1, col:12> F 'func () void'
 | `-CompoundStmt {{address}} <col:10, col:12>
@@ -4537,34 +4577,34 @@ dtor Holder() {}
 ctor Holder(source &copy Derived) { this.Base := source; })");
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:base}} <test.cw:1:1, col:15> Base
-|-ConstructorDecl {{address:base_constructor}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-ConstructorDecl {{address:base_constructor}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'ctor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:32> Base target Struct {{address:base}} 'Base' 'func (&copy Base) void'
+|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:32> Base target Struct {{address:base}} 'Base' 'ctor Base(&copy Base)'
 | |-ParmVarDecl {{address:base_copy_constructor_source}} <col:11, col:28> source '&copy Base'
 | | `-ReferenceType {{address}} <col:18, col:28> '&copy'
 | |   `-NamedType {{address}} <col:24, col:28> 'Base'
 | `-CompoundStmt {{address}} <col:30, col:32>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:base_destructor}} <line:4:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-DestructorDecl {{address:base_destructor}} <line:4:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:5:1, col:25> Derived : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
-|-ConstructorDecl {{address:derived_constructor}} <line:6:1, col:40> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-ConstructorDecl {{address:derived_constructor}} <line:6:1, col:40> Derived target Struct {{address:derived}} 'Derived' 'ctor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:40>
 |   |-ExprStmt {{address}} <col:18, col:38>
 |   | `-InitializationExpr {{address}} <col:18, col:37> 'void' non-object
 |   |   |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
 |   |   | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
-|   |   `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'func () void'
+|   |   `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'ctor Base()'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:derived_destructor}} <line:7:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-DestructorDecl {{address:derived_destructor}} <line:7:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'dtor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:18>
 |-StructDecl {{address:holder}} <line:8:1, col:24> Holder : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
-|-DestructorDecl {{address:holder_destructor}} <line:9:1, col:17> Holder target Struct {{address:holder}} 'Holder' 'func () void'
+|-DestructorDecl {{address:holder_destructor}} <line:9:1, col:17> Holder target Struct {{address:holder}} 'Holder' 'dtor Holder()'
 | `-CompoundStmt {{address}} <col:15, col:17>
-`-ConstructorDecl {{address:holder_constructor}} <line:10:1, col:59> Holder target Struct {{address:holder}} 'Holder' 'func (&copy Derived) void'
+`-ConstructorDecl {{address:holder_constructor}} <line:10:1, col:59> Holder target Struct {{address:holder}} 'Holder' 'ctor Holder(&copy Derived)'
   |-ParmVarDecl {{address:holder_constructor_source}} <col:13, col:33> source '&copy Derived'
   | `-ReferenceType {{address}} <col:20, col:33> '&copy'
   |   `-NamedType {{address}} <col:26, col:33> 'Derived'
@@ -4573,7 +4613,7 @@ ctor Holder(source &copy Derived) { this.Base := source; })");
     | `-InitializationExpr {{address}} <col:37, col:56> 'void' non-object
     |   |-BaseSubobjectExpr {{address}} <col:37, col:46> 'Base' lvalue .Base Struct {{address:base}} 'Base'
     |   | `-ThisExpr {{address}} <col:37, col:41> 'Holder' lvalue this
-    |   `-ConstructionExpr {{address}} <col:50, col:56> 'Base' pure-rvalue base-subobject Constructor {{address:base_copy_constructor}} 'Base' 'func (&copy Base) void'
+    |   `-ConstructionExpr {{address}} <col:50, col:56> 'Base' pure-rvalue base-subobject Constructor {{address:base_copy_constructor}} 'Base' 'ctor Base(&copy Base)'
     |     `-ImplicitCastExpr {{address}} <col:50, col:56> 'const Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |       `-DeclRefExpr {{address}} <col:50, col:56> 'const Derived' lvalue 'source' ParmVar {{address:holder_constructor_source}} 'source' '&copy Derived'
     `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
@@ -4920,10 +4960,10 @@ func Assign(dst &mut S) { dst = Make(); })");
 | | `-ReferenceType {{address}} <col:32, col:39> '&move'
 | |   `-NamedType {{address}} <col:38, col:39> 'S'
 | `-CompoundStmt {{address}} <col:41, col:43>
-|-ConstructorDecl {{address:constructor}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|-ConstructorDecl {{address:constructor}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:4:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|-DestructorDecl {{address}} <line:4:1, col:12> S target Struct {{address:structure}} 'S' 'dtor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |-FunctionDecl {{address:make}} <line:5:1, col:30> Make 'func () S'
 | |-ReturnVarDecl {{address:make_result}} <col:13, col:14> 'S'
@@ -4931,7 +4971,7 @@ func Assign(dst &mut S) { dst = Make(); })");
 | `-CompoundStmt {{address}} <col:15, col:30>
 |   `-ReturnStmt {{address}} <col:17, col:28>
 |     `-ImplicitResultInitializationExpr {{address}} <col:24, col:27> 'void' non-object ReturnVar {{address:make_result}} 'S'
-|       `-ConstructionExpr {{address}} <col:24, col:27> 'S' pure-rvalue complete-object target <col:24, col:25> 'S' Constructor {{address:constructor}} 'S' 'func () void'
+|       `-ConstructionExpr {{address}} <col:24, col:27> 'S' pure-rvalue complete-object target <col:24, col:25> 'S' Constructor {{address:constructor}} 'S' 'ctor S()'
 `-FunctionDecl {{address}} <line:6:1, col:42> Assign 'func (&mut S) void'
   |-ParmVarDecl {{address:assign_destination}} <col:13, col:23> dst '&mut S'
   | `-ReferenceType {{address}} <col:17, col:23> '&mut'
@@ -6192,10 +6232,10 @@ func Check(existing &mut Value) { !existing; })");
   ExpectError(4, 35, "cannot initialize parameter 1 of operator '!': no copy constructor is available for 'Value'", 8);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'ctor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:operator}} <line:4:1, col:42> operator! 'func (Value) bool'
 | |-ParmVarDecl {{address}} <col:16, col:27> value 'Value'
@@ -9577,19 +9617,19 @@ func Use(x &mut T, y &copy T) T {
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:t}} <test.cw:1:1, col:12> T
-|-ConstructorDecl {{address:copy_ctor}} <line:2:1, col:21> T target Struct {{address:t}} 'T' 'func (&copy T) void'
+|-ConstructorDecl {{address:copy_ctor}} <line:2:1, col:21> T target Struct {{address:t}} 'T' 'ctor T(&copy T)'
 | |-ParmVarDecl {{address}} <col:8, col:17> x '&copy T'
 | | `-ReferenceType {{address}} <col:10, col:17> '&copy'
 | |   `-NamedType {{address}} <col:16, col:17> 'T'
 | `-CompoundStmt {{address}} <col:19, col:21>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-ConstructorDecl {{address:move_ctor}} <line:3:1, col:21> T target Struct {{address:t}} 'T' 'func (&move T) void'
+|-ConstructorDecl {{address:move_ctor}} <line:3:1, col:21> T target Struct {{address:t}} 'T' 'ctor T(&move T)'
 | |-ParmVarDecl {{address}} <col:8, col:17> x '&move T'
 | | `-ReferenceType {{address}} <col:10, col:17> '&move'
 | |   `-NamedType {{address}} <col:16, col:17> 'T'
 | `-CompoundStmt {{address}} <col:19, col:21>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:4:1, col:12> T target Struct {{address:t}} 'T' 'func () void'
+|-DestructorDecl {{address}} <line:4:1, col:12> T target Struct {{address:t}} 'T' 'dtor T()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |-FunctionDecl {{address:copy_assign}} <line:5:1, col:39> operator= 'func (&mut T, &copy T) void'
 | |-ParmVarDecl {{address}} <col:16, col:24> x '&mut T'
@@ -9624,7 +9664,7 @@ func Use(x &mut T, y &copy T) T {
     |   `-UnaryOperator {{address}} <col:7, col:13> 'const T' move-lvalue 'move'
     |     `-DeclRefExpr {{address}} <col:12, col:13> 'const T' lvalue 'y' ParmVar {{address:y}} 'y' '&copy T'
     `-ImplicitResultInitializationExpr {{address}} <line:9:3, col:9> 'void' non-object ReturnVar {{address:result}} 'T'
-      `-ConstructionExpr {{address}} <col:3, col:9> 'T' pure-rvalue complete-object Constructor {{address:copy_ctor}} 'T' 'func (&copy T) void'
+      `-ConstructionExpr {{address}} <col:3, col:9> 'T' pure-rvalue complete-object Constructor {{address:copy_ctor}} 'T' 'ctor T(&copy T)'
         `-UnaryOperator {{address}} <col:3, col:9> 'const T' move-lvalue 'move'
           `-DeclRefExpr {{address}} <col:8, col:9> 'const T' lvalue 'y' ParmVar {{address:y}} 'y' '&copy T'
 )");
@@ -10113,10 +10153,10 @@ func Assign(dst &mut [0] S) {
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
-|-ConstructorDecl {{address}} <line:2:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|-ConstructorDecl {{address}} <line:2:1, col:12> S target Struct {{address:structure}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'dtor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |-FunctionDecl {{address:assignment}} <line:4:1, col:43> operator= 'func (&mut S, &copy S) void'
 | |-ParmVarDecl {{address}} <col:16, col:26> dst '&mut S'
@@ -10574,13 +10614,13 @@ func Arrays(source &mut [1] Value) {
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address:copy_constructor}} <line:2:1, col:33> Value target Struct {{address:structure}} 'Value' 'func (&copy Value) void'
+|-ConstructorDecl {{address:copy_constructor}} <line:2:1, col:33> Value target Struct {{address:structure}} 'Value' 'ctor Value(&copy Value)'
 | |-ParmVarDecl {{address:copy_source}} <col:12, col:29> other '&copy Value'
 | | `-ReferenceType {{address}} <col:18, col:29> '&copy'
 | |   `-NamedType {{address}} <col:24, col:29> 'Value'
 | `-CompoundStmt {{address}} <col:31, col:33>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:copy_assignment}} <line:4:1, col:51> operator= 'func (&mut Value, &copy Value) void'
 | |-ParmVarDecl {{address:assignment_target}} <col:16, col:30> dst '&mut Value'
@@ -10603,7 +10643,7 @@ func Arrays(source &mut [1] Value) {
     |   | `-ArrayType {{address}} <col:14, col:23>
     |   |   |-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' non-object 1
     |   |   `-NamedType {{address}} <col:18, col:23> 'Value'
-    |   `-ArrayConstructionExpr {{address}} <col:27, col:38> '[1] Value' pure-rvalue Constructor {{address:copy_constructor}} 'Value' 'func (&copy Value) void'
+    |   `-ArrayConstructionExpr {{address}} <col:27, col:38> '[1] Value' pure-rvalue Constructor {{address:copy_constructor}} 'Value' 'ctor Value(&copy Value)'
     |     `-UnaryOperator {{address}} <col:27, col:38> '[1] Value' move-lvalue 'move'
     |       `-DeclRefExpr {{address}} <col:32, col:38> '[1] Value' lvalue 'source' ParmVar {{address:array_source}} 'source' '&mut [1] Value'
     `-ExprStmt {{address}} <line:7:3, col:24>

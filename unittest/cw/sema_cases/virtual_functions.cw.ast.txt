@@ -14,10 +14,10 @@ TranslationUnitDecl {{address}}
 | | `-ReferenceType {{address}} <col:18, col:40> '&copy'
 | |   `-NamedType {{address}} <col:24, col:40> 'VirtualFunctions'
 | `-CompoundStmt {{address}} <col:42, col:44>
-|-ConstructorDecl {{address}} <line:10:1, col:27> VirtualFunctions target Struct {{address}} 'VirtualFunctions' 'func () void'
+|-ConstructorDecl {{address}} <line:10:1, col:27> VirtualFunctions target Struct {{address}} 'VirtualFunctions' 'ctor VirtualFunctions()'
 | `-CompoundStmt {{address}} <col:25, col:27>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:12:1, col:27> VirtualFunctions target Struct {{address}} 'VirtualFunctions' 'func () void'
+|-DestructorDecl {{address}} <line:12:1, col:27> VirtualFunctions target Struct {{address}} 'VirtualFunctions' 'dtor VirtualFunctions()'
 | `-CompoundStmt {{address}} <col:25, col:27>
 `-FunctionDecl {{address}} <line:14:1, line:17:2> Use 'func (&copy VirtualFunctions) void'
   |-ParmVarDecl {{address:use_object}} <line:14:10, col:39> object '&copy VirtualFunctions'

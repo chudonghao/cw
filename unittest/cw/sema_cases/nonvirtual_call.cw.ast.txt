@@ -19,10 +19,10 @@ TranslationUnitDecl {{address}}
 | | `-ReferenceType {{address}} <col:19, col:29> '&copy'
 | |   `-NamedType {{address}} <col:25, col:29> 'Base'
 | `-CompoundStmt {{address}} <col:31, col:33>
-|-ConstructorDecl {{address:base_constructor}} <line:12:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-ConstructorDecl {{address:base_constructor}} <line:12:1, col:15> Base target Struct {{address:base}} 'Base' 'ctor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:14:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-DestructorDecl {{address}} <line:14:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:16:1, line:20:2> Derived abstract : 'Base'
 | |-BaseType 'Base' Struct {{address:base}} 'Base'
@@ -36,15 +36,15 @@ TranslationUnitDecl {{address}}
 | | `-ReferenceType {{address}} <col:16, col:29> '&copy'
 | |   `-NamedType {{address}} <col:22, col:29> 'Derived'
 | `-CompoundStmt {{address}} <col:31, col:33>
-|-ConstructorDecl {{address}} <line:24:1, line:26:2> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-ConstructorDecl {{address}} <line:24:1, line:26:2> Derived target Struct {{address:derived}} 'Derived' 'ctor Derived()'
 | `-CompoundStmt {{address}} <line:24:16, line:26:2>
 |   |-ExprStmt {{address}} <line:25:3, col:23>
 |   | `-InitializationExpr {{address}} <col:3, col:22> 'void' non-object
 |   |   |-BaseSubobjectExpr {{address}} <col:3, col:12> 'Base' lvalue .Base Struct {{address:base}} 'Base'
 |   |   | `-ThisExpr {{address}} <col:3, col:7> 'Derived' lvalue this
-|   |   `-ConstructionExpr {{address}} <col:16, col:22> 'Base' pure-rvalue base-subobject target <col:16, col:20> 'Base' Constructor {{address:base_constructor}} 'Base' 'func () void'
+|   |   `-ConstructionExpr {{address}} <col:16, col:22> 'Base' pure-rvalue base-subobject target <col:16, col:20> 'Base' Constructor {{address:base_constructor}} 'Base' 'ctor Base()'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:28:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-DestructorDecl {{address}} <line:28:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'dtor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:18>
 |-FunctionDecl {{address:ordinary}} <line:30:1, line:32:2> Ordinary 'func (i32) i32'
 | |-ParmVarDecl {{address:ordinary_value}} <line:30:15, col:24> value 'i32'

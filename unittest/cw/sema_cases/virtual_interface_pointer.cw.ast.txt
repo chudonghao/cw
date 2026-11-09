@@ -21,10 +21,10 @@ TranslationUnitDecl {{address}}
 |   `-ImplicitResultInitializationExpr {{address}} <line:8:3, col:8> 'void' non-object ReturnVar {{address:draw_return}} 'i32'
 |     `-ImplicitCastExpr {{address}} <col:3, col:8> 'i32' pure-rvalue <LValueToRValue>
 |       `-DeclRefExpr {{address}} <col:3, col:8> 'i32' lvalue 'value' ParmVar {{address:draw_value}} 'value' 'i32'
-|-ConstructorDecl {{address}} <line:11:1, col:40> VirtualInterfacePointerTarget target Struct {{address:target}} 'VirtualInterfacePointerTarget' 'func () void'
+|-ConstructorDecl {{address}} <line:11:1, col:40> VirtualInterfacePointerTarget target Struct {{address:target}} 'VirtualInterfacePointerTarget' 'ctor VirtualInterfacePointerTarget()'
 | `-CompoundStmt {{address}} <col:38, col:40>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:13:1, col:40> VirtualInterfacePointerTarget target Struct {{address:target}} 'VirtualInterfacePointerTarget' 'func () void'
+|-DestructorDecl {{address}} <line:13:1, col:40> VirtualInterfacePointerTarget target Struct {{address:target}} 'VirtualInterfacePointerTarget' 'dtor VirtualInterfacePointerTarget()'
 | `-CompoundStmt {{address}} <col:38, col:40>
 `-FunctionDecl {{address}} <line:15:1, line:20:2> VirtualInterfacePointer 'func (&copy VirtualInterfacePointerTarget) i32'
   |-ParmVarDecl {{address:object}} <line:15:30, col:72> object '&copy VirtualInterfacePointerTarget'

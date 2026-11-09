@@ -32,6 +32,9 @@ namespace cw {
 /// - `overload-set`: the reference names an overload set rather than one declaration.
 /// - `trivial`: trivial default formation selects no constructor.
 ///
+/// Constructor and destructor types reuse function types with a fixed `void` return, so they
+/// print in declaration form instead: `ctor T(args)` and `dtor T()`, with `T` the target struct.
+///
 /// Example output:
 /// ```
 /// TranslationUnitDecl 0x1000
@@ -137,6 +140,7 @@ class ASTDumper : public ASTVisitor {
   void PrintEscapedString(std::string_view value);
   void PrintTypeName(QualType type);
   void PrintUnqualifiedTypeName(const Type& type);
+  void PrintParameterTypes(const FunctionType& type);
   void PrintWrittenName(const NameSyntax& name);
   bool IsSemanticStage() const { return stage_ == Stage::Semantic; }
 
@@ -144,6 +148,8 @@ class ASTDumper : public ASTVisitor {
   void PrintType(QualType type);
   void PrintExprType(const Expr& expression);
   void PrintDeclType(const ValueDecl& declaration);
+  void PrintDeclaredType(const ValueDecl& declaration);
+  void PrintValueCategory(ValueCategory category);
   void PrintReferenceTarget(const ValueDecl* declaration);
   void PrintSelectedConstructor(const ConstructorDecl* constructor, const Expr& construction);
   void PrintRelation(const char* label, const ValueDecl* declaration);
