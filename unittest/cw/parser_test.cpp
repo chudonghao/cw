@@ -794,6 +794,56 @@ func Last() {})");
   `-CompoundStmt {{address}} <col:13, col:15>)");
 }
 
+using std::string_literals::operator""s;
+
+TEST_F(ParserTest, ReportsNulInsideLineComment) {
+  Parse("// comment\0func Hidden() {}"s);
+  ExpectError(0, 10, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+`-FunctionDecl {{address}} <test.cw:1:12, col:28> Hidden
+  `-CompoundStmt {{address}} <col:26, col:28>)");
+}
+
+TEST_F(ParserTest, ReportsNulBetweenDeclarationsAndContinuesTheFile) {
+  Parse("func F() {}\0func G() {}"s);
+  ExpectError(0, 11, "expected one of 'namespace', 'trivial', 'struct', 'func', 'ctor', 'dtor', 'var'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-FunctionDecl {{address}} <test.cw:1:1, col:12> F
+| `-CompoundStmt {{address}} <col:10, col:12>
+`-FunctionDecl {{address}} <col:13, col:24> G
+  `-CompoundStmt {{address}} <col:22, col:24>)");
+}
+
+TEST_F(ParserTest, ReportsNulInFunctionBodyAndContinuesTheFile) {
+  Parse("func F() { \0 }\nfunc G() {}"s);
+  ExpectError(
+      0, 11,
+      "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "'-', '--', '~', '!', '::', '(', '['");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-FunctionDecl {{address}} <test.cw:1:1, col:15> F contains-errors
+| `-CompoundStmt {{address}} <col:10, col:15> contains-errors
+|   `-RecoveryExpr {{address}} <col:12, col:12> contains-errors
+`-FunctionDecl {{address}} <line:2:1, col:12> G
+  `-CompoundStmt {{address}} <col:10, col:12>)");
+}
+
+TEST_F(ParserTest, ReportsNulInExpressionAndContinuesTheFile) {
+  Parse("var x := \0;\nfunc G() {}"s);
+  ExpectError(
+      0, 9,
+      "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "'-', '--', '~', '!', '::', '(', '['");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-VarGroupDecl {{address}} <test.cw:1:1, col:10> contains-errors
+| |-VarDecl {{address}} <col:5, col:6> x
+| `-RecoveryExpr {{address}} <col:10, col:10> contains-errors
+`-FunctionDecl {{address}} <line:2:1, col:12> G
+  `-CompoundStmt {{address}} <col:10, col:12>)");
+}
+
 TEST_F(ParserTest, ReportsFunctionTypeSyntaxErrorsAndContinuesParsing) {
   Parse(R"(var missing_left func i32;
 var trailing func (i32,) void;
@@ -1561,6 +1611,22 @@ TEST_F(ParserTest, RecoversNextFileAfterIncompleteParameterList) {
 | `-CompoundStmt {{address}} <col:20, col:22>
 `-FunctionDecl {{address}} <col:23, col:38> Plain
   `-CompoundStmt {{address}} <col:36, col:38>)");
+}
+
+TEST_F(ParserTest, RecoversNextFileAcrossConsecutiveEmptyFiles) {
+  Parse(std::vector<cw::Source>{
+      {"broken", "func F(a i32"},
+      {"empty1", ""},
+      {"empty2", ""},
+      {"good", "func Good() {}"},
+  });
+  ExpectError(0, 12, "expected ')'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-FunctionDecl {{address}} <broken:1:1, col:13> F contains-errors
+| `-ParmVarDecl {{address}} <col:8, col:13> a
+|   `-BuiltinType {{address}} <col:10, col:13> 'i32'
+`-FunctionDecl {{address}} <good:1:1, col:15> Good
+  `-CompoundStmt {{address}} <col:13, col:15>)");
 }
 
 TEST_F(ParserTest, RecoversNextFileAfterIncompleteStruct) {

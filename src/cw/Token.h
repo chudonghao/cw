@@ -142,8 +142,6 @@ const char* to_string(TokenType type);
 
 TokenType from_string(const char* str);
 
-inline bool IsBlankOrComment(TokenType type) { return type == comment || type == blank || type == eol || type == eof; }
-
 }  // namespace tok
 
 struct BoolProperty {

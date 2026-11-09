@@ -3,6 +3,9 @@
 /// \license SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 /// \url https://github.com/chudonghao/cw
 
+#include <string>
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include "cw/Lexer.h"
@@ -34,7 +37,6 @@ TEST(Lexer, TokenType) {
 
   std::vector<cw::Source> sources = {{"test.cw", content}};
   lexer.Reset(&sources);
-  lexer.SkipBlankComment();
 
   // Literals.
   ASSERT_EQ(lexer.Token().type, cw::tok::bool_literal);
@@ -224,7 +226,8 @@ TEST(Lexer, TokenType) {
   ASSERT_EQ(lexer.Token().type, cw::tok::undefined);
   lexer.Advance();
 
-  // eos
+  ASSERT_EQ(lexer.Token().type, cw::tok::eof);
+  lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::eos);
 }
 
@@ -242,7 +245,6 @@ TEST(Lexer, TokenRangeSourceView) {
 
   std::vector<cw::Source> sources = {{"test.cw", content}};
   lexer.Reset(&sources);
-  lexer.SkipBlankComment();
 
   // line 0: true
   {
@@ -354,6 +356,8 @@ TEST(Lexer, TokenRangeSourceView) {
   }
 
   lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eof);
+  lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::eos);
 }
 
@@ -401,6 +405,8 @@ TEST(Lexer, KeepsNumericSuffixesInOneTokenAndSignsSeparate) {
   ASSERT_EQ(lexer.Token().type, cw::tok::float_literal);
   EXPECT_EQ(lexer.Token().source_view, "1e3f64");
   lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eof);
+  lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::eos);
 }
 
@@ -436,7 +442,12 @@ TEST(Lexer, PreservesNumericDotAndSourceBoundaries) {
   EXPECT_EQ(lexer.Token().source_view, "1");
   EXPECT_EQ(lexer.Token().get<cw::IntegerProperty>().suffix, cw::BuiltinTypeKind::Invalid);
   lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eof);
+  EXPECT_EQ(lexer.Token().range.begin.file, 0);
+  lexer.Advance();
   EXPECT_EQ(lexer.Token().source_view, "usize");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eof);
   lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::eos);
 }
@@ -459,7 +470,6 @@ TEST(Lexer, TokenProperty) {
 
   std::vector<cw::Source> sources = {{"test.cw", content}};
   lexer.Reset(&sources);
-  lexer.SkipBlankComment();
 
   // === Bool ===
   EXPECT_EQ(lexer.Token().get<cw::BoolProperty>().value, true);
@@ -562,7 +572,8 @@ TEST(Lexer, TokenProperty) {
   EXPECT_EQ(lexer.Token().get<cw::IdentifierProperty>().name, "bar_123");
   lexer.Advance();
 
-  // eos
+  ASSERT_EQ(lexer.Token().type, cw::tok::eof);
+  lexer.Advance();
   ASSERT_EQ(lexer.Token().type, cw::tok::eos);
 }
 
@@ -580,8 +591,93 @@ TEST(Lexer, DoesNotJoinLiteralsAcrossSourceBoundaries) {
       EXPECT_NE(lexer.Token().type, cw::tok::character_literal);
       EXPECT_EQ(lexer.Token().range.begin.file, lexer.Token().range.end.file);
       if (lexer.Token().type == cw::tok::eof) ++boundaries;
-      lexer.Advance(false);
+      lexer.Advance();
     }
     EXPECT_EQ(boundaries, 2);
   }
+}
+
+using std::string_literals::operator""s;
+
+TEST(Lexer, FormsUndefinedTokenForNulOutsideCommentsAndLiterals) {
+  std::vector<cw::Source> sources = {{"test.cw", "a\0b"s}};
+  cw::Lexer lexer;
+  lexer.Reset(&sources);
+
+  ASSERT_EQ(lexer.Token().type, cw::tok::identifier);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::undefined);
+  EXPECT_EQ(lexer.Token().source_view, "\0"s);
+  EXPECT_EQ(lexer.Token().range.begin.column, 1);
+  EXPECT_EQ(lexer.Token().range.end.column, 2);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::identifier);
+  EXPECT_EQ(lexer.Token().source_view, "b");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eof);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eos);
+}
+
+TEST(Lexer, EndsLineCommentBeforeNul) {
+  std::vector<cw::Source> sources = {{"test.cw", "// note\0x\n"s}};
+  cw::Lexer lexer;
+  lexer.Reset(&sources);
+
+  ASSERT_EQ(lexer.Token().type, cw::tok::undefined);
+  EXPECT_EQ(lexer.Token().range.begin.column, 7);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::identifier);
+  EXPECT_EQ(lexer.Token().source_view, "x");
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eof);
+}
+
+TEST(Lexer, DoesNotFormLiteralsAroundNul) {
+  for (const std::string& content : {"\"a\0b\""s, "'\0'"s}) {
+    SCOPED_TRACE(content);
+    std::vector<cw::Source> sources = {{"test.cw", content}};
+    cw::Lexer lexer;
+    lexer.Reset(&sources);
+    bool saw_nul = false;
+    while (lexer.Token().type != cw::tok::eos) {
+      EXPECT_NE(lexer.Token().type, cw::tok::string_literal);
+      EXPECT_NE(lexer.Token().type, cw::tok::character_literal);
+      saw_nul |= lexer.Token().type == cw::tok::undefined && lexer.Token().source_view == "\0"s;
+      lexer.Advance();
+    }
+    EXPECT_TRUE(saw_nul);
+  }
+}
+
+TEST(Lexer, ProducesOneEofAtTheEndOfEachSource) {
+  std::vector<cw::Source> sources = {{"first", "a // tail"}, {"empty1", ""}, {"empty2", ""}, {"last", "b\n"}};
+  cw::Lexer lexer;
+  lexer.Reset(&sources);
+
+  const auto expect_eof = [&](int file, int line, int column) {
+    const auto& token = lexer.Token();
+    ASSERT_EQ(token.type, cw::tok::eof);
+    EXPECT_EQ(token.range.begin.file, file);
+    EXPECT_EQ(token.range.begin.line, line);
+    EXPECT_EQ(token.range.begin.column, column);
+    EXPECT_EQ(token.range.end.column, column);
+    EXPECT_TRUE(token.source_view.empty());
+  };
+
+  ASSERT_EQ(lexer.Token().type, cw::tok::identifier);
+  EXPECT_EQ(lexer.Token().range.begin.file, 0);
+  lexer.Advance();
+  expect_eof(0, 0, 9);  // A trailing comment without a line break ends at the file end.
+  lexer.Advance();
+  expect_eof(1, 0, 0);
+  lexer.Advance();
+  expect_eof(2, 0, 0);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::identifier);
+  EXPECT_EQ(lexer.Token().range.begin.file, 3);
+  lexer.Advance();
+  expect_eof(3, 1, 0);
+  lexer.Advance();
+  ASSERT_EQ(lexer.Token().type, cw::tok::eos);
 }

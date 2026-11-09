@@ -1584,16 +1584,11 @@ void Parser::Attributes_(AttributeList& attributes) {
   }
 }
 
-void Parser::InitializeLexer() {
-  parsed_location_ = SourceLocation{};
-  // skip blank and comment in the beginning
-  while (lexer_->Token().type != tok::eof && tok::IsBlankOrComment(lexer_->Token().type)) lexer_->Advance(false);
-}
+void Parser::InitializeLexer() { parsed_location_ = SourceLocation{}; }
 
 void Parser::AdvanceLexer() {
   parsed_location_ = lexer_->Token().range.end;
-  lexer_->Advance(false);
-  while (lexer_->Token().type != tok::eof && tok::IsBlankOrComment(lexer_->Token().type)) lexer_->Advance(false);
+  lexer_->Advance();
 }
 
 void Parser::HandleExpect(std::vector<tok::TokenType> expected) {
