@@ -46,7 +46,6 @@ add_library(
   VTableLayout.h VTableLayout.cpp
   ConstantEvaluation.h ConstantEvaluation.cpp
   Diagnostic.h Diagnostic.cpp
-  ParseResult.h
   CFG.h CFG.cpp
   DefiniteInitialization.h DefiniteInitialization.cpp
   ast.h ast.cpp

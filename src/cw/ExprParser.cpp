@@ -394,9 +394,10 @@ int ExprParser::OnReduced(int production_id, int, int) {
 int ExprParser::OnErrored(int state, int symbol) {
   // At an operand position, delegate an array type (including its length expression) to Parser.
   if (symbol == expr::l_square && parse_table_(state, expr::type).type == grammar::kActionShift) {
-    auto parsed_type = parent_->Type_();
-    pending_type_ = parsed_type.Take();
-    if (!pending_type_) {
+    pending_type_ = parent_->Type_();
+    if (parent_->Recovering()) {
+      // The type has reported its error; stop so the enclosing recovery point synchronizes.
+      pending_type_ = nullptr;
       return kHandleSymbolResultError;
     }
     return LRStateMachine::operator()(expr::type);

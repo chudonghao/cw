@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "ExprParser.h"
-#include "ParseResult.h"
 #include "Token.h"
 #include "ast.h"
 
@@ -47,6 +46,8 @@ class Parser {
   std::vector<std::unique_ptr<ExprParser>> expr_parsers_;
   std::size_t expr_parser_depth_{};
   SourceLocation parsed_location_{};
+  /// True after a parse error until the nearest enclosing recovery point synchronizes.
+  bool recovering_{};
 
  public:
   Parser();
@@ -62,42 +63,64 @@ class Parser {
  private:
   // Decl parsing
   /// \brief Parses one declaration at translation-unit or namespace scope, including its modifier.
-  ParseResult<Decl> Decl_();
+  std::unique_ptr<Decl> Decl_();
   /// \brief Parses one namespace layer beginning at 'namespace' or a nested '::'.
   /// Qualified namespace headers produce one node per name.
-  ParseResult<NamespaceDecl> NamespaceDecl_();
-  ParseResult<StructDecl> StructDecl_();
-  ParseResult<VirtualDecl> VirtualDecl_();
-  ParseResult<FieldDecl> FieldDecl_();
+  std::unique_ptr<NamespaceDecl> NamespaceDecl_();
+  std::unique_ptr<StructDecl> StructDecl_();
+  std::unique_ptr<VirtualDecl> VirtualDecl_();
+  std::unique_ptr<FieldDecl> FieldDecl_();
   /// \brief Parses an ordinary function declaration.
-  ParseResult<FunctionDecl> FunctionDecl_(DeclModifier modifier);
-  ParseResult<ConstructorDecl> ConstructorDecl_(DeclModifier modifier);
-  ParseResult<DestructorDecl> DestructorDecl_(DeclModifier modifier);
-  ParseResult<VarGroupDecl> VarGroupDecl_();
-  ParseResult<ParmVarDecl> ParmVarDecl_();
-  ParseResult<ReturnVarDecl> ReturnVarDecl_();
+  std::unique_ptr<FunctionDecl> FunctionDecl_(DeclModifier modifier);
+  std::unique_ptr<ConstructorDecl> ConstructorDecl_(DeclModifier modifier);
+  std::unique_ptr<DestructorDecl> DestructorDecl_(DeclModifier modifier);
+  std::unique_ptr<VarGroupDecl> VarGroupDecl_();
+  std::unique_ptr<ParmVarDecl> ParmVarDecl_();
+  std::unique_ptr<ReturnVarDecl> ReturnVarDecl_();
 
   // Stmt parsing
-  ParseResult<Stmt> Stmt_();
-  ParseResult<CompoundStmt> CompoundStmt_();
-  ParseResult<IfStmt> IfStmt_();
-  ParseResult<WhileStmt> WhileStmt_();
-  ParseResult<BreakStmt> BreakStmt_();
-  ParseResult<ContinueStmt> ContinueStmt_();
-  ParseResult<ReturnStmt> ReturnStmt_();
-  ParseResult<ExprStmt> ExprStmt_();
-  ParseResult<ExprStmt> ExprStmt_(ParseResult<Expr> expr);
+  std::unique_ptr<Stmt> Stmt_();
+  std::unique_ptr<CompoundStmt> CompoundStmt_();
+  std::unique_ptr<IfStmt> IfStmt_();
+  std::unique_ptr<WhileStmt> WhileStmt_();
+  std::unique_ptr<BreakStmt> BreakStmt_();
+  std::unique_ptr<ContinueStmt> ContinueStmt_();
+  std::unique_ptr<ReturnStmt> ReturnStmt_();
+  std::unique_ptr<ExprStmt> ExprStmt_();
+  std::unique_ptr<ExprStmt> ExprStmt_(std::unique_ptr<Expr> expr);
 
-  ParseResult<Expr> Expr_();
-  std::vector<ParseResult<Expr>> Exprs_(ParseResult<Expr> first);
+  std::unique_ptr<Expr> Expr_();
+  std::vector<std::unique_ptr<Expr>> Exprs_(std::unique_ptr<Expr> first);
 
   // Type and name parsing
-  ParseResult<TypeSyntax> Type_();
+  std::unique_ptr<TypeSyntax> Type_();
   /// \brief Parses [ "::" ] Identifier { "::" Identifier } into an empty name.
   /// Returns false after diagnosing an incomplete name, retaining the parsed prefix.
   bool QualifiedName_(NameSyntax& name);
 
   void Attributes_(AttributeList& attributes);
+
+  // Error recovery
+  //
+  // A parse error that the current construct cannot handle locally unwinds the parser: each
+  // enclosing parse function returns as soon as it observes Recovering(), until the nearest
+  // recovery point skips to a synchronization token and calls FinishRecovery().
+
+  /// \brief Enters error recovery without a node, as when no construct could be started.
+  void Unwind() { recovering_ = true; }
+  /// \brief Marks \p node as containing errors, enters error recovery, and returns \p node.
+  template <class T>
+  std::unique_ptr<T> Unwind(std::unique_ptr<T> node) {
+    if (node) {
+      node->contains_errors = true;
+    }
+    Unwind();
+    return node;
+  }
+  /// \brief Returns true while parsing unwinds to the nearest recovery point.
+  bool Recovering() const { return recovering_; }
+  /// \brief Leaves error recovery once a recovery point has synchronized.
+  void FinishRecovery() { recovering_ = false; }
 
   // Utilities
 
