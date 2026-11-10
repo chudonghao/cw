@@ -1003,6 +1003,47 @@ TEST_F(ParserTest, StopsArrayValueAtItsTypeErrorAndRecoversAtTheStatement) {
         `-IntegerLiteral {{address}} <col:12, col:13> 1)");
 }
 
+TEST_F(ParserTest, ParsesElseIfChains) {
+  Parse(R"(func F() {
+  if a {} else if b {} else {}
+  if a {} else if b {} else if c {}
+})");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-FunctionDecl {{address}} <test.cw:1:1, line:4:2> F
+  `-CompoundStmt {{address}} <line:1:10, line:4:2>
+    |-IfStmt {{address}} <line:2:3, col:31>
+    | |-DeclRefExpr {{address}} <col:6, col:7> 'a'
+    | |-CompoundStmt {{address}} <col:8, col:10>
+    | `-IfStmt {{address}} <col:16, col:31>
+    |   |-DeclRefExpr {{address}} <col:19, col:20> 'b'
+    |   |-CompoundStmt {{address}} <col:21, col:23>
+    |   `-CompoundStmt {{address}} <col:29, col:31>
+    `-IfStmt {{address}} <line:3:3, col:36>
+      |-DeclRefExpr {{address}} <col:6, col:7> 'a'
+      |-CompoundStmt {{address}} <col:8, col:10>
+      `-IfStmt {{address}} <col:16, col:36>
+        |-DeclRefExpr {{address}} <col:19, col:20> 'b'
+        |-CompoundStmt {{address}} <col:21, col:23>
+        `-IfStmt {{address}} <col:29, col:36>
+          |-DeclRefExpr {{address}} <col:32, col:33> 'c'
+          `-CompoundStmt {{address}} <col:34, col:36>
+)");
+}
+
+TEST_F(ParserTest, ReportsMissingElseBranch) {
+  Parse("func f() { if true {} else }");
+  ExpectError(0, 27, "expected '{' or 'if'");
+}
+
+TEST_F(ParserTest, ReportsMissingElseIfConditionAndRecovers) {
+  Parse("func f() { if true {} else if {} }\nfunc g() { if true {} else if false {} }");
+  ExpectError(
+      0, 30,
+      "expected one of identifier, 'null', boolean literal, integer literal, character literal, floating literal, "
+      "string literal, 'move', 'operator', built-in type, 'this', 'ctor', 'dtor', 'nonvirtual', '&', '*', '+', '++', "
+      "'-', '--', '~', '!', '::', '(', '['");
+}
+
 TEST_F(ParserTest, ReportsStatementAndTopLevelErrorsInOrder) {
   Parse(R"(func f() {
 var ;

@@ -639,16 +639,9 @@ class AnalysisEngine {
           IndexVariableGroup(group, statement);
           break;
         }
-        case NodeKind::IfStmt: {
-          const auto& conditional = static_cast<const IfStmt&>(*child);
-          if (conditional.Then) {
-            IndexCompound(*conditional.Then);
-          }
-          if (conditional.Else) {
-            IndexCompound(*conditional.Else);
-          }
+        case NodeKind::IfStmt:
+          IndexIf(static_cast<const IfStmt&>(*child));
           break;
-        }
         case NodeKind::WhileStmt: {
           const auto& loop = static_cast<const WhileStmt&>(*child);
           if (loop.Body) {
@@ -659,6 +652,17 @@ class AnalysisEngine {
         default:
           break;
       }
+    }
+  }
+
+  void IndexIf(const IfStmt& conditional) {
+    if (conditional.Then) {
+      IndexCompound(*conditional.Then);
+    }
+    if (conditional.Else && conditional.Else->GetKind() == NodeKind::IfStmt) {
+      IndexIf(static_cast<const IfStmt&>(*conditional.Else));
+    } else if (conditional.Else) {
+      IndexCompound(static_cast<const CompoundStmt&>(*conditional.Else));
     }
   }
 

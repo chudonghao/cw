@@ -1,0 +1,100 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-FunctionDecl {{address}} <else_if_branches.cpp:1:1, line:14:1> line:1:6 StatementChains 'void (bool, bool)' external-linkage
+| |-ParmVarDecl {{address:1}} <col:22, col:27> col:27 used first 'bool'
+| |-ParmVarDecl {{address:2}} <col:34, col:39> col:39 used second 'bool'
+| `-CompoundStmt {{address}} <col:47, line:14:1>
+|   |-IfStmt {{address}} <line:2:3, line:8:3> has_else
+|   | |-ImplicitCastExpr {{address}} <line:2:7> 'bool' <LValueToRValue>
+|   | | `-DeclRefExpr {{address}} <col:7> 'bool' lvalue ParmVar {{address:1}} 'first' 'bool'
+|   | |-CompoundStmt {{address}} <col:14, line:4:3>
+|   | | `-DeclRefExpr {{address}} <line:3:5> 'bool' lvalue ParmVar {{address:1}} 'first' 'bool'
+|   | `-IfStmt {{address}} <line:4:10, line:8:3> has_else
+|   |   |-ImplicitCastExpr {{address}} <line:4:14> 'bool' <LValueToRValue>
+|   |   | `-DeclRefExpr {{address}} <col:14> 'bool' lvalue ParmVar {{address:2}} 'second' 'bool'
+|   |   |-CompoundStmt {{address}} <col:22, line:6:3>
+|   |   | `-DeclRefExpr {{address}} <line:5:5> 'bool' lvalue ParmVar {{address:2}} 'second' 'bool'
+|   |   `-CompoundStmt {{address}} <line:6:10, line:8:3>
+|   |     `-DeclRefExpr {{address}} <line:7:5> 'bool' lvalue ParmVar {{address:1}} 'first' 'bool'
+|   `-IfStmt {{address}} <line:9:3, line:13:3> has_else
+|     |-ImplicitCastExpr {{address}} <line:9:7> 'bool' <LValueToRValue>
+|     | `-DeclRefExpr {{address}} <col:7> 'bool' lvalue ParmVar {{address:1}} 'first' 'bool'
+|     |-CompoundStmt {{address}} <col:14, line:11:3>
+|     | `-DeclRefExpr {{address}} <line:10:5> 'bool' lvalue ParmVar {{address:1}} 'first' 'bool'
+|     `-IfStmt {{address}} <line:11:10, line:13:3>
+|       |-ImplicitCastExpr {{address}} <line:11:14> 'bool' <LValueToRValue>
+|       | `-DeclRefExpr {{address}} <col:14> 'bool' lvalue ParmVar {{address:2}} 'second' 'bool'
+|       `-CompoundStmt {{address}} <col:22, line:13:3>
+|         `-DeclRefExpr {{address}} <line:12:5> 'bool' lvalue ParmVar {{address:2}} 'second' 'bool'
+|-FunctionDecl {{address}} <line:16:1, line:24:1> line:16:5 ReturnChain 'int (bool, bool)' external-linkage
+| |-ParmVarDecl {{address:3}} <col:17, col:22> col:22 used first 'bool'
+| |-ParmVarDecl {{address:4}} <col:29, col:34> col:34 used second 'bool'
+| `-CompoundStmt {{address}} <col:42, line:24:1>
+|   `-IfStmt {{address}} <line:17:3, line:23:3> has_else
+|     |-ImplicitCastExpr {{address}} <line:17:7> 'bool' <LValueToRValue>
+|     | `-DeclRefExpr {{address}} <col:7> 'bool' lvalue ParmVar {{address:3}} 'first' 'bool'
+|     |-CompoundStmt {{address}} <col:14, line:19:3>
+|     | `-ReturnStmt {{address}} <line:18:5, col:12>
+|     |   `-IntegerLiteral {{address}} <col:12> 'int' 1
+|     `-IfStmt {{address}} <line:19:10, line:23:3> has_else
+|       |-ImplicitCastExpr {{address}} <line:19:14> 'bool' <LValueToRValue>
+|       | `-DeclRefExpr {{address}} <col:14> 'bool' lvalue ParmVar {{address:4}} 'second' 'bool'
+|       |-CompoundStmt {{address}} <col:22, line:21:3>
+|       | `-ReturnStmt {{address}} <line:20:5, col:12>
+|       |   `-IntegerLiteral {{address}} <col:12> 'int' 2
+|       `-CompoundStmt {{address}} <line:21:10, line:23:3>
+|         `-ReturnStmt {{address}} <line:22:5, col:12>
+|           `-IntegerLiteral {{address}} <col:12> 'int' 3
+|-FunctionDecl {{address}} <line:27:1, line:37:1> line:27:5 BlockChain 'int (bool, bool)' external-linkage
+| |-ParmVarDecl {{address:5}} <col:16, col:21> col:21 used first 'bool'
+| |-ParmVarDecl {{address:6}} <col:28, col:33> col:33 used second 'bool'
+| `-CompoundStmt {{address}} <col:41, line:37:1>
+|   |-DeclStmt {{address}} <line:28:3, col:12>
+|   | `-VarDecl {{address:7}} <col:3, col:7> col:7 used value 'int'
+|   |-IfStmt {{address}} <line:29:3, line:35:3> has_else
+|   | |-ImplicitCastExpr {{address}} <line:29:7> 'bool' <LValueToRValue>
+|   | | `-DeclRefExpr {{address}} <col:7> 'bool' lvalue ParmVar {{address:5}} 'first' 'bool'
+|   | |-CompoundStmt {{address}} <col:14, line:31:3>
+|   | | `-BinaryOperator {{address}} <line:30:5, col:13> 'int' lvalue '='
+|   | |   |-DeclRefExpr {{address}} <col:5> 'int' lvalue Var {{address:7}} 'value' 'int'
+|   | |   `-IntegerLiteral {{address}} <col:13> 'int' 1
+|   | `-IfStmt {{address}} <line:31:10, line:35:3> has_else
+|   |   |-ImplicitCastExpr {{address}} <line:31:14> 'bool' <LValueToRValue>
+|   |   | `-DeclRefExpr {{address}} <col:14> 'bool' lvalue ParmVar {{address:6}} 'second' 'bool'
+|   |   |-CompoundStmt {{address}} <col:22, line:33:3>
+|   |   | `-BinaryOperator {{address}} <line:32:5, col:13> 'int' lvalue '='
+|   |   |   |-DeclRefExpr {{address}} <col:5> 'int' lvalue Var {{address:7}} 'value' 'int'
+|   |   |   `-IntegerLiteral {{address}} <col:13> 'int' 2
+|   |   `-CompoundStmt {{address}} <line:33:10, line:35:3>
+|   |     `-BinaryOperator {{address}} <line:34:5, col:13> 'int' lvalue '='
+|   |       |-DeclRefExpr {{address}} <col:5> 'int' lvalue Var {{address:7}} 'value' 'int'
+|   |       `-IntegerLiteral {{address}} <col:13> 'int' 3
+|   `-ReturnStmt {{address}} <line:36:3, col:10>
+|     `-ImplicitCastExpr {{address}} <col:10> 'int' <LValueToRValue>
+|       `-DeclRefExpr {{address}} <col:10> 'int' lvalue Var {{address:7}} 'value' 'int'
+`-FunctionDecl {{address}} <line:39:1, line:49:1> line:39:5 InitializationChain 'int (bool, bool)' external-linkage
+  |-ParmVarDecl {{address:8}} <col:25, col:30> col:30 used first 'bool'
+  |-ParmVarDecl {{address:9}} <col:37, col:42> col:42 used second 'bool'
+  `-CompoundStmt {{address}} <col:50, line:49:1>
+    |-DeclStmt {{address}} <line:40:3, col:12>
+    | `-VarDecl {{address:10}} <col:3, col:7> col:7 used value 'int'
+    |-IfStmt {{address}} <line:41:3, line:47:3> has_else
+    | |-ImplicitCastExpr {{address}} <line:41:7> 'bool' <LValueToRValue>
+    | | `-DeclRefExpr {{address}} <col:7> 'bool' lvalue ParmVar {{address:8}} 'first' 'bool'
+    | |-CompoundStmt {{address}} <col:14, line:43:3>
+    | | `-BinaryOperator {{address}} <line:42:5, col:13> 'int' lvalue '='
+    | |   |-DeclRefExpr {{address}} <col:5> 'int' lvalue Var {{address:10}} 'value' 'int'
+    | |   `-IntegerLiteral {{address}} <col:13> 'int' 1
+    | `-IfStmt {{address}} <line:43:10, line:47:3> has_else
+    |   |-ImplicitCastExpr {{address}} <line:43:14> 'bool' <LValueToRValue>
+    |   | `-DeclRefExpr {{address}} <col:14> 'bool' lvalue ParmVar {{address:9}} 'second' 'bool'
+    |   |-CompoundStmt {{address}} <col:22, line:45:3>
+    |   | `-BinaryOperator {{address}} <line:44:5, col:13> 'int' lvalue '='
+    |   |   |-DeclRefExpr {{address}} <col:5> 'int' lvalue Var {{address:10}} 'value' 'int'
+    |   |   `-IntegerLiteral {{address}} <col:13> 'int' 2
+    |   `-CompoundStmt {{address}} <line:45:10, line:47:3>
+    |     `-BinaryOperator {{address}} <line:46:5, col:13> 'int' lvalue '='
+    |       |-DeclRefExpr {{address}} <col:5> 'int' lvalue Var {{address:10}} 'value' 'int'
+    |       `-IntegerLiteral {{address}} <col:13> 'int' 3
+    `-ReturnStmt {{address}} <line:48:3, col:10>
+      `-ImplicitCastExpr {{address}} <col:10> 'int' <LValueToRValue>
+        `-DeclRefExpr {{address}} <col:10> 'int' lvalue Var {{address:10}} 'value' 'int'

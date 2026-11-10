@@ -154,6 +154,7 @@ INSTANTIATE_TEST_SUITE_P(
         LanguageFeatureCase{"builtin_comparison", "BuiltinComparison"},
         LanguageFeatureCase{"boolean_logic", "BooleanLogic"},
         LanguageFeatureCase{"boolean_control_flow", "BooleanControlFlow"},
+        LanguageFeatureCase{"else_if_branches", "ElseIfBranches"},
         LanguageFeatureCase{"conditional_expression", "ConditionalExpression"},
         LanguageFeatureCase{"reference_binding", "ReferenceBinding"},
         LanguageFeatureCase{"struct_fields", "StructFields"}, LanguageFeatureCase{"member_access", "MemberAccess"},
@@ -11332,6 +11333,42 @@ TEST_F(SemaTest, ReportsConflictingInitializationStatesAtMerge) {
 })");
 
   ExpectError(2, 2, "initialization state of variable 'value' differs across control-flow paths", 0);
+}
+
+TEST_F(SemaTest, ReportsConflictingInitializationStatesInElseIfChain) {
+  Analyze(R"(func f(first bool, second bool) {
+  var value i32;
+  if first {
+    value := 1;
+  } else if second {
+    value := 2;
+  }
+  value;
+})");
+
+  ExpectError(4, 9, "initialization state of variable 'value' differs across control-flow paths", 0);
+}
+
+TEST_F(SemaTest, ReportsIncompleteResultInElseIfChainWithoutElse) {
+  Analyze(R"(func f(first bool, second bool) i32 {
+  if first {
+    1
+  } else if second {
+    2
+  }
+})");
+
+  ExpectError(3, 9, "function return object is not initialized on this path", 0);
+}
+
+TEST_F(SemaTest, RequiresBooleanElseIfCondition) {
+  Analyze(R"(func f(first bool, second i32) {
+  if first {
+  } else if second {
+  }
+})");
+
+  ExpectError(2, 12, "condition expression must have type 'bool', not 'i32'", 6);
 }
 
 TEST_F(SemaTest, DoesNotApplyStateEffectsInUnreachableCode) {

@@ -810,7 +810,8 @@ bool CodeGenFunction::EmitIfStmt(const IfStmt& statement) {
   local_cleanups_ = before;
   if (statement.Else) {
     EmitBlock(else_block);
-    if (!EmitCompound(*statement.Else)) {
+    // The else branch is a block or, for `else if`, a nested IfStmt.
+    if (!EmitStmt(*statement.Else)) {
       return false;
     }
     if (then_reachable && HaveInsertPoint()) {
