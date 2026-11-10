@@ -1055,7 +1055,7 @@ struct DeclStmt : Stmt {
 struct IfStmt : Stmt {
   std::unique_ptr<Expr> Cond{};          ///< Condition expression.
   std::unique_ptr<CompoundStmt> Then{};  ///< Then branch.
-  std::unique_ptr<CompoundStmt> Else{};  ///< Else branch (optional).
+  std::unique_ptr<Stmt> Else{};          ///< Optional else branch: a CompoundStmt, or an IfStmt for `else if`.
 
   NodeKind GetKind() const override { return NodeKind::IfStmt; }
   void Accept(ASTVisitor& visitor) override;

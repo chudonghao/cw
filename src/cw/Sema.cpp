@@ -3113,8 +3113,13 @@ void Sema::AnalyzeStmt(Stmt& statement, const ResultBlockAnalysisContext& result
         AnalyzeCompoundStmt(*if_statement.Then, true, result_block_context, forwards_result_position);
         InheritErrors(if_statement, if_statement.Then.get());
       }
-      if (if_statement.Else) {
-        AnalyzeCompoundStmt(*if_statement.Else, true, result_block_context, forwards_result_position);
+      if (if_statement.Else && if_statement.Else->GetKind() == NodeKind::IfStmt) {
+        // `else if` is the nested `else { if ... }` and keeps the enclosing result position.
+        AnalyzeStmt(*if_statement.Else, result_block_context, forwards_result_position);
+        InheritErrors(if_statement, if_statement.Else.get());
+      } else if (if_statement.Else) {
+        AnalyzeCompoundStmt(static_cast<CompoundStmt&>(*if_statement.Else), true, result_block_context,
+                            forwards_result_position);
         InheritErrors(if_statement, if_statement.Else.get());
       }
       break;

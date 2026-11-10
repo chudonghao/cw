@@ -1,0 +1,133 @@
+TranslationUnitDecl {{address}}
+|-FunctionDecl {{address}} <else_if_branches.cw:1:1, line:14:2> StatementChains 'func (bool, bool) void'
+| |-ParmVarDecl {{address:statement_first}} <line:1:22, col:32> first 'bool'
+| | `-BuiltinType {{address}} <col:28, col:32> 'bool'
+| |-ParmVarDecl {{address:statement_second}} <col:34, col:45> second 'bool'
+| | `-BuiltinType {{address}} <col:41, col:45> 'bool'
+| `-CompoundStmt {{address}} <col:47, line:14:2>
+|   |-IfStmt {{address}} <line:2:3, line:8:4>
+|   | |-ImplicitCastExpr {{address}} <line:2:6, col:11> 'bool' pure-rvalue <LValueToRValue>
+|   | | `-DeclRefExpr {{address}} <col:6, col:11> 'bool' lvalue 'first' ParmVar {{address:statement_first}} 'first' 'bool'
+|   | |-CompoundStmt {{address}} <col:12, line:4:4>
+|   | | `-ExprStmt {{address}} <line:3:5, col:11>
+|   | |   `-DeclRefExpr {{address}} <col:5, col:10> 'bool' lvalue 'first' ParmVar {{address:statement_first}} 'first' 'bool'
+|   | `-IfStmt {{address}} <line:4:10, line:8:4>
+|   |   |-ImplicitCastExpr {{address}} <line:4:13, col:19> 'bool' pure-rvalue <LValueToRValue>
+|   |   | `-DeclRefExpr {{address}} <col:13, col:19> 'bool' lvalue 'second' ParmVar {{address:statement_second}} 'second' 'bool'
+|   |   |-CompoundStmt {{address}} <col:20, line:6:4>
+|   |   | `-ExprStmt {{address}} <line:5:5, col:12>
+|   |   |   `-DeclRefExpr {{address}} <col:5, col:11> 'bool' lvalue 'second' ParmVar {{address:statement_second}} 'second' 'bool'
+|   |   `-CompoundStmt {{address}} <line:6:10, line:8:4>
+|   |     `-ExprStmt {{address}} <line:7:5, col:11>
+|   |       `-DeclRefExpr {{address}} <col:5, col:10> 'bool' lvalue 'first' ParmVar {{address:statement_first}} 'first' 'bool'
+|   `-IfStmt {{address}} <line:9:3, line:13:4>
+|     |-ImplicitCastExpr {{address}} <line:9:6, col:11> 'bool' pure-rvalue <LValueToRValue>
+|     | `-DeclRefExpr {{address}} <col:6, col:11> 'bool' lvalue 'first' ParmVar {{address:statement_first}} 'first' 'bool'
+|     |-CompoundStmt {{address}} <col:12, line:11:4>
+|     | `-ExprStmt {{address}} <line:10:5, col:11>
+|     |   `-DeclRefExpr {{address}} <col:5, col:10> 'bool' lvalue 'first' ParmVar {{address:statement_first}} 'first' 'bool'
+|     `-IfStmt {{address}} <line:11:10, line:13:4>
+|       |-ImplicitCastExpr {{address}} <line:11:13, col:19> 'bool' pure-rvalue <LValueToRValue>
+|       | `-DeclRefExpr {{address}} <col:13, col:19> 'bool' lvalue 'second' ParmVar {{address:statement_second}} 'second' 'bool'
+|       `-CompoundStmt {{address}} <col:20, line:13:4>
+|         `-ExprStmt {{address}} <line:12:5, col:12>
+|           `-DeclRefExpr {{address}} <col:5, col:11> 'bool' lvalue 'second' ParmVar {{address:statement_second}} 'second' 'bool'
+|-FunctionDecl {{address}} <line:16:1, line:24:2> ReturnChain 'func (bool, bool) i32'
+| |-ParmVarDecl {{address:return_first}} <line:16:18, col:28> first 'bool'
+| | `-BuiltinType {{address}} <col:24, col:28> 'bool'
+| |-ParmVarDecl {{address:return_second}} <col:30, col:41> second 'bool'
+| | `-BuiltinType {{address}} <col:37, col:41> 'bool'
+| |-ReturnVarDecl {{address:return_result}} <col:43, col:46> 'i32'
+| | `-BuiltinType {{address}} <col:43, col:46> 'i32'
+| `-CompoundStmt {{address}} <col:47, line:24:2>
+|   `-IfStmt {{address}} <line:17:3, line:23:4>
+|     |-ImplicitCastExpr {{address}} <line:17:6, col:11> 'bool' pure-rvalue <LValueToRValue>
+|     | `-DeclRefExpr {{address}} <col:6, col:11> 'bool' lvalue 'first' ParmVar {{address:return_first}} 'first' 'bool'
+|     |-CompoundStmt {{address}} <col:12, line:19:4>
+|     | `-ImplicitResultInitializationExpr {{address}} <line:18:5, col:6> 'void' non-object ReturnVar {{address:return_result}} 'i32'
+|     |   `-ImplicitCastExpr {{address}} <col:5, col:6> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|     |     `-IntegerLiteral {{address}} <col:5, col:6> 'comptime_int' non-object 1
+|     `-IfStmt {{address}} <line:19:10, line:23:4>
+|       |-ImplicitCastExpr {{address}} <line:19:13, col:19> 'bool' pure-rvalue <LValueToRValue>
+|       | `-DeclRefExpr {{address}} <col:13, col:19> 'bool' lvalue 'second' ParmVar {{address:return_second}} 'second' 'bool'
+|       |-CompoundStmt {{address}} <col:20, line:21:4>
+|       | `-ImplicitResultInitializationExpr {{address}} <line:20:5, col:6> 'void' non-object ReturnVar {{address:return_result}} 'i32'
+|       |   `-ImplicitCastExpr {{address}} <col:5, col:6> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|       |     `-IntegerLiteral {{address}} <col:5, col:6> 'comptime_int' non-object 2
+|       `-CompoundStmt {{address}} <line:21:10, line:23:4>
+|         `-ImplicitResultInitializationExpr {{address}} <line:22:5, col:6> 'void' non-object ReturnVar {{address:return_result}} 'i32'
+|           `-ImplicitCastExpr {{address}} <col:5, col:6> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|             `-IntegerLiteral {{address}} <col:5, col:6> 'comptime_int' non-object 3
+|-FunctionDecl {{address}} <line:26:1, line:37:2> BlockChain 'func (bool, bool) i32'
+| |-ParmVarDecl {{address:block_first}} <line:26:17, col:27> first 'bool'
+| | `-BuiltinType {{address}} <col:23, col:27> 'bool'
+| |-ParmVarDecl {{address:block_second}} <col:29, col:40> second 'bool'
+| | `-BuiltinType {{address}} <col:36, col:40> 'bool'
+| |-ReturnVarDecl {{address:block_result}} <col:42, col:45> 'i32'
+| | `-BuiltinType {{address}} <col:42, col:45> 'i32'
+| `-CompoundStmt {{address}} <col:46, line:37:2>
+|   |-DeclStmt {{address}} <line:27:3, line:35:4>
+|   | `-VarGroupDecl {{address}} <line:27:3, line:35:4>
+|   |   |-VarDecl {{address:block_value}} <line:27:7, col:16> value 'i32'
+|   |   | `-BuiltinType {{address}} <col:13, col:16> 'i32'
+|   |   `-CompoundStmt {{address}} <col:20, line:35:4>
+|   |     `-IfStmt {{address}} <line:28:5, line:34:6>
+|   |       |-ImplicitCastExpr {{address}} <line:28:8, col:13> 'bool' pure-rvalue <LValueToRValue>
+|   |       | `-DeclRefExpr {{address}} <col:8, col:13> 'bool' lvalue 'first' ParmVar {{address:block_first}} 'first' 'bool'
+|   |       |-CompoundStmt {{address}} <col:14, line:30:6>
+|   |       | `-ImplicitResultInitializationExpr {{address}} <line:29:7, col:8> 'void' non-object Var {{address:block_value}} 'value' 'i32'
+|   |       |   `-ImplicitCastExpr {{address}} <col:7, col:8> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|   |       |     `-IntegerLiteral {{address}} <col:7, col:8> 'comptime_int' non-object 1
+|   |       `-IfStmt {{address}} <line:30:12, line:34:6>
+|   |         |-ImplicitCastExpr {{address}} <line:30:15, col:21> 'bool' pure-rvalue <LValueToRValue>
+|   |         | `-DeclRefExpr {{address}} <col:15, col:21> 'bool' lvalue 'second' ParmVar {{address:block_second}} 'second' 'bool'
+|   |         |-CompoundStmt {{address}} <col:22, line:32:6>
+|   |         | `-ImplicitResultInitializationExpr {{address}} <line:31:7, col:8> 'void' non-object Var {{address:block_value}} 'value' 'i32'
+|   |         |   `-ImplicitCastExpr {{address}} <col:7, col:8> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|   |         |     `-IntegerLiteral {{address}} <col:7, col:8> 'comptime_int' non-object 2
+|   |         `-CompoundStmt {{address}} <line:32:12, line:34:6>
+|   |           `-ImplicitResultInitializationExpr {{address}} <line:33:7, col:8> 'void' non-object Var {{address:block_value}} 'value' 'i32'
+|   |             `-ImplicitCastExpr {{address}} <col:7, col:8> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|   |               `-IntegerLiteral {{address}} <col:7, col:8> 'comptime_int' non-object 3
+|   `-ImplicitResultInitializationExpr {{address}} <line:36:3, col:8> 'void' non-object ReturnVar {{address:block_result}} 'i32'
+|     `-ImplicitCastExpr {{address}} <col:3, col:8> 'i32' pure-rvalue <LValueToRValue>
+|       `-DeclRefExpr {{address}} <col:3, col:8> 'i32' lvalue 'value' Var {{address:block_value}} 'value' 'i32'
+`-FunctionDecl {{address}} <line:39:1, line:49:2> InitializationChain 'func (bool, bool) i32'
+  |-ParmVarDecl {{address:initialization_first}} <line:39:26, col:36> first 'bool'
+  | `-BuiltinType {{address}} <col:32, col:36> 'bool'
+  |-ParmVarDecl {{address:initialization_second}} <col:38, col:49> second 'bool'
+  | `-BuiltinType {{address}} <col:45, col:49> 'bool'
+  |-ReturnVarDecl {{address:initialization_result}} <col:51, col:54> 'i32'
+  | `-BuiltinType {{address}} <col:51, col:54> 'i32'
+  `-CompoundStmt {{address}} <col:55, line:49:2>
+    |-DeclStmt {{address}} <line:40:3, col:17>
+    | `-VarGroupDecl {{address}} <col:3, col:17>
+    |   `-VarDecl {{address:initialization_value}} <col:7, col:16> value 'i32'
+    |     `-BuiltinType {{address}} <col:13, col:16> 'i32'
+    |-IfStmt {{address}} <line:41:3, line:47:4>
+    | |-ImplicitCastExpr {{address}} <line:41:6, col:11> 'bool' pure-rvalue <LValueToRValue>
+    | | `-DeclRefExpr {{address}} <col:6, col:11> 'bool' lvalue 'first' ParmVar {{address:initialization_first}} 'first' 'bool'
+    | |-CompoundStmt {{address}} <col:12, line:43:4>
+    | | `-ExprStmt {{address}} <line:42:5, col:16>
+    | |   `-InitializationExpr {{address}} <col:5, col:15> 'void' non-object
+    | |     |-DeclRefExpr {{address}} <col:5, col:10> 'i32' lvalue 'value' Var {{address:initialization_value}} 'value' 'i32'
+    | |     `-ImplicitCastExpr {{address}} <col:14, col:15> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    | |       `-IntegerLiteral {{address}} <col:14, col:15> 'comptime_int' non-object 1
+    | `-IfStmt {{address}} <line:43:10, line:47:4>
+    |   |-ImplicitCastExpr {{address}} <line:43:13, col:19> 'bool' pure-rvalue <LValueToRValue>
+    |   | `-DeclRefExpr {{address}} <col:13, col:19> 'bool' lvalue 'second' ParmVar {{address:initialization_second}} 'second' 'bool'
+    |   |-CompoundStmt {{address}} <col:20, line:45:4>
+    |   | `-ExprStmt {{address}} <line:44:5, col:16>
+    |   |   `-InitializationExpr {{address}} <col:5, col:15> 'void' non-object
+    |   |     |-DeclRefExpr {{address}} <col:5, col:10> 'i32' lvalue 'value' Var {{address:initialization_value}} 'value' 'i32'
+    |   |     `-ImplicitCastExpr {{address}} <col:14, col:15> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    |   |       `-IntegerLiteral {{address}} <col:14, col:15> 'comptime_int' non-object 2
+    |   `-CompoundStmt {{address}} <line:45:10, line:47:4>
+    |     `-ExprStmt {{address}} <line:46:5, col:16>
+    |       `-InitializationExpr {{address}} <col:5, col:15> 'void' non-object
+    |         |-DeclRefExpr {{address}} <col:5, col:10> 'i32' lvalue 'value' Var {{address:initialization_value}} 'value' 'i32'
+    |         `-ImplicitCastExpr {{address}} <col:14, col:15> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    |           `-IntegerLiteral {{address}} <col:14, col:15> 'comptime_int' non-object 3
+    `-ImplicitResultInitializationExpr {{address}} <line:48:3, col:8> 'void' non-object ReturnVar {{address:initialization_result}} 'i32'
+      `-ImplicitCastExpr {{address}} <col:3, col:8> 'i32' pure-rvalue <LValueToRValue>
+        `-DeclRefExpr {{address}} <col:3, col:8> 'i32' lvalue 'value' Var {{address:initialization_value}} 'value' 'i32'

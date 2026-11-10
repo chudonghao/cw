@@ -1084,11 +1084,19 @@ std::unique_ptr<IfStmt> Parser::IfStmt_() {
     return Unwind(std::move(is));
   }
 
-  // [ "else" CompoundStmt ]
+  // [ "else" ( CompoundStmt | IfStmt ) ]
   if (token.type == tok::else_) {
     ExtendRange(*is, token);
     AdvanceLexer();
-    Attach(*is, is->Else, CompoundStmt_());
+    if (token.type != tok::l_brace && token.type != tok::if_) {
+      HandleExpect({tok::l_brace, tok::if_});
+      return Unwind(std::move(is));
+    }
+    if (token.type == tok::if_) {
+      Attach(*is, is->Else, IfStmt_());
+    } else {
+      Attach(*is, is->Else, CompoundStmt_());
+    }
     if (Recovering()) {
       return Unwind(std::move(is));
     }

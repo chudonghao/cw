@@ -290,8 +290,12 @@ CFGBuilder::BlockList CFGBuilder::BuildResultIf(const IfStmt& statement, CFGBloc
     RecordResultExit(then_entry, statement);
     exits.push_back(&then_entry);
   }
-  if (statement.Else) {
-    BlockList else_exits = BuildResultCompound(*statement.Else, else_entry, true);
+  if (statement.Else && statement.Else->GetKind() == NodeKind::IfStmt) {
+    // `else if` keeps the result position, so each branch of the inner chain is a separate exit.
+    BlockList else_exits = BuildResultIf(static_cast<const IfStmt&>(*statement.Else), else_entry);
+    exits.insert(exits.end(), else_exits.begin(), else_exits.end());
+  } else if (statement.Else) {
+    BlockList else_exits = BuildResultCompound(static_cast<const CompoundStmt&>(*statement.Else), else_entry, true);
     exits.insert(exits.end(), else_exits.begin(), else_exits.end());
   } else {
     RecordResultExit(else_entry, statement);
@@ -375,7 +379,7 @@ CFGBlock* CFGBuilder::BuildIf(const IfStmt& statement, CFGBlock& current) {
 
   CFGBlock& else_entry = cfg_->CreateBlock();
   cfg_->Connect(current, else_entry, CFGEdgeKind::False);
-  CFGBlock* else_exit = BuildCompound(*statement.Else, else_entry);
+  CFGBlock* else_exit = BuildStatement(*statement.Else, else_entry);
   if (!then_exit && !else_exit) {
     return nullptr;
   }
