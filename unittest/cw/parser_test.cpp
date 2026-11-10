@@ -974,6 +974,35 @@ TEST_F(ParserTest, ReportsMissingIfBody) {
   ExpectError(0, 19, "expected '{'");
 }
 
+TEST_F(ParserTest, StopsArrayValueAtItsTypeErrorAndRecoversAtTheStatement) {
+  Parse(R"(func F() {
+  var a := [2 i32{1, 2};
+  var b := [2] {1, 2};
+  var c := 1;
+})");
+  // The expression does not continue after its type fails, so neither array value reports a cascade.
+  ExpectError(1, 14,
+              "expected one of '.', '->', '&', '&&', '*', '+', '++', '-', '--', '!=', '/', '%', '<', '<=', '<<', "
+              "'>', '>=', '>>', '^', '|', '||', '?', ':', ':=', '=', '+=', '-=', '*=', '/=', '%=', '<<=', '>>=', "
+              "'&=', '^=', '|=', '==', ',', ';', '[', ']', '(', ')', '{', '}', end of source");
+  ExpectError(2, 15, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+`-FunctionDecl {{address}} <test.cw:1:1, line:5:2> F contains-errors
+  `-CompoundStmt {{address}} <line:1:10, line:5:2> contains-errors
+    |-DeclStmt {{address}} <line:2:3, col:12> contains-errors
+    | `-VarGroupDecl {{address}} <col:3, col:12> contains-errors
+    |   |-VarDecl {{address}} <col:7, col:8> a
+    |   `-RecoveryExpr {{address}} <col:12, col:12> contains-errors
+    |-DeclStmt {{address}} <line:3:3, col:12> contains-errors
+    | `-VarGroupDecl {{address}} <col:3, col:12> contains-errors
+    |   |-VarDecl {{address}} <col:7, col:8> b
+    |   `-RecoveryExpr {{address}} <col:12, col:12> contains-errors
+    `-DeclStmt {{address}} <line:4:3, col:14>
+      `-VarGroupDecl {{address}} <col:3, col:14>
+        |-VarDecl {{address}} <col:7, col:8> c
+        `-IntegerLiteral {{address}} <col:12, col:13> 1)");
+}
+
 TEST_F(ParserTest, ReportsStatementAndTopLevelErrorsInOrder) {
   Parse(R"(func f() {
 var ;
