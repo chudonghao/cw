@@ -182,7 +182,11 @@ INSTANTIATE_TEST_SUITE_P(
         LanguageFeatureCase{"virtual_interface_pointer", "VirtualInterfacePointer"},
         LanguageFeatureCase{"nonvirtual_call", "NonVirtualCall"},
         LanguageFeatureCase{"callable_object", "CallableObject"}, LanguageFeatureCase{"fixed_array", "FixedArray"},
-        LanguageFeatureCase{"pointer_arithmetic", "PointerArithmetic"}),
+        LanguageFeatureCase{"pointer_arithmetic", "PointerArithmetic"},
+        LanguageFeatureCase{"multiple_inheritance_lookup", "MultipleInheritanceLookup"},
+        LanguageFeatureCase{"multiple_inheritance_conversion", "MultipleInheritanceConversion"},
+        LanguageFeatureCase{"multiple_inheritance_construction", "MultipleInheritanceConstruction"},
+        LanguageFeatureCase{"multiple_inheritance_virtual", "MultipleInheritanceVirtual"}),
     LanguageFeatureCaseName);
 
 // Namespace lookup, declaration ownership, and initialization.
@@ -2262,6 +2266,7 @@ dtor S() {})");
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-ConstructorDecl {{address}} <line:3:1, col:31> S target Struct {{address:structure}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:31>
+|   |-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |   `-ExprStmt {{address}} <col:12, col:29>
 |     `-InitializationExpr {{address}} <col:12, col:28> 'void' non-object
 |       |-ThisExpr {{address}} <col:12, col:16> 'S' lvalue this
@@ -2382,7 +2387,6 @@ ctor S(value bool) { this := value; }
 dtor S() { this := S(1); this; }
 func outside() { this; })");
 
-  ExpectError(2, 14, "constructor delegation must be the first complete statement in the constructor body", 4);
   ExpectError(3, 29, "constructor delegation must directly construct the current type 'S'", 5);
   ExpectError(4, 11, "only a constructor can initialize the current object", 4);
   ExpectError(5, 17, "use of undeclared identifier 'this'", 4);
@@ -2410,7 +2414,91 @@ dtor S() {})");
   ExpectNote(2, 21, "constructor 'S' delegates here", 4);
 }
 
-TEST_F(SemaTest, TreatsGroupedBaseInitializationAsOneInvalidPrologueAttempt) {
+TEST_F(SemaTest, DiagnosesDelegatingConstructorCyclesThroughConditionalDelegation) {
+  Analyze(R"(struct S {}
+ctor S(value i32) {
+  if value > 0 {
+    this := S();
+  }
+}
+ctor S() { this := S(0); }
+dtor S() {})");
+
+  ExpectError(6, 19, "delegating constructor cycle for type 'S'", 4);
+  ExpectNote(3, 12, "constructor 'S' delegates here", 3);
+  ExpectNote(6, 19, "constructor 'S' delegates here", 4);
+}
+
+TEST_F(SemaTest, PointsAtEveryDelegationInADelegatingConstructorCycle) {
+  Analyze(R"(struct S { value i32; }
+ctor S(value i32, flag bool) { if flag { this := S(); } else { this := S(); } }
+ctor S() { this := S(1, true); }
+dtor S() {})");
+
+  ExpectError(2, 19, "delegating constructor cycle for type 'S'", 10);
+  ExpectNote(1, 49, "constructor 'S' delegates here", 3);
+  ExpectNote(1, 71, "constructor 'S' delegates here", 3);
+  ExpectNote(2, 19, "constructor 'S' delegates here", 10);
+}
+
+TEST_F(SemaTest, RejectsDelegationCombinedWithSubobjectInitialization) {
+  Analyze(R"(struct Base {}
+ctor Base() {}
+dtor Base() {}
+struct Derived : Base { value i32; }
+ctor Derived(value i32) { this.Base := Base(); this.value := value; }
+ctor Derived() { this.Base := Base(); this := Derived(1); }
+ctor Derived(flag bool) { this := Derived(1); this.value := 2; }
+dtor Derived() {})");
+
+  ExpectError(5, 38, "cannot delegate after part of 'this' is initialized", 4);
+  ExpectError(6, 46, "repeated initialization of variable 'this'", 10);
+}
+
+TEST_F(SemaTest, AllowsOneDelegationPerPathWithoutSubobjects) {
+  Analyze(R"(struct S {}
+ctor S() {}
+ctor S(flag bool) {
+  if flag {
+    this := S();
+  } else {
+    var local := 1;
+  }
+}
+func Use(object &copy S) {}
+ctor S(value i32) {
+  this := S();
+  Use(this);
+}
+dtor S() {})");
+}
+
+TEST_F(SemaTest, RejectsRepeatedDelegationAndDelegationAfterUseWithoutSubobjects) {
+  Analyze(R"(struct S {}
+ctor S() {}
+ctor S(value i32) {
+  this := S();
+  this := S();
+}
+ctor S(flag bool) {
+  while flag {
+    this := S();
+  }
+}
+func Use(object &copy S) {}
+ctor S(value i64) {
+  Use(this);
+  this := S();
+}
+dtor S() {})");
+
+  ExpectError(4, 2, "repeated initialization of variable 'this'", 4);
+  ExpectError(8, 4, "repeated initialization of variable 'this'", 4);
+  ExpectError(14, 2, "cannot delegate after 'this' is used", 4);
+  ExpectNote(13, 6, "'this' is used here", 4);
+}
+
+TEST_F(SemaTest, RejectsGroupedBaseInitializationStatements) {
   Analyze(R"(struct Base {}
 ctor Base() {}
 dtor Base() {}
@@ -2419,6 +2507,7 @@ ctor Derived() { (this.Base := Base()); }
 dtor Derived() {})");
 
   ExpectError(4, 18, "initialization expression must be used directly as an expression statement", 19);
+  ExpectError(4, 15, "object 'this' is not fully initialized on this path", 26);
 }
 
 TEST_F(SemaTest, TransfersNonTrivialPureRValuesAndRejectsGlvalues) {
@@ -2501,9 +2590,297 @@ ctor Derived() { this.Root := Root(); }
 dtor Derived() {})");
 
   ExpectError(7, 17, "constructor for 'Derived' must initialize direct base 'Middle', not indirect base 'Root'", 9);
+  ExpectError(7, 15, "object 'this' is not fully initialized on this path", 24);
 }
 
-TEST_F(SemaTest, RequiresDelegationOrDirectBaseConstructionAtDerivedConstructorEntry) {
+TEST_F(SemaTest, RejectsRepeatedAndSameNamedDirectBases) {
+  Analyze(R"(trivial struct A { value i32; }
+trivial struct Twice : A, A {}
+namespace other { trivial struct A {} }
+trivial struct Named : A, other::A {})");
+
+  ExpectError(1, 26, "struct 'A' is specified more than once as a direct base", 0);
+  ExpectNote(1, 23, "previous direct base is specified here", 0);
+  ExpectError(3, 26, "direct bases of struct 'Named' cannot share the name 'A'", 0);
+  ExpectNote(3, 23, "previous direct base is specified here", 0);
+}
+
+TEST_F(SemaTest, RequiresMatchingTrivialityForEveryDirectBase) {
+  Analyze(R"(trivial struct Value {}
+struct Holder {}
+ctor Holder() {}
+dtor Holder() {}
+trivial struct Mixed : Value, Holder {}
+struct Wrapper : Holder, Value {}
+ctor Wrapper() { this.Holder := Holder(); this.Value := Value(); }
+dtor Wrapper() {})");
+
+  ExpectError(4, 0, "trivial struct 'Mixed' requires trivial base and field types", 39);
+  ExpectError(5, 25, "non-trivial struct 'Wrapper' cannot inherit trivial struct 'Value'", 5);
+}
+
+TEST_F(SemaTest, ReportsMembersFoundInSeveralBases) {
+  Analyze(R"(trivial struct A { value i32; }
+trivial struct B { value i32; }
+trivial struct Both : A, B {}
+trivial struct Left : A {}
+trivial struct Right : A {}
+trivial struct Pair : Left, Right {}
+func Read(both Both, pair Pair) {
+  both.value;
+  pair.A;
+  pair.value;
+  both.A.value;
+  pair.Left.A.value;
+})");
+
+  ExpectError(7, 2, "member 'value' is found in more than one base subobject of struct 'Both'", 10);
+  ExpectNote(0, 19, "found through base path 'Both -> A'", 5);
+  ExpectNote(1, 19, "found through base path 'Both -> B'", 5);
+  ExpectError(8, 2, "member 'A' is found in more than one base subobject of struct 'Pair'", 6);
+  ExpectNote(3, 22, "found through base path 'Pair -> Left -> A'", 1);
+  ExpectNote(4, 23, "found through base path 'Pair -> Right -> A'", 1);
+  ExpectError(9, 2, "member 'value' is found in more than one base subobject of struct 'Pair'", 10);
+  ExpectNote(0, 19, "found through base path 'Pair -> Left -> A'", 5);
+  ExpectNote(0, 19, "found through base path 'Pair -> Right -> A'", 5);
+}
+
+TEST_F(SemaTest, ReportsMembersFoundInSeveralDeeperBaseSubobjects) {
+  Analyze(R"(trivial struct Base { value i32; }
+trivial struct Left : Base {}
+trivial struct Right : Base {}
+trivial struct Hide : Left, Right {}
+trivial struct Top : Hide {}
+func Read(top Top) { top.value; })");
+
+  ExpectError(5, 21, "member 'value' is found in more than one base subobject of struct 'Top'", 9);
+  ExpectNote(0, 22, "found through base path 'Top -> Hide -> Left -> Base'", 5);
+  ExpectNote(0, 22, "found through base path 'Top -> Hide -> Right -> Base'", 5);
+}
+
+TEST_F(SemaTest, ReportsAmbiguousBaseSelectionsOnlyForChosenConversions) {
+  Analyze(R"(trivial struct Base { value i32; }
+trivial struct Left : Base {}
+trivial struct Right : Base {}
+trivial struct Pair : Left, Right {}
+func Take(object &copy Base) {}
+func Pick(object &copy Base) {}
+func Pick(object &copy Left) {}
+func Use(pair Pair, pointer *Pair) {
+  Take(pair);
+  Pick(pair);
+  var base *Base := pointer;
+  var sliced Base := pair;
+})");
+
+  ExpectError(8, 7,
+              "cannot initialize parameter 1 of function 'Take': ambiguous conversion from derived struct 'Pair' to "
+              "base struct 'Base'",
+              4);
+  ExpectNote(1, 22, "base path 'Pair -> Left -> Base'", 4);
+  ExpectNote(2, 23, "base path 'Pair -> Right -> Base'", 4);
+  ExpectError(10, 20,
+              "cannot initialize variable 'base': ambiguous conversion from derived struct 'Pair' to base "
+              "struct 'Base'",
+              7);
+  ExpectNote(1, 22, "base path 'Pair -> Left -> Base'", 4);
+  ExpectNote(2, 23, "base path 'Pair -> Right -> Base'", 4);
+  ExpectError(11, 21,
+              "cannot initialize variable 'sliced': ambiguous conversion from derived struct 'Pair' to base "
+              "struct 'Base'",
+              4);
+  ExpectNote(1, 22, "base path 'Pair -> Left -> Base'", 4);
+  ExpectNote(2, 23, "base path 'Pair -> Right -> Base'", 4);
+}
+
+TEST_F(SemaTest, ReportsAmbiguousBasesInOperatorsAndAssignments) {
+  Analyze(R"(trivial struct Base {}
+trivial struct Left : Base {}
+trivial struct Right : Base {}
+trivial struct Pair : Left, Right {}
+func Compare(pair *Pair, base *Base) bool { pair == base }
+func Assign(pair *Pair, base *Base) { base = pair; })");
+
+  ExpectError(4, 44,
+              "cannot convert operand of binary operator '==': ambiguous conversion from derived struct 'Pair' "
+              "to base struct 'Base'",
+              4);
+  ExpectNote(1, 22, "base path 'Pair -> Left -> Base'", 4);
+  ExpectNote(2, 23, "base path 'Pair -> Right -> Base'", 4);
+  ExpectError(5, 45, "cannot assign to target: ambiguous conversion from derived struct 'Pair' to base struct 'Base'",
+              4);
+  ExpectNote(1, 22, "base path 'Pair -> Left -> Base'", 4);
+  ExpectNote(2, 23, "base path 'Pair -> Right -> Base'", 4);
+}
+
+TEST_F(SemaTest, DoesNotRankUnrelatedBasesByDepth) {
+  Analyze(R"(trivial struct Root {}
+trivial struct Left : Root {}
+trivial struct Right {}
+trivial struct Pair : Left, Right {}
+func Pick(object &copy Root) {}
+func Pick(object &copy Right) {}
+func Choose(pair Pair) {
+  Pick(pair);
+})");
+
+  ExpectError(7, 2, "call to 'Pick' is ambiguous", 10);
+  ExpectNote(4, 0, "candidate function", 0);
+  ExpectNote(5, 0, "candidate function", 0);
+}
+
+TEST_F(SemaTest, RequiresDirectBasesInDeclarationOrder) {
+  Analyze(R"(struct A {}
+ctor A() {}
+dtor A() {}
+struct B {}
+ctor B() {}
+dtor B() {}
+struct C : A, B {}
+ctor C() {
+  this.B := B();
+  this.A := A();
+}
+dtor C() {})");
+
+  ExpectError(8, 2, "cannot initialize subobject of 'this' before preceding subobjects are fully initialized", 6);
+}
+
+TEST_F(SemaTest, ReportsAMissingOverrideOnceForSeveralBases) {
+  Analyze(R"(struct A { virtual { func Close(this &mut A); } }
+func Close(this &mut A) {}
+ctor A() {}
+dtor A() {}
+struct B { virtual { func Close(this &mut B); } }
+func Close(this &mut B) {}
+ctor B() {}
+dtor B() {}
+struct D : A, B {}
+func Close(this &mut D) {}
+ctor D() { this.A := A(); this.B := B(); }
+dtor D() {})");
+
+  ExpectError(8, 7, "type 'D' is missing an explicit override declaration for virtual function 'Close'", 1);
+  ExpectNote(9, 5, "function with a matching signature is defined here", 5);
+  ExpectNote(0, 26, "inherited virtual function is declared here", 5);
+  ExpectNote(4, 26, "inherited virtual function is declared here", 5);
+}
+
+TEST_F(SemaTest, RequiresCovariantReturnsForEveryOverriddenFunction) {
+  Analyze(R"(trivial struct P {}
+trivial struct Q : P {}
+struct X { virtual { func Get(this &copy X) *P; } }
+func Get(this &copy X) *P { null }
+ctor X() {}
+dtor X() {}
+struct Y { virtual { func Get(this &copy Y) *Q; } }
+func Get(this &copy Y) *Q { null }
+ctor Y() {}
+dtor Y() {}
+struct Z : X, Y { virtual { override func Get(this &copy Z) *P; } }
+func Get(this &copy Z) *P { null }
+ctor Z() { this.X := X(); this.Y := Y(); }
+dtor Z() {})");
+
+  ExpectError(10, 60,
+              "return type '*P' of virtual function 'Get' is not covariant with overridden return type '*Q' because "
+              "'P' is not derived from 'Q'",
+              2);
+  ExpectNote(6, 44, "overridden virtual function is declared here", 2);
+}
+
+TEST_F(SemaTest, RequiresCovariantReturnBasesToOccurOnce) {
+  Analyze(R"(trivial struct Base {}
+trivial struct Left : Base {}
+trivial struct Right : Base {}
+trivial struct Pair : Left, Right {}
+struct X { virtual { func Get(this &copy X) *Base; } }
+func Get(this &copy X) *Base { null }
+ctor X() {}
+dtor X() {}
+struct Y : X { virtual { override func Get(this &copy Y) *Pair; } }
+func Get(this &copy Y) *Pair { null }
+ctor Y() { this.X := X(); }
+dtor Y() {})");
+
+  ExpectError(8, 57,
+              "return type '*Pair' of virtual function 'Get' is not covariant with overridden return type '*Base' "
+              "because 'Base' occurs more than once as a base of 'Pair'",
+              5);
+  ExpectNote(4, 44, "overridden virtual function is declared here", 5);
+}
+
+TEST_F(SemaTest, RequiresCovariantReturnsForIndirectlyOverriddenInterfaces) {
+  Analyze(R"(trivial struct P {}
+trivial struct X : P {}
+trivial struct Y : X {}
+trivial struct Q : P {}
+trivial struct Z : Y, Q {}
+struct A { virtual { func F(this &copy A) *P; } }
+func F(this &copy A) *P { null }
+ctor A() {}
+dtor A() {}
+struct B : A { virtual { override func F(this &copy B) *Y; } }
+func F(this &copy B) *Y { null }
+ctor B() { this.A := A(); }
+dtor B() {}
+struct C : B { virtual { override func F(this &copy C) *Z; } }
+func F(this &copy C) *Z { null }
+ctor C() { this.B := B(); }
+dtor C() {})");
+
+  ExpectError(13, 55,
+              "return type '*Z' of virtual function 'F' is not covariant with overridden return type '*P' because "
+              "'P' occurs more than once as a base of 'Z'",
+              2);
+  ExpectNote(5, 42, "overridden virtual function is declared here", 2);
+}
+
+TEST_F(SemaTest, AcceptsCovariantReturnsThroughIndirectlyOverriddenInterfaces) {
+  Analyze(R"(trivial struct P {}
+trivial struct X : P {}
+trivial struct Y : X {}
+trivial struct Q {}
+trivial struct Z : Y, Q {}
+struct A { virtual { func F(this &copy A) *P; } }
+func F(this &copy A) *P { null }
+ctor A() {}
+dtor A() {}
+struct B : A { virtual { override func F(this &copy B) *Y; } }
+func F(this &copy B) *Y { null }
+ctor B() { this.A := A(); }
+dtor B() {}
+struct C : B { virtual { override func F(this &copy C) *Z; } }
+func F(this &copy C) *Z { null }
+ctor C() { this.B := B(); }
+dtor C() {})");
+}
+
+TEST_F(SemaTest, PlacesRepeatedEmptyBasesAtDistinctAddresses) {
+  // Each E subobject needs its own address, so Three occupies three bytes; the array bound shows its size.
+  Analyze(R"(trivial struct E {}
+trivial struct A : E {}
+trivial struct B : E {}
+trivial struct C : E {}
+trivial struct Three : A, B, C {}
+trivial struct Fits { items [768614336404564650] Three; }
+trivial struct Exceeds { items [768614336404564651] Three; })");
+
+  ExpectError(6, 25,
+              "array of 768614336404564651 elements of type 'Three' is too large; maximum object size is "
+              "2305843009213693951 bytes",
+              33);
+}
+
+TEST_F(SemaTest, ChecksStructLayoutWithSeveralBases) {
+  Analyze(R"(trivial struct Big { data [1152921504606846976] u8; }
+trivial struct Other { data [1152921504606846976] u8; }
+trivial struct Huge : Big, Other { more [1152921504606846976] u8; })");
+
+  ExpectError(2, 15, "structure 'Huge' is too large; maximum object size is 2305843009213693951 bytes", 4);
+}
+
+TEST_F(SemaTest, RequiresDirectBaseConstructionBeforeFields) {
   Analyze(R"(struct Base { value i32; }
 ctor Base() { this.value := 1; }
 dtor Base() {}
@@ -2511,7 +2888,8 @@ struct Derived : Base { own i32; }
 ctor Derived() { this.own := 2; }
 dtor Derived() {})");
 
-  ExpectError(4, 5, "constructor for 'Derived' must begin by delegating or by initializing direct base 'Base'", 7);
+  ExpectError(4, 17, "cannot initialize subobject of 'this' before preceding subobjects are fully initialized", 8);
+  ExpectError(4, 15, "object 'this' is not fully initialized on this path", 18);
 }
 
 TEST_F(SemaTest, DiagnosesInvalidDirectBaseInitializationAtTheAttempt) {
@@ -2528,9 +2906,9 @@ struct Copy : Base {}
 ctor Copy(source &copy Base) { this.Base := source; }
 dtor Copy() {})");
 
-  ExpectError(4, 17, "direct base 'Base' must be initialized by the first complete statement of constructor 'Late'", 9);
   ExpectError(7, 26, "constructor for 'Partial' must initialize direct base 'Base' as a whole", 16);
   ExpectError(10, 44, "cannot initialize base subobject 'Base': no copy constructor is available for 'Base'", 6);
+  ExpectError(7, 24, "object 'this' is not fully initialized on this path", 30);
 }
 
 TEST_F(SemaTest, RecoversSpecialCallsAcrossIncompleteDeclarationsBodiesAndArguments) {
@@ -9375,6 +9753,20 @@ func F(broken *Broken, other *Broken, n usize) {
 })");
 
   ExpectError(0, 24, "unknown type 'Unknown'", 7);
+}
+
+TEST_F(SemaTest, SkipsPointerArithmeticOnStructsWithRepeatedBases) {
+  Analyze(R"(trivial struct A { value i32; }
+trivial struct Twice : A, A {}
+func F(twice *Twice, other *Twice, n usize) {
+  twice + n;
+  twice - other;
+  ++twice;
+  twice -= n;
+})");
+
+  ExpectError(1, 26, "struct 'A' is specified more than once as a direct base", 0);
+  ExpectNote(1, 23, "previous direct base is specified here", 0);
 }
 
 TEST_F(SemaTest, RejectsPointerArithmeticOnZeroSizedPointees) {

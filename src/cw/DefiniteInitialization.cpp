@@ -52,8 +52,14 @@ struct TrackedRootHash {
 
 struct ObjectState {
   std::vector<AbstractState> leaves;
+  // The current object of a constructor without subobjects has no leaves. Some path reaching
+  // here has delegated, or has used `this` first at `use`; either one ends delegation.
+  bool delegated{};
+  const Expr* use{};
 
-  friend bool operator==(const ObjectState& left, const ObjectState& right) { return left.leaves == right.leaves; }
+  friend bool operator==(const ObjectState& left, const ObjectState& right) {
+    return left.leaves == right.leaves && left.delegated == right.delegated && left.use == right.use;
+  }
   friend bool operator!=(const ObjectState& left, const ObjectState& right) { return !(left == right); }
 };
 
@@ -188,7 +194,7 @@ class FlatLayoutBuilder {
     if (structure->triviality != TypeTriviality::Trivial) {
       return false;
     }
-    if (!structure->base_type && structure->Fields.empty()) {
+    if (structure->base_types.empty() && structure->Fields.empty()) {
       return AppendAtomic(type, path);
     }
     return AppendTrivialAggregate(*structure, path);
@@ -199,10 +205,13 @@ class FlatLayoutBuilder {
       return false;
     }
     const std::size_t begin = layout_->leaves.size();
-    if (structure.base_type && structure.base_type->GetDeclaration()) {
+    for (const StructType* base : structure.base_types) {
+      if (!base || !base->GetDeclaration()) {
+        continue;
+      }
       SubobjectPath base_path = path;
-      base_path.push_back(PathSegment::Base(*structure.base_type->GetDeclaration()));
-      AppendOrdinary(QualType(structure.base_type), base_path);
+      base_path.push_back(PathSegment::Base(*base->GetDeclaration()));
+      AppendOrdinary(QualType(base), base_path);
     }
     for (const auto& field : structure.Fields) {
       if (!field) {
@@ -222,11 +231,14 @@ class FlatLayoutBuilder {
       return false;
     }
     const std::size_t begin = layout_->leaves.size();
-    // A constructor establishes the direct base as one indivisible object.
-    if (structure.base_type && structure.base_type->GetDeclaration()) {
+    // A constructor establishes each direct base as one indivisible object, in declaration order.
+    for (const StructType* base : structure.base_types) {
+      if (!base || !base->GetDeclaration()) {
+        continue;
+      }
       SubobjectPath base_path = path;
-      base_path.push_back(PathSegment::Base(*structure.base_type->GetDeclaration()));
-      AppendAtomic(QualType(structure.base_type), base_path);
+      base_path.push_back(PathSegment::Base(*base->GetDeclaration()));
+      AppendAtomic(QualType(base), base_path);
     }
     for (const auto& field : structure.Fields) {
       if (!field) {
@@ -460,6 +472,12 @@ bool GetAssignmentOperands(const Expr& expression, const Expr*& lhs, const Expr*
   return false;
 }
 
+bool IsDelegation(const InitializationExpr& expression) {
+  const Expr* source = expression.Source ? expression.Source->IgnoreParens() : nullptr;
+  return source && source->GetKind() == NodeKind::ConstructionExpr &&
+         static_cast<const ConstructionExpr&>(*source).construction_kind == ConstructionKind::Delegating;
+}
+
 class AnalysisEngine {
   const Decl& owner_;
   const FunctionDecl* function_;
@@ -477,7 +495,6 @@ class AnalysisEngine {
   ObjectLayout this_layout_;
   bool tracks_this_{};
   bool this_is_destructor_{};
-  bool this_is_delegating_{};
   std::unordered_map<FindingKey, std::size_t, FindingKeyHash> finding_indices_;
   std::vector<DefiniteInitializationFinding> findings_;
   std::size_t current_program_point_{};
@@ -506,7 +523,7 @@ class AnalysisEngine {
     Solve();
     CollectFindings();
     return {std::move(findings_), std::move(this_initialization_completions_),
-            tracks_this_ && !this_is_destructor_ && !this_is_delegating_ && this_layout_.leaves.empty()};
+            tracks_this_ && !this_is_destructor_ && this_layout_.leaves.empty()};
   }
 
  private:
@@ -621,12 +638,6 @@ class AnalysisEngine {
           if (expression_statement.Expr && expression_statement.Expr->GetKind() == NodeKind::InitializationExpr) {
             const auto& initialization = static_cast<const InitializationExpr&>(*expression_statement.Expr);
             valid_initializations_.emplace(&initialization, &expression_statement);
-            const Expr* source = initialization.Source ? initialization.Source->IgnoreParens() : nullptr;
-            if (source && source->GetKind() == NodeKind::ConstructionExpr &&
-                static_cast<const ConstructionExpr&>(*source).construction_kind == ConstructionKind::Delegating) {
-              // The target constructor owns the completion boundary, including for an empty current object.
-              this_is_delegating_ = true;
-            }
           }
           break;
         }
@@ -766,11 +777,14 @@ class AnalysisEngine {
         return access;
       }
       if (segment.kind == PathSegmentKind::Base) {
-        if (!structure->base_type || structure->base_type->GetDeclaration() != segment.base) {
+        const auto base =
+            std::find_if(structure->base_types.begin(), structure->base_types.end(),
+                         [&](const StructType* type) { return type && type->GetDeclaration() == segment.base; });
+        if (base == structure->base_types.end()) {
           return access;
         }
         path.push_back(segment);
-        current_type = QualType(structure->base_type);
+        current_type = QualType(*base);
       } else {
         if (std::none_of(structure->Fields.begin(), structure->Fields.end(),
                          [&](const auto& field) { return field.get() == segment.field; })) {
@@ -859,6 +873,8 @@ class AnalysisEngine {
     };
     struct ObjectSummary {
       std::vector<LeafSummary> leaves;
+      bool delegated{};
+      const Expr* use{};
     };
 
     // Summarize each leaf over reachable predecessors before deciding its merged state.
@@ -871,6 +887,12 @@ class AnalysisEngine {
       for (const auto& entry : outputs_[predecessor.GetID()]) {
         ObjectSummary& object = summaries[entry.first];
         object.leaves.resize(entry.second.leaves.size());
+        object.delegated = object.delegated || entry.second.delegated;
+        // Keep the first use in the source, independent of the predecessor order.
+        if (const Expr* use = entry.second.use;
+            use && (!object.use || use->range.begin.pos < object.use->range.begin.pos)) {
+          object.use = use;
+        }
         for (std::size_t index = 0; index < entry.second.leaves.size(); ++index) {
           LeafSummary& summary = object.leaves[index];
           const AbstractState& state = entry.second.leaves[index];
@@ -895,6 +917,8 @@ class AnalysisEngine {
     for (auto& entry : summaries) {
       ObjectState object;
       object.leaves.resize(entry.second.leaves.size());
+      object.delegated = entry.second.delegated;
+      object.use = entry.second.use;
       for (std::size_t index = 0; index < entry.second.leaves.size(); ++index) {
         LeafSummary& summary = entry.second.leaves[index];
         const bool new_conflict = summary.has_uninitialized && summary.has_initialized;
@@ -1330,12 +1354,17 @@ class AnalysisEngine {
     WalkChild(expression.Index, environment, collect);
   }
 
-  void CheckRead(const Expr& expression, const Environment& environment, bool collect) {
-    if (!collect) {
-      return;
-    }
+  void CheckRead(const Expr& expression, Environment& environment, bool collect) {
     const Access access = ResolveAccess(&expression);
     if (!access.valid) {
+      return;
+    }
+    if (IsEmptyThis(access)) {
+      if (const auto it = environment.find(ThisRoot()); it != environment.end() && !it->second.use) {
+        it->second.use = &expression;
+      }
+    }
+    if (!collect) {
       return;
     }
     const auto it = environment.find(access.root);
@@ -1361,10 +1390,17 @@ class AnalysisEngine {
     // `this := ...` statement is a delegation control operation, not a
     // repeated initialization of an empty range, even when its source failed.
     if (access.begin == access.end && expression.Target->GetKind() == NodeKind::ThisExpr) {
+      if (IsEmptyThis(access) && IsDelegation(expression)) {
+        ApplyEmptyDelegation(expression, environment, collect);
+      }
       return;
     }
-    const bool track_completion =
-        collect && tracks_this_ && !this_is_destructor_ && !this_is_delegating_ && access.root == ThisRoot();
+    // The delegated constructor owns the completion boundary of a delegating path.
+    if (access.root == ThisRoot() && IsDelegation(expression)) {
+      ApplyDelegation(expression, environment, collect);
+      return;
+    }
+    const bool track_completion = collect && tracks_this_ && !this_is_destructor_ && access.root == ThisRoot();
     const auto this_state = track_completion ? environment.find(ThisRoot()) : environment.end();
     const bool was_complete =
         this_state != environment.end() &&
@@ -1374,6 +1410,52 @@ class AnalysisEngine {
         RangeIsEntirely(this_state->second, 0, this_state->second.leaves.size(), InitializationState::Initialized)) {
       this_initialization_completions_.push_back(valid_initializations_.at(&expression));
     }
+  }
+
+  // A delegation initializes the whole current object. After part of it is initialized,
+  // report the delegation once and continue as if it had completed the object.
+  void ApplyDelegation(const InitializationExpr& expression, Environment& environment, bool collect) {
+    const auto it = environment.find(ThisRoot());
+    if (it == environment.end()) {
+      return;
+    }
+    ObjectState& object = it->second;
+    const std::size_t end = object.leaves.size();
+    if (RangeHasState(object, 0, end, InitializationState::Invalid)) {
+      return;
+    }
+    if (collect && !RangeIsEntirely(object, 0, end, InitializationState::Uninitialized)) {
+      const auto kind = RangeIsEntirely(object, 0, end, InitializationState::Initialized)
+                            ? DefiniteInitializationFindingKind::RepeatedInitialization
+                            : DefiniteInitializationFindingKind::PartialObjectDelegation;
+      AddFinding(kind, expression, expression.Target->range, ThisRoot());
+    }
+    for (std::size_t index = 0; index < end; ++index) {
+      object.leaves[index] = AbstractState{InitializationState::Initialized, {}};
+    }
+  }
+
+  // Without subobjects, `this` is complete at entry, yet a delegation still initializes the whole
+  // object once: a path may delegate only once, and only before it uses `this`.
+  void ApplyEmptyDelegation(const InitializationExpr& expression, Environment& environment, bool collect) {
+    const auto it = environment.find(ThisRoot());
+    if (it == environment.end()) {
+      return;
+    }
+    ObjectState& object = it->second;
+    if (collect && object.delegated) {
+      AddFinding(DefiniteInitializationFindingKind::RepeatedInitialization, expression, expression.Target->range,
+                 ThisRoot());
+    } else if (collect && object.use) {
+      AddFinding(DefiniteInitializationFindingKind::DelegationAfterUse, expression, expression.Target->range,
+                 ThisRoot(), true, 0, object.use->range);
+    }
+    object.delegated = true;
+  }
+
+  // Whether an access names the whole current object of a constructor without subobjects.
+  bool IsEmptyThis(const Access& access) const {
+    return tracks_this_ && !this_is_destructor_ && access.root == ThisRoot() && this_layout_.leaves.empty();
   }
 
   void ApplyResultInitialization(const ImplicitResultInitializationExpr& expression, Environment& environment,
@@ -1615,7 +1697,7 @@ class AnalysisEngine {
   }
 
   void AddFinding(DefiniteInitializationFindingKind kind, const Node& owner, SourceRange range, TrackedRoot root,
-                  bool deduplicate = true, std::size_t program_point = 0) {
+                  bool deduplicate = true, std::size_t program_point = 0, SourceRange related_range = {}) {
     if (!range.IsValid()) {
       range = PreferredRange(owner, root);
     }
@@ -1624,8 +1706,8 @@ class AnalysisEngine {
       program_point = current_program_point_;
       intra_program_order = current_intra_program_order_++;
     }
-    DefiniteInitializationFinding finding{
-        kind, &owner, range, root.variable, root.this_owner, program_point, intra_program_order};
+    DefiniteInitializationFinding finding{kind,          &owner,          range,         related_range,
+                                          root.variable, root.this_owner, program_point, intra_program_order};
     if (deduplicate) {
       const FindingKey key{kind, &owner, root};
       const auto existing = finding_indices_.find(key);

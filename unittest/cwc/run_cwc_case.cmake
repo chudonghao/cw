@@ -308,6 +308,20 @@ elseif(CASE_MODE STREQUAL "driver")
     assert_contains("${ir}" "define void @\"cw:Identity:func(virtual *func(&copy Item)i32)virtual *func(&copy Item)i32\"(ptr sret({ i32, i32 })" "${CASE_NAME} virtual slot ABI")
     assert_contains("${ir}" "getelementptr i8, ptr %" "${CASE_NAME} target index ABI")
 
+  elseif(DRIVER_SCENARIO STREQUAL "wasm_multiple_inheritance_ir")
+    set(output "${TEST_WORK_DIRECTORY}/multiple-inheritance.wasm.ll")
+    execute_cwc(0 --target=wasm32-unknown-unknown -S -emit-llvm "${CASE_SOURCE}" -o "${output}")
+    assert_nonempty_file("${output}" "${CASE_NAME} LLVM IR")
+    file(READ "${output}" ir)
+    assert_contains("${ir}" "[3 x ptr] [ptr inttoptr (i32 -4 to ptr), ptr null, ptr @\"cw:Size:func(&copy Both)i32:thunk(-4,0)\"]"
+                    "${CASE_NAME} 32-bit secondary vtable")
+    assert_contains("${ir}" "%this.adjusted = getelementptr inbounds i8, ptr %0, i32 -4" "${CASE_NAME} 32-bit thunk adjustment")
+    assert_contains("${ir}" "define i32 @\"cw:PassSingle:func(Single)Single\"(i32" "${CASE_NAME} single-element base ABI")
+    assert_contains("${ir}" "define internal noundef ptr @\"cw:Make:func(&copy Factory)*Special:thunk(-4,4)\"(ptr noundef %0)"
+                    "${CASE_NAME} 32-bit covariant thunk")
+    assert_contains("${ir}" "%return.adjusted = getelementptr inbounds nuw i8, ptr %call, i32 4"
+                    "${CASE_NAME} 32-bit result adjustment")
+
   elseif(DRIVER_SCENARIO STREQUAL "wasm_link")
     set(output "${TEST_WORK_DIRECTORY}/module.wasm")
     execute_cwc(0 --target=wasm32-unknown-unknown "${CASE_SOURCE}"

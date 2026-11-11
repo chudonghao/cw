@@ -49,6 +49,14 @@ bool HasArrayElements(const ArrayType& type) {
   return true;
 }
 
+const ImplicitCastExpr* AsBaseSubobjectCast(const Expr& expression) {
+  if (expression.GetKind() != NodeKind::ImplicitCastExpr) {
+    return nullptr;
+  }
+  const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
+  return cast.conversion_kind == ImplicitConversionKind::BaseSubobject ? &cast : nullptr;
+}
+
 }  // namespace
 
 CodeGenFunction::ConditionalEvaluation::ConditionalEvaluation(CodeGenFunction& owner, llvm::BasicBlock* entry,
@@ -139,8 +147,8 @@ bool CodeGenFunction::Generate(const FunctionDecl& declaration, const CodeGen::F
     }
   }
   if (declaration.GetKind() == NodeKind::DestructorDecl) {
-    if (!EmitVTablePointer(this_address_,
-                           *static_cast<const DestructorDecl&>(declaration).target_type->GetDeclaration()))
+    if (!EmitVTablePointers(this_address_,
+                            *static_cast<const DestructorDecl&>(declaration).target_type->GetDeclaration()))
       return false;
     EnterDestructorCleanups(static_cast<const DestructorDecl&>(declaration));
   }
@@ -159,6 +167,11 @@ void CodeGenFunction::GenerateThunk(const VTableEntry& entry, const CodeGen::Fun
   std::vector<llvm::Value*> arguments;
   for (auto& argument : function_.args()) {
     arguments.push_back(&argument);
+  }
+  if (entry.this_adjustment != 0) {
+    auto& receiver = arguments[*info.parameters.front().llvm_index];
+    receiver = builder_.CreateGEP(builder_.getInt8Ty(), receiver, GetTargetOffset(entry.this_adjustment),
+                                  "this.adjusted", llvm::GEPNoWrapFlags::inBounds());
   }
   auto* call = builder_.CreateCall(implementation.getFunctionType(), &implementation, arguments);
   NameCallResult(*call);
@@ -308,22 +321,24 @@ Address CodeGenFunction::EmitStructElement(Address object, unsigned index, llvm:
   return {pointer, type->getElementType(index), llvm::commonAlignment(object.alignment, offset)};
 }
 
-Address CodeGenFunction::EmitBase(Address object, const StructDecl& declaration) {
+// The direct base `declaration.base_types[index]` of an object of `declaration`.
+Address CodeGenFunction::EmitBase(Address object, const StructDecl& declaration, std::size_t index) {
   const auto& shared = *std::get<const StructLayout*>(codegen_.ast_context_->GetStructLayout(declaration));
   const auto& representation = codegen_.struct_representations_.at(&declaration);
+  const StructType* base_type = declaration.base_types[index];
+  const std::uint64_t base_offset = shared.base_offsets[index];
   Address address = object;
-  if (*shared.base_offset != 0) {
-    if (representation.base_index) {
-      address = EmitStructElement(object, *representation.base_index, "base");
+  if (base_offset != 0) {
+    if (const auto& element = representation.base_indices[index]) {
+      address = EmitStructElement(object, *element, "base");
     } else {
-      address.pointer =
-          builder_.CreateGEP(builder_.getInt8Ty(), object.pointer, GetTargetIndex(*shared.base_offset), "base",
-                             llvm::GEPNoWrapFlags::inBounds() | llvm::GEPNoWrapFlags::noUnsignedWrap());
+      address.pointer = builder_.CreateGEP(builder_.getInt8Ty(), object.pointer, GetTargetIndex(base_offset), "base",
+                                           llvm::GEPNoWrapFlags::inBounds() | llvm::GEPNoWrapFlags::noUnsignedWrap());
     }
   }
-  address.element_type = codegen_.struct_representations_.at(declaration.base_type->GetDeclaration()).type;
-  address.alignment = llvm::commonAlignment(object.alignment, *shared.base_offset);
-  address.semantic_type = declaration.base_type;
+  address.element_type = codegen_.struct_representations_.at(base_type->GetDeclaration()).type;
+  address.alignment = llvm::commonAlignment(object.alignment, base_offset);
+  address.semantic_type = base_type;
   address.overlap = Overlap::MayOverlap;
   return address;
 }
@@ -594,7 +609,7 @@ bool CodeGenFunction::EmitLocalCleanups(std::size_t depth) {
       continue;
     }
     if (cleanup.kind == LocalCleanup::Kind::ExitVirtualDispatch) {
-      if (!EmitVTablePointer(cleanup.address, *cleanup.type->AsStructType()->GetDeclaration())) return false;
+      if (!EmitVTablePointers(cleanup.address, *cleanup.type->AsStructType()->GetDeclaration())) return false;
     } else if (!EmitDestroy(cleanup.address, *cleanup.type, cleanup.structor_kind)) {
       return false;
     }
@@ -644,8 +659,9 @@ bool CodeGenFunction::EmitDestroy(Address address, const Type& type, CodeGen::St
 void CodeGenFunction::EnterDestructorCleanups(const DestructorDecl& declaration) {
   const auto& structure = *declaration.target_type->GetDeclaration();
   // These entries enclose the user body, so every return destroys locals before subobjects.
-  if (structure.base_type) {
-    local_cleanups_.push_back({EmitBase(this_address_, structure), structure.base_type, nullptr, true,
+  // Cleanups run in reverse, so fields are destroyed before bases, each in reverse declaration order.
+  for (std::size_t index = 0; index < structure.base_types.size(); ++index) {
+    local_cleanups_.push_back({EmitBase(this_address_, structure, index), structure.base_types[index], nullptr, true,
                                LocalCleanup::Kind::Destroy, CodeGen::StructorKind::Base});
   }
   for (const auto& field : structure.Fields) {
@@ -653,9 +669,14 @@ void CodeGenFunction::EnterDestructorCleanups(const DestructorDecl& declaration)
       local_cleanups_.push_back({EmitField(this_address_, structure, *field), field->type.GetTypePtr(), nullptr, true});
     }
   }
-  if (structure.base_type && structure.base_type->GetDeclaration()->IsPolymorphic()) {
-    local_cleanups_.push_back({EmitBase(this_address_, structure), structure.base_type, nullptr, true,
-                               LocalCleanup::Kind::ExitVirtualDispatch});
+  // Before the fields are destroyed, each dynamic base subobject leaves this struct's dispatch,
+  // in base declaration order.
+  for (std::size_t index = structure.base_types.size(); index > 0; --index) {
+    const StructType* base_type = structure.base_types[index - 1];
+    if (base_type->GetDeclaration()->IsPolymorphic()) {
+      local_cleanups_.push_back({EmitBase(this_address_, structure, index - 1), base_type, nullptr, true,
+                                 LocalCleanup::Kind::ExitVirtualDispatch});
+    }
   }
 }
 
@@ -673,13 +694,31 @@ bool CodeGenFunction::RegisterGlobalDestructor(const VarDecl& declaration) {
   return true;
 }
 
-bool CodeGenFunction::EmitVTablePointer(Address object, const StructDecl& stage) {
-  if (stage.IsPolymorphic()) {
-    auto* table = codegen_.GetVTableAddressPoint(stage);
-    if (!table) return false;
-    builder_.CreateAlignedStore(table, object.pointer, object.alignment);
-  }
-  return true;
+// Points every vtable pointer of an object of `stage` into the vtable group of `stage`, as Clang's
+// InitializeVTablePointers. A primary base shares the vtable pointer of the struct that contains it.
+bool CodeGenFunction::EmitVTablePointers(Address object, const StructDecl& stage) {
+  const auto store = [&](const auto& self, const StructDecl& base, std::uint64_t offset, bool is_primary_base) -> bool {
+    if (!is_primary_base) {
+      auto* address_point = codegen_.GetVTableAddressPoint(stage, {&base, offset});
+      if (!address_point) return false;
+      auto* pointer = object.pointer;
+      if (offset != 0) {
+        pointer = builder_.CreateGEP(builder_.getInt8Ty(), pointer, GetTargetIndex(offset), "vtable.field",
+                                     llvm::GEPNoWrapFlags::inBounds() | llvm::GEPNoWrapFlags::noUnsignedWrap());
+      }
+      builder_.CreateAlignedStore(address_point, pointer, llvm::commonAlignment(object.alignment, offset));
+    }
+    const auto& layout = *std::get<const StructLayout*>(codegen_.ast_context_->GetStructLayout(base));
+    for (std::size_t index = 0; index < base.base_types.size(); ++index) {
+      const StructDecl& base_declaration = *base.base_types[index]->GetDeclaration();
+      if (base_declaration.IsPolymorphic() &&
+          !self(self, base_declaration, offset + layout.base_offsets[index], layout.primary_base == index)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  return !stage.IsPolymorphic() || store(store, stage, 0, false);
 }
 
 llvm::Value* CodeGenFunction::EmitVirtualCallee(const VirtualFunctionDecl& declaration, llvm::Value* receiver) {
@@ -753,7 +792,7 @@ bool CodeGenFunction::EmitStmt(const Stmt& statement) {
       return !expression || EmitFullExpr(*expression);
     }
     case NodeKind::ImplicitThisInitializationCompleteStmt:
-      return EmitVTablePointer(this_address_, *this_address_.semantic_type->AsStructType()->GetDeclaration());
+      return EmitVTablePointers(this_address_, *this_address_.semantic_type->AsStructType()->GetDeclaration());
     case NodeKind::DeclStmt: {
       const auto& declaration = static_cast<const DeclStmt&>(statement).Decl;
       if (declaration && declaration->GetKind() == NodeKind::VarGroupDecl) {
@@ -1132,12 +1171,13 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
       return EmitMemberExpr(static_cast<const MemberExpr&>(expression));
     case NodeKind::BaseSubobjectExpr: {
       const auto& base = static_cast<const BaseSubobjectExpr&>(expression);
-      return EmitBaseSubobject(*base.Base, base.base_path, base.op == MemberAccessKind::Arrow);
+      return EmitBaseSubobject(*base.Base, base.base_path,
+                               base.op == MemberAccessKind::Arrow ? BaseSource::Pointer : BaseSource::Object);
     }
     case NodeKind::ImplicitCastExpr: {
       const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
       if (cast.conversion_kind == ImplicitConversionKind::BaseSubobject) {
-        return EmitBaseSubobject(*cast.SubExpr, cast.base_path, /*through_pointer=*/false);
+        return EmitBaseSubobject(*cast.SubExpr, cast.base_path, BaseSource::Object);
       }
       if (cast.conversion_kind == ImplicitConversionKind::NoOp ||
           cast.conversion_kind == ImplicitConversionKind::Identity) {
@@ -1313,7 +1353,8 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
 }
 
 Address CodeGenFunction::EmitBaseSubobject(const Expr& source, const std::vector<const StructDecl*>& path,
-                                           bool through_pointer) {
+                                           BaseSource origin) {
+  const bool through_pointer = origin != BaseSource::Object;
   const Type* type = source.type.GetTypePtr();
   if (through_pointer) {
     type = type->AsPointerType()->GetPointee().GetTypePtr();
@@ -1333,14 +1374,19 @@ Address CodeGenFunction::EmitBaseSubobject(const Expr& source, const std::vector
   std::uint64_t offset = 0;
   BOOST_ASSERT(!path.empty());
   for (const auto* base : path) {
-    BOOST_ASSERT(declaration->base_type && declaration->base_type->GetDeclaration() == base);
+    // A struct cannot name the same direct base twice, so each step of the path is unambiguous.
+    const auto& bases = declaration->base_types;
+    const auto step = std::find_if(bases.begin(), bases.end(),
+                                   [&](const StructType* candidate) { return candidate->GetDeclaration() == base; });
+    BOOST_ASSERT(step != bases.end());
+    const auto index = static_cast<std::size_t>(step - bases.begin());
     const auto& shared = *std::get<const StructLayout*>(codegen_.ast_context_->GetStructLayout(*declaration));
-    offset += *shared.base_offset;
-    address = EmitBase(address, *declaration);
+    offset += shared.base_offsets[index];
+    address = EmitBase(address, *declaration, index);
     declaration = base;
   }
   // Pointer conversions preserve null; zero-offset base paths need no runtime check.
-  if (through_pointer && offset != 0) {
+  if (origin == BaseSource::PointerConversion && offset != 0) {
     auto* null = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(original->getType()));
     address.pointer = builder_.CreateSelect(builder_.CreateICmpEQ(original, null), null, address.pointer, "base.null");
   }
@@ -1358,9 +1404,16 @@ Address CodeGenFunction::EmitMemberExpr(const MemberExpr& expression) {
     codegen_.DiagnoseTypeConversionFailure(expression, *failure, "this member access type");
     return {};
   }
-  Address base = expression.op == MemberAccessKind::Arrow
-                     ? MakeAddress(EmitScalarExpr(*expression.Base), std::get<llvm::Type*>(conversion), base_type)
-                     : EmitLValue(*expression.Base);
+  Address base;
+  if (expression.op == MemberAccessKind::Dot) {
+    base = EmitLValue(*expression.Base);
+  } else if (const auto* cast = AsBaseSubobjectCast(*expression.Base)) {
+    // Sema keeps the lookup path of an inherited field as a cast of the pointer. Member access
+    // reaches the base at its offset; only pointer conversions keep null.
+    base = EmitBaseSubobject(*cast->SubExpr, cast->base_path, BaseSource::Pointer);
+  } else {
+    base = MakeAddress(EmitScalarExpr(*expression.Base), std::get<llvm::Type*>(conversion), base_type);
+  }
   if (!base) {
     return {};
   }
@@ -1659,7 +1712,7 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
       const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
       switch (cast.conversion_kind) {
         case ImplicitConversionKind::BaseSubobject:
-          return EmitBaseSubobject(*cast.SubExpr, cast.base_path, /*through_pointer=*/true).pointer;
+          return EmitBaseSubobject(*cast.SubExpr, cast.base_path, BaseSource::PointerConversion).pointer;
         case ImplicitConversionKind::NullToPointer:
           return llvm::Constant::getNullValue(result_type);
         case ImplicitConversionKind::LValueToRValue: {

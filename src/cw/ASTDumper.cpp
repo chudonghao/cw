@@ -612,19 +612,19 @@ void ASTDumper::Visit(StructDecl& n) {
   if (IsSemanticStage() && n.is_abstract) {
     os_ << " abstract";
   }
-  if (!n.base.empty()) {
-    os_ << " : '" << n.base << "'";
+  for (std::size_t index = 0; index < n.bases.size(); ++index) {
+    os_ << (index == 0 ? " : '" : ", '") << n.bases[index] << "'";
   }
   PrintDeclModifier(n);
   PrintErrorMark(n);
   os_ << "\n";
 
-  // The resolved base type belongs to the written base name.
-  const bool has_base_type = IsSemanticStage() && !n.base.empty();
-  size_t total_children = (has_base_type ? 1 : 0) + (n.VirtualDecl ? 1 : 0) + n.Fields.size();
+  // Each resolved base type belongs to the written base name at the same position.
+  const size_t base_type_count = IsSemanticStage() ? n.bases.size() : 0;
+  size_t total_children = base_type_count + (n.VirtualDecl ? 1 : 0) + n.Fields.size();
   size_t child_idx = 0;
-  if (has_base_type) {
-    PrintBaseType(n.base_type, ++child_idx == total_children);
+  for (size_t index = 0; index < base_type_count; ++index) {
+    PrintBaseType(index < n.base_types.size() ? n.base_types[index] : nullptr, ++child_idx == total_children);
   }
   if (n.VirtualDecl) {
     VisitChild(n.VirtualDecl.get(), ++child_idx == total_children);
@@ -718,7 +718,12 @@ void ASTDumper::Visit(VirtualFunctionDecl& n) {
   if (n.is_abstract) {
     os_ << " abstract";
   }
-  PrintRelation("overrides", n.overridden_virtual_function);
+  if (IsSemanticStage() && !n.overridden_virtual_functions.empty()) {
+    os_ << " overrides";
+    for (const VirtualFunctionDecl* overridden : n.overridden_virtual_functions) {
+      PrintDeclReference(*overridden);
+    }
+  }
   PrintRelation("implementation", n.implementation);
   PrintErrorMark(n);
   os_ << "\n";

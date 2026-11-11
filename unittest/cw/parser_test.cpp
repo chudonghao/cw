@@ -1055,6 +1055,25 @@ var ;)");
   ExpectError(4, 4, "expected identifier");
 }
 
+TEST_F(ParserTest, ParsesDirectBaseLists) {
+  Parse("struct S : A, ns::B, ::C {}");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+`-StructDecl {{address}} <test.cw:1:1, col:28> S : 'A', 'ns::B', '::C'
+)");
+}
+
+TEST_F(ParserTest, RecoversFromIncompleteDirectBaseLists) {
+  Parse(R"(struct S : A, {}
+struct T : B {})");
+
+  ExpectError(0, 14, "expected identifier");
+  ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
+|-StructDecl {{address}} <test.cw:1:1, col:13> S : 'A', '' contains-errors
+`-StructDecl {{address}} <line:2:1, col:16> T : 'B'
+)");
+}
+
 TEST_F(ParserTest, DumpsDeclarationAndTypeNodes) {
   Parse(
       "struct S : B { virtual { func vf(this &mut S, p i32) i32; } field **Name; } "

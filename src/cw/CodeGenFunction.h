@@ -132,7 +132,7 @@ class CodeGenFunction {
   // Array element, struct element, base, and field addresses.
   Address EmitArrayElement(Address array, llvm::Value* index, bool in_bounds = false);
   Address EmitStructElement(Address object, unsigned index, llvm::StringRef name);
-  Address EmitBase(Address object, const StructDecl& declaration);
+  Address EmitBase(Address object, const StructDecl& declaration, std::size_t index);
   Address EmitField(Address object, const StructDecl& declaration, const FieldDecl& field);
 
   // Loads, stores, aggregate copies, and per-element array loops.
@@ -164,7 +164,7 @@ class CodeGenFunction {
   bool RegisterGlobalDestructor(const VarDecl& declaration);
 
   // Virtual table pointers and virtual dispatch.
-  bool EmitVTablePointer(Address object, const StructDecl& stage);
+  bool EmitVTablePointers(Address object, const StructDecl& stage);
   llvm::Value* EmitVirtualCallee(const VirtualFunctionDecl& declaration, llvm::Value* receiver);
   llvm::Value* EmitVirtualCallee(llvm::Value* pointer, llvm::Value*& receiver);
   llvm::Value* EmitVirtualPointerIsNotNull(llvm::Value* pointer);
@@ -184,7 +184,10 @@ class CodeGenFunction {
   bool EmitIgnoredExpr(const Expr& expression);
   bool EmitIgnoredConditionalExpr(const ConditionalOperator& expression);
   Address EmitLValue(const Expr& expression);
-  Address EmitBaseSubobject(const Expr& source, const std::vector<const StructDecl*>& path, bool through_pointer);
+  /// \brief Where a base path starts. Only a pointer conversion keeps null; member access through a
+  /// pointer reaches the base at its offset.
+  enum class BaseSource { Object, Pointer, PointerConversion };
+  Address EmitBaseSubobject(const Expr& source, const std::vector<const StructDecl*>& path, BaseSource origin);
   Address EmitMemberExpr(const MemberExpr& expression);
   Address EmitConditionalLValue(const ConditionalOperator& expression);
 

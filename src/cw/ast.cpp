@@ -5,6 +5,8 @@
 
 #include "ast.h"
 
+#include <algorithm>
+
 #include <boost/assert.hpp>
 
 #include "ASTVisitor.h"
@@ -47,19 +49,30 @@ const StructType* GetElementStruct(const Type& type) {
   return element->AsStructType();
 }
 
-bool HasInheritedFields(const StructDecl& declaration) {
-  for (auto* base = declaration.base_type; base; base = base->GetDeclaration()->base_type) {
-    if (!base->GetDeclaration()->Fields.empty()) {
-      return true;
-    }
+bool HasDataMembers(const StructDecl& declaration) {
+  if (!declaration.Fields.empty()) {
+    return true;
   }
-  return false;
+  return std::any_of(declaration.base_types.begin(), declaration.base_types.end(),
+                     [](const StructType* base) { return base && HasDataMembers(*base->GetDeclaration()); });
 }
 
 bool ComputeCXX11StandardLayout(const StructDecl& declaration) {
-  if (declaration.IsPolymorphic() ||
-      (declaration.base_type && !declaration.base_type->GetDeclaration()->IsCXX11StandardLayout()) ||
-      (!declaration.Fields.empty() && HasInheritedFields(declaration))) {
+  if (declaration.IsPolymorphic()) {
+    return false;
+  }
+  // C++11 allows data members in the most derived class or in at most one base, not in both.
+  std::size_t bases_with_data = declaration.Fields.empty() ? 0 : 1;
+  for (const StructType* base : declaration.base_types) {
+    BOOST_ASSERT(base);
+    if (!base->GetDeclaration()->IsCXX11StandardLayout()) {
+      return false;
+    }
+    if (HasDataMembers(*base->GetDeclaration())) {
+      ++bases_with_data;
+    }
+  }
+  if (bases_with_data > 1) {
     return false;
   }
   for (const auto& field : declaration.Fields) {
@@ -67,8 +80,9 @@ bool ComputeCXX11StandardLayout(const StructDecl& declaration) {
       if (!record->GetDeclaration()->IsCXX11StandardLayout()) {
         return false;
       }
-      // Use the original C++11 first-member rule, not later standard-layout revisions.
-      if (field == declaration.Fields.front() && declaration.base_type == record) {
+      // Use the original C++11 first-member rule, which checks only direct bases, as Clang does.
+      if (field == declaration.Fields.front() && std::find(declaration.base_types.begin(), declaration.base_types.end(),
+                                                           record) != declaration.base_types.end()) {
         return false;
       }
     }
@@ -723,12 +737,14 @@ void VarDecl::Traverse(ASTVisitor& visitor) {
 
 bool StructDecl::IsPolymorphic() const {
   return (VirtualDecl && !VirtualDecl->Functions.empty()) ||
-         (base_type && base_type->GetDeclaration()->IsPolymorphic());
+         std::any_of(base_types.begin(), base_types.end(),
+                     [](const StructType* base) { return base && base->GetDeclaration()->IsPolymorphic(); });
 }
 
 bool StructDecl::IsEmpty() const {
   return Fields.empty() && (!VirtualDecl || VirtualDecl->Functions.empty()) &&
-         (!base_type || base_type->GetDeclaration()->IsEmpty());
+         std::all_of(base_types.begin(), base_types.end(),
+                     [](const StructType* base) { return !base || base->GetDeclaration()->IsEmpty(); });
 }
 
 bool StructDecl::IsCXX11StandardLayout() const {

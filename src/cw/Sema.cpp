@@ -60,7 +60,7 @@ const std::vector<const Type*>& FunctionParameterTypes(const FunctionDecl& decla
 /// \brief A winner's argument whose deferred object formation could not be completed.
 struct ArgumentCompletionFailure {
   std::size_t index{};
-  ObjectFormationFailure failure{};
+  CompletionFailure failure{};
 };
 using CompletedArguments = std::variant<std::vector<ConversionSequence>, ArgumentCompletionFailure>;
 
@@ -292,10 +292,6 @@ bool HasValidFunctionInterface(const FunctionDecl& declaration) {
   }
 }
 
-enum class ConstructorPrologueStatus { NotRequired, Valid, InvalidAttempt, Missing };
-
-enum class ConstructorInitializationTargetKind { Other, ValidPrologue, InvalidPrologue };
-
 // Initialization syntax is checked against the written access path. Implicit object
 // adjustment must not turn inherited field access into explicit base initialization.
 const Expr* IgnoreImplicitBaseSubobjectCasts(const Expr* expression) {
@@ -308,104 +304,6 @@ const Expr* IgnoreImplicitBaseSubobjectCasts(const Expr* expression) {
     expression = cast.SubExpr.get();
   }
   return expression;
-}
-
-ConstructorInitializationTargetKind ClassifyConstructorInitializationTarget(const ConstructorDecl& constructor,
-                                                                            const Expr* target) {
-  if (!target || !constructor.target_type) {
-    return ConstructorInitializationTargetKind::Other;
-  }
-
-  bool contains_parentheses = false;
-  const auto ignore_parentheses = [&](const Expr* expression) {
-    expression = IgnoreImplicitBaseSubobjectCasts(expression);
-    while (expression && expression->GetKind() == NodeKind::ParenExpr) {
-      contains_parentheses = true;
-      expression = IgnoreImplicitBaseSubobjectCasts(static_cast<const ParenExpr*>(expression)->SubExpr.get());
-    }
-    return expression;
-  };
-
-  target = ignore_parentheses(target);
-  if (!target) {
-    return ConstructorInitializationTargetKind::Other;
-  }
-  if (target->GetKind() == NodeKind::ThisExpr) {
-    return contains_parentheses ? ConstructorInitializationTargetKind::InvalidPrologue
-                                : ConstructorInitializationTargetKind::ValidPrologue;
-  }
-
-  const Expr* root = target;
-  std::vector<const Expr*> path;
-  while (root && (root->GetKind() == NodeKind::MemberExpr || root->GetKind() == NodeKind::BaseSubobjectExpr)) {
-    path.push_back(root);
-    root = root->GetKind() == NodeKind::MemberExpr ? static_cast<const MemberExpr*>(root)->Base.get()
-                                                   : static_cast<const BaseSubobjectExpr*>(root)->Base.get();
-    root = ignore_parentheses(root);
-  }
-  if (!root || root->GetKind() != NodeKind::ThisExpr || path.empty()) {
-    return ConstructorInitializationTargetKind::Other;
-  }
-  std::reverse(path.begin(), path.end());
-
-  const Expr* first = path.front();
-  if (first->GetKind() == NodeKind::BaseSubobjectExpr) {
-    const auto& base = static_cast<const BaseSubobjectExpr&>(*first);
-    const StructType* required_base = constructor.target_type->GetDeclaration()->base_type;
-    const bool is_valid = !contains_parentheses && path.size() == 1 && target == first &&
-                          base.op == MemberAccessKind::Dot && base.base_path.size() == 1 && required_base &&
-                          base.GetDeclaration() == required_base->GetDeclaration();
-    return is_valid ? ConstructorInitializationTargetKind::ValidPrologue
-                    : ConstructorInitializationTargetKind::InvalidPrologue;
-  }
-
-  const FieldDecl* first_field = static_cast<const MemberExpr&>(*first).declaration;
-  if (!first_field) {
-    return ConstructorInitializationTargetKind::InvalidPrologue;
-  }
-  for (const auto& field : constructor.target_type->GetDeclaration()->Fields) {
-    if (field.get() == first_field) {
-      return ConstructorInitializationTargetKind::Other;
-    }
-  }
-  return ConstructorInitializationTargetKind::InvalidPrologue;
-}
-
-ConstructorPrologueStatus ClassifyConstructorPrologue(const ConstructorDecl& declaration) {
-  if (!declaration.target_type || !declaration.Body) {
-    return ConstructorPrologueStatus::NotRequired;
-  }
-  const StructType* base_type = declaration.target_type->GetDeclaration()->base_type;
-  if (!base_type || base_type->GetDeclaration()->triviality != TypeTriviality::NonTrivial) {
-    return ConstructorPrologueStatus::NotRequired;
-  }
-
-  for (std::size_t index = 0; index < declaration.Body->Stmts.size(); ++index) {
-    const auto& statement = declaration.Body->Stmts[index];
-    if (!statement || statement->GetKind() != NodeKind::ExprStmt) {
-      continue;
-    }
-    const auto& expression_statement = static_cast<const ExprStmt&>(*statement);
-    if (!expression_statement.Expr) {
-      continue;
-    }
-    const Expr* direct_expression = expression_statement.Expr.get();
-    const Expr* recovered_expression = direct_expression->IgnoreParens();
-    if (!recovered_expression || recovered_expression->GetKind() != NodeKind::InitializationExpr) {
-      continue;
-    }
-    const auto& initialization = static_cast<const InitializationExpr&>(*recovered_expression);
-    const ConstructorInitializationTargetKind target_kind =
-        ClassifyConstructorInitializationTarget(declaration, initialization.Target.get());
-    if (direct_expression == recovered_expression && index == 0 &&
-        target_kind == ConstructorInitializationTargetKind::ValidPrologue) {
-      return ConstructorPrologueStatus::Valid;
-    }
-    if (target_kind != ConstructorInitializationTargetKind::Other) {
-      return ConstructorPrologueStatus::InvalidAttempt;
-    }
-  }
-  return ConstructorPrologueStatus::Missing;
 }
 
 bool InitializationTargetContainsParentheses(const Expr* target) {
@@ -601,12 +499,25 @@ enum class VirtualReturnFailureKind {
   UnsupportedShape,
   PointerReferenceMismatch,
   NotDerived,
+  AmbiguousBase,
   DiscardsPointeeConst,
   ReferenceCategoryMismatch,
   ReferencePermissionMismatch,
 };
 
 using VirtualReturnCompatibilityResult = std::variant<VirtualReturnCompatibilityKind, VirtualReturnFailureKind>;
+
+// A covariant return selects its base by type, so the base must occur exactly once.
+std::optional<VirtualReturnFailureKind> ClassifyCovariantBase(const Type* derived, const Type* base) {
+  const std::size_t paths = FindDerivedToBasePaths(derived, base).size();
+  if (paths == 0) {
+    return VirtualReturnFailureKind::NotDerived;
+  }
+  if (paths > 1) {
+    return VirtualReturnFailureKind::AmbiguousBase;
+  }
+  return std::nullopt;
+}
 
 VirtualReturnCompatibilityResult ClassifyVirtualReturnCompatibility(const Type* overridden_return,
                                                                     const Type* overriding_return) {
@@ -639,8 +550,10 @@ VirtualReturnCompatibilityResult ClassifyVirtualReturnCompatibility(const Type* 
 
     const Type* overridden_object = overridden_pointee.GetTypePtr();
     const Type* overriding_object = overriding_pointee.GetTypePtr();
-    if (overriding_object != overridden_object && !FindDerivedToBasePath(overriding_object, overridden_object)) {
-      return failure(VirtualReturnFailureKind::NotDerived);
+    if (overriding_object != overridden_object) {
+      if (const auto base_failure = ClassifyCovariantBase(overriding_object, overridden_object)) {
+        return failure(*base_failure);
+      }
     }
     if (overriding_pointee.IsConstQualified() && !overridden_pointee.IsConstQualified()) {
       return failure(VirtualReturnFailureKind::DiscardsPointeeConst);
@@ -657,8 +570,10 @@ VirtualReturnCompatibilityResult ClassifyVirtualReturnCompatibility(const Type* 
         overriding_object->GetKind() != TypeKind::Struct) {
       return failure(VirtualReturnFailureKind::UnsupportedShape);
     }
-    if (overriding_object != overridden_object && !FindDerivedToBasePath(overriding_object, overridden_object)) {
-      return failure(VirtualReturnFailureKind::NotDerived);
+    if (overriding_object != overridden_object) {
+      if (const auto base_failure = ClassifyCovariantBase(overriding_object, overridden_object)) {
+        return failure(*base_failure);
+      }
     }
 
     const ReferenceMode overridden_mode = overridden_reference.GetMode();
@@ -909,6 +824,14 @@ std::string FormatVirtualReturnFailure(const FunctionDecl& function, const Funct
       return message + fmt::format(" because '{}' is not derived from '{}'", TypeSpelling(*overriding_object),
                                    TypeSpelling(*overridden_object));
     }
+    case VirtualReturnFailureKind::AmbiguousBase: {
+      const Type* overriding_object = VirtualReturnObjectType(overriding_return);
+      const Type* overridden_object = VirtualReturnObjectType(overridden_return);
+      BOOST_ASSERT(overriding_object);
+      BOOST_ASSERT(overridden_object);
+      return message + fmt::format(" because '{}' occurs more than once as a base of '{}'",
+                                   TypeSpelling(*overridden_object), TypeSpelling(*overriding_object));
+    }
     case VirtualReturnFailureKind::DiscardsPointeeConst:
       return message + " because it would remove pointee 'const'";
     case VirtualReturnFailureKind::ReferenceCategoryMismatch:
@@ -966,7 +889,21 @@ std::string FormatReferenceBindingFailure(const ReferenceBindingFailure& failure
   return "reference binding failed";
 }
 
-std::string FormatObjectFormationFailure(const ObjectFormationFailure& failure) {
+// Spells a path of direct bases from `source`, such as 'Pair -> Left -> Base'.
+std::string FormatBasePath(const StructDecl& source, const std::vector<const StructDecl*>& path) {
+  std::string result = source.QualifiedName();
+  for (const StructDecl* base : path) {
+    result += " -> " + base->QualifiedName();
+  }
+  return result;
+}
+
+std::string FormatCompletionFailure(const CompletionFailure& completion) {
+  if (const auto* base = std::get_if<AmbiguousBaseFailure>(&completion)) {
+    return fmt::format("ambiguous conversion from derived struct '{}' to base struct '{}'",
+                       TypeSpelling(base->derived_type), TypeSpelling(base->base_type));
+  }
+  const auto& failure = std::get<ObjectFormationFailure>(completion);
   switch (failure.kind) {
     case ObjectFormationFailureKind::CopyUnavailable:
       return fmt::format("no copy constructor is available for '{}'", TypeSpelling(failure.target_type));
@@ -1109,6 +1046,10 @@ std::string DefiniteInitializationMessage(const DefiniteInitializationFinding& f
       return fmt::format("cannot initialize before preceding variable '{}' is fully initialized", name);
     case DefiniteInitializationFindingKind::OutOfOrderSubobjectInitialization:
       return fmt::format("cannot initialize subobject of '{}' before preceding subobjects are fully initialized", name);
+    case DefiniteInitializationFindingKind::PartialObjectDelegation:
+      return "cannot delegate after part of 'this' is initialized";
+    case DefiniteInitializationFindingKind::DelegationAfterUse:
+      return "cannot delegate after 'this' is used";
     case DefiniteInitializationFindingKind::ConflictingStates:
       return fmt::format("initialization state of variable '{}' differs across control-flow paths", name);
     case DefiniteInitializationFindingKind::UninitializedResult:
@@ -1274,7 +1215,8 @@ bool Sema::HasLayoutPrerequisites(const Type& type) {
     }
     const bool ready = !declaration.is_invalid && declaration.triviality != TypeTriviality::Unknown &&
                        declaration.triviality != TypeTriviality::Invalid &&
-                       (!declaration.base_type || HasLayoutPrerequisites(*declaration.base_type)) &&
+                       std::all_of(declaration.base_types.begin(), declaration.base_types.end(),
+                                   [&](const StructType* base) { return base && HasLayoutPrerequisites(*base); }) &&
                        std::all_of(declaration.Fields.begin(), declaration.Fields.end(), [&](const auto& field) {
                          return field && field->type && field->type.GetTypePtr()->IsObject() &&
                                 HasLayoutPrerequisites(*field->type.GetTypePtr());
@@ -1311,8 +1253,8 @@ bool Sema::ValidateStructLayout(StructDecl& declaration) {
     return true;  // Existing type errors already explain why no final layout can be queried.
   }
   bool valid = true;
-  if (declaration.base_type) {
-    valid = ValidateStructLayout(*const_cast<StructDecl*>(declaration.base_type->GetDeclaration()));
+  for (const StructType* base : declaration.base_types) {
+    valid = ValidateStructLayout(*const_cast<StructDecl*>(base->GetDeclaration())) && valid;
   }
   for (const auto& field : declaration.Fields) {
     valid = ValidateObjectLayout(*field, *field->type.GetTypePtr()) && valid;
@@ -1419,9 +1361,10 @@ void Sema::ValidateDeclarationModifiers(TranslationUnitDecl& translation_unit) {
         if (structure.modifier != DeclModifier::Export) {
           break;
         }
-        if (structure.base_type) {
-          if (const StructDecl* hidden = FindInternalStruct(structure.base_type)) {
-            Diagnose(structure, kErrorDiagnostic, structure.base.Range(), NonExportedStructMessage(*hidden));
+        for (std::size_t index = 0; index < structure.base_types.size(); ++index) {
+          if (const StructDecl* hidden =
+                  structure.base_types[index] ? FindInternalStruct(structure.base_types[index]) : nullptr) {
+            Diagnose(structure, kErrorDiagnostic, structure.bases[index].Range(), NonExportedStructMessage(*hidden));
           }
         }
         if (structure.VirtualDecl) {
@@ -1625,8 +1568,8 @@ bool Sema::ConvertExpression(std::unique_ptr<Expr>& expression, QualType target,
   // Complete deferred object formation before emitting warnings or replacing the source AST.
   auto& conversion = std::get<ConversionSequence>(result);
   if (const auto failure = CompleteConversion(source, target, conversion)) {
-    Diagnose(owner, kErrorDiagnostic, expression->range,
-             failure_prefix + FormatObjectFormationFailure(failure->failure));
+    Diagnose(owner, kErrorDiagnostic, expression->range, failure_prefix + FormatCompletionFailure(failure->failure));
+    EmitBasePathNotes(failure->failure);
     return false;
   }
   DiagnoseConversionRisks(owner, *expression, target, conversion);
@@ -1899,12 +1842,16 @@ Sema::InheritedVirtualSlots Sema::ValidateVirtualHierarchy(TranslationUnitDecl& 
     }
     state = VirtualVisitState::Visiting;
 
+    // Each base subobject contributes its own final slots, in base declaration order.
     std::vector<VirtualFunctionDecl*> slots;
-    if (structure.base_type) {
-      auto* base = const_cast<StructDecl*>(structure.base_type->GetDeclaration());
+    for (const StructType* base_type : structure.base_types) {
+      if (!base_type) {
+        continue;
+      }
+      auto* base = const_cast<StructDecl*>(base_type->GetDeclaration());
       self(self, *base);
       if (states[base] == VirtualVisitState::Complete) {
-        slots = final_slots[base];
+        slots.insert(slots.end(), final_slots[base].begin(), final_slots[base].end());
       }
     }
     inherited_slots[&structure] = slots;
@@ -1947,32 +1894,49 @@ Sema::InheritedVirtualSlots Sema::ValidateVirtualHierarchy(TranslationUnitDecl& 
           function->is_invalid = true;
           continue;
         }
-        if (matches.size() != 1) {
-          Diagnose(
-              *function, kErrorDiagnostic, NamedDeclarationRange(*function),
-              fmt::format("virtual function '{}' matches more than one inherited virtual function", function->name));
+        // One override replaces every matching inherited slot, possibly from several bases.
+        std::vector<VirtualFunctionDecl*> overridden_functions;
+        for (const std::size_t index : matches) {
+          VirtualFunctionDecl* overridden = inherited_slots[&structure][index];
+          if (std::find(overridden_functions.begin(), overridden_functions.end(), overridden) ==
+              overridden_functions.end()) {
+            overridden_functions.push_back(overridden);
+          }
+        }
+        // The override also fills the vtable entries of every interface overridden indirectly,
+        // so the covariance rules hold for those interfaces too.
+        std::vector<VirtualFunctionDecl*> covariance_targets = overridden_functions;
+        for (std::size_t index = 0; index < covariance_targets.size(); ++index) {
+          for (VirtualFunctionDecl* indirect : covariance_targets[index]->overridden_virtual_functions) {
+            if (std::find(covariance_targets.begin(), covariance_targets.end(), indirect) == covariance_targets.end()) {
+              covariance_targets.push_back(indirect);
+            }
+          }
+        }
+        bool returns_are_compatible = true;
+        for (VirtualFunctionDecl* overridden : covariance_targets) {
+          const VirtualReturnCompatibilityResult return_compatibility =
+              ClassifyVirtualReturnCompatibility(FunctionReturnType(*overridden), FunctionReturnType(*function));
+          if (const auto* failure = std::get_if<VirtualReturnFailureKind>(&return_compatibility)) {
+            Diagnose(*function, kErrorDiagnostic,
+                     function->ReturnVar ? function->ReturnVar->range : NamedDeclarationRange(*function),
+                     FormatVirtualReturnFailure(*function, *overridden, *failure));
+            EmitDiagnostic(kNoteDiagnostic,
+                           overridden->ReturnVar ? overridden->ReturnVar->range : NamedDeclarationRange(*overridden),
+                           "overridden virtual function is declared here");
+            returns_are_compatible = false;
+            break;
+          }
+        }
+        if (!returns_are_compatible) {
           function->is_invalid = true;
           continue;
         }
 
-        VirtualFunctionDecl* overridden = inherited_slots[&structure][matches.front()];
-        const VirtualReturnCompatibilityResult return_compatibility =
-            ClassifyVirtualReturnCompatibility(FunctionReturnType(*overridden), FunctionReturnType(*function));
-        if (const auto* failure = std::get_if<VirtualReturnFailureKind>(&return_compatibility)) {
-          Diagnose(*function, kErrorDiagnostic,
-                   function->ReturnVar ? function->ReturnVar->range : NamedDeclarationRange(*function),
-                   FormatVirtualReturnFailure(*function, *overridden, *failure));
-          EmitDiagnostic(kNoteDiagnostic,
-                         overridden->ReturnVar ? overridden->ReturnVar->range : NamedDeclarationRange(*overridden),
-                         "overridden virtual function is declared here");
-          function->is_invalid = true;
-          continue;
+        for (const std::size_t index : matches) {
+          slots[index] = function;
         }
-
-        function->overridden_virtual_function = overridden;
-        auto position = std::find(slots.begin(), slots.end(), overridden);
-        BOOST_ASSERT(position != slots.end());
-        *position = function;
+        function->overridden_virtual_functions = std::move(overridden_functions);
       }
     }
 
@@ -2231,6 +2195,8 @@ void Sema::ValidateRequiredOverrideDeclarations(TranslationUnitDecl& translation
     if (inherited == inherited_slots.end()) {
       continue;
     }
+    // Several bases may contribute matching virtual functions; one override would replace them all.
+    std::vector<VirtualFunctionDecl*> missing_overrides;
     for (VirtualFunctionDecl* inherited_function : inherited->second) {
       if (!inherited_function || inherited_function->is_invalid) {
         continue;
@@ -2256,12 +2222,18 @@ void Sema::ValidateRequiredOverrideDeclarations(TranslationUnitDecl& translation
       if (has_local_declaration || !diagnosed[structure].insert(inherited_function).second) {
         continue;
       }
+      missing_overrides.push_back(inherited_function);
+    }
+    if (missing_overrides.empty()) {
+      continue;
+    }
 
-      Diagnose(*structure, kErrorDiagnostic, NamedDeclarationRange(*structure),
-               fmt::format("type '{}' is missing an explicit override declaration for virtual function '{}'",
-                           structure->name, inherited_function->name));
-      EmitDiagnostic(kNoteDiagnostic, NamedDeclarationRange(*function),
-                     "function with a matching signature is defined here");
+    Diagnose(*structure, kErrorDiagnostic, NamedDeclarationRange(*structure),
+             fmt::format("type '{}' is missing an explicit override declaration for virtual function '{}'",
+                         structure->name, missing_overrides.front()->name));
+    EmitDiagnostic(kNoteDiagnostic, NamedDeclarationRange(*function),
+                   "function with a matching signature is defined here");
+    for (const VirtualFunctionDecl* inherited_function : missing_overrides) {
       EmitDiagnostic(kNoteDiagnostic, NamedDeclarationRange(*inherited_function),
                      "inherited virtual function is declared here");
     }
@@ -2676,8 +2648,11 @@ void Sema::ComputeStructTriviality(TranslationUnitDecl& translation_unit,
       invalid = true;
     }
 
-    if (structure.base_type) {
-      const TypeTriviality base = classify_structure(*const_cast<StructDecl*>(structure.base_type->GetDeclaration()));
+    for (const StructType* base_type : structure.base_types) {
+      if (!base_type) {
+        continue;
+      }
+      const TypeTriviality base = classify_structure(*const_cast<StructDecl*>(base_type->GetDeclaration()));
       invalid = invalid || base == TypeTriviality::Invalid || base == TypeTriviality::Unknown;
       nontrivial = nontrivial || base == TypeTriviality::NonTrivial;
     }
@@ -2742,11 +2717,14 @@ void Sema::ValidateLifecycleRequirements(TranslationUnitDecl& translation_unit,
       }
     }
 
-    if (structure.base_type && structure.triviality == TypeTriviality::NonTrivial &&
-        structure.base_type->GetDeclaration()->triviality == TypeTriviality::Trivial) {
-      Diagnose(structure, kErrorDiagnostic, structure.base.Range(),
-               fmt::format("non-trivial struct '{}' cannot inherit trivial struct '{}'", structure.name,
-                           structure.base_type->GetDeclaration()->name));
+    for (std::size_t index = 0; index < structure.base_types.size(); ++index) {
+      const StructType* base_type = structure.base_types[index];
+      if (base_type && structure.triviality == TypeTriviality::NonTrivial &&
+          base_type->GetDeclaration()->triviality == TypeTriviality::Trivial) {
+        Diagnose(structure, kErrorDiagnostic, structure.bases[index].Range(),
+                 fmt::format("non-trivial struct '{}' cannot inherit trivial struct '{}'", structure.name,
+                             base_type->GetDeclaration()->name));
+      }
     }
   }
 }
@@ -2822,15 +2800,6 @@ void Sema::AnalyzeFunction(FunctionDecl& declaration) {
     AnalyzeCompoundStmt(*declaration.Body, false, result_block_context, true);
     InheritErrors(declaration, declaration.Body.get());
   }
-  if (declaration.GetKind() == NodeKind::ConstructorDecl) {
-    const auto& constructor = static_cast<const ConstructorDecl&>(declaration);
-    if (ClassifyConstructorPrologue(constructor) == ConstructorPrologueStatus::Missing) {
-      const StructDecl* direct_base = constructor.target_type->GetDeclaration()->base_type->GetDeclaration();
-      Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-               fmt::format("constructor for '{}' must begin by delegating or by initializing direct base '{}'",
-                           constructor.name, direct_base->name));
-    }
-  }
   local_symbols_->PopScope();
   current_function_ = nullptr;
   BOOST_ASSERT(loop_depth_ == 0);
@@ -2860,6 +2829,25 @@ class ConstructorCompletionInserter final : public ASTVisitor {
   }
 };
 
+// Collects every delegation in a constructor body, wherever control flow places it.
+class DelegationCollector final : public ASTVisitor {
+  std::vector<ConstructionExpr*>& delegations_;
+
+ public:
+  explicit DelegationCollector(std::vector<ConstructionExpr*>& delegations) : delegations_(delegations) {}
+
+  void Visit(InitializationExpr& expression) override {
+    if (expression.Target && expression.Target->GetKind() == NodeKind::ThisExpr && expression.Source) {
+      Expr* source = expression.Source->IgnoreParens();
+      if (source && source->GetKind() == NodeKind::ConstructionExpr &&
+          static_cast<ConstructionExpr&>(*source).construction_kind == ConstructionKind::Delegating) {
+        delegations_.push_back(static_cast<ConstructionExpr*>(source));
+      }
+    }
+    ASTVisitor::Visit(expression);
+  }
+};
+
 }  // namespace
 
 void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) {
@@ -2885,23 +2873,14 @@ void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) 
 
     std::unique_ptr<CFG> cfg = CFG::Build(function);
     BOOST_ASSERT(cfg);
-    const ConstructorPrologueStatus constructor_prologue_status =
-        function.GetKind() == NodeKind::ConstructorDecl
-            ? ClassifyConstructorPrologue(static_cast<const ConstructorDecl&>(function))
-            : ConstructorPrologueStatus::NotRequired;
-    // A failed constructor prologue already explains missing or out-of-order base initialization.
     const auto result = DefiniteInitializationAnalysis::Run(function, *cfg);
     for (const DefiniteInitializationFinding& finding : result.findings) {
-      if ((finding.kind == DefiniteInitializationFindingKind::UninitializedResult ||
-           finding.kind == DefiniteInitializationFindingKind::OutOfOrderSubobjectInitialization) &&
-          !finding.declaration &&
-          (constructor_prologue_status == ConstructorPrologueStatus::InvalidAttempt ||
-           constructor_prologue_status == ConstructorPrologueStatus::Missing)) {
-        continue;
-      }
       BOOST_ASSERT(finding.owner);
       Node& owner = *const_cast<Node*>(finding.owner);
       Diagnose(owner, kErrorDiagnostic, finding.range, DefiniteInitializationMessage(finding));
+      if (finding.kind == DefiniteInitializationFindingKind::DelegationAfterUse) {
+        EmitDiagnostic(kNoteDiagnostic, finding.related_range, "'this' is used here");
+      }
     }
     if (function.GetKind() == NodeKind::ConstructorDecl && !function.ContainsErrors() && result.findings.empty()) {
       ConstructorCompletionInserter inserter(result.this_initialization_completions);
@@ -2921,85 +2900,123 @@ void Sema::ValidateDelegatingConstructorCycles(TranslationUnitDecl& translation_
     ConstructionExpr* construction{};
   };
 
-  // Only a successfully resolved leading delegation contributes an edge.
-  std::vector<DelegationEdge> edges;
+  // Every successfully resolved delegation contributes an edge, whichever path reaches it.
+  std::unordered_map<const ConstructorDecl*, std::vector<DelegationEdge>> outgoing;
   for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::ConstructorDecl) {
       continue;
     }
     auto* constructor = static_cast<ConstructorDecl*>(declaration);
-    if (!constructor->Body || constructor->Body->Stmts.empty() || !constructor->Body->Stmts.front() ||
-        constructor->Body->Stmts.front()->GetKind() != NodeKind::ExprStmt) {
+    if (!constructor->Body) {
       continue;
     }
-    auto& statement = static_cast<ExprStmt&>(*constructor->Body->Stmts.front());
-    if (!statement.Expr || statement.Expr->GetKind() != NodeKind::InitializationExpr) {
-      continue;
+    std::vector<ConstructionExpr*> delegations;
+    DelegationCollector collector(delegations);
+    constructor->Body->Accept(collector);
+    for (ConstructionExpr* construction : delegations) {
+      if (!construction->ContainsErrors() && construction->constructor) {
+        outgoing[constructor].push_back(
+            {constructor, const_cast<ConstructorDecl*>(construction->constructor), construction});
+      }
     }
-    auto& initialization = static_cast<InitializationExpr&>(*statement.Expr);
-    if (!initialization.Target || initialization.Target->GetKind() != NodeKind::ThisExpr || !initialization.Source) {
-      continue;
-    }
-    Expr* source = initialization.Source->IgnoreParens();
-    if (!source || source->GetKind() != NodeKind::ConstructionExpr) {
-      continue;
-    }
-    auto& construction = static_cast<ConstructionExpr&>(*source);
-    if (construction.construction_kind != ConstructionKind::Delegating || construction.ContainsErrors() ||
-        !construction.constructor) {
-      continue;
-    }
-    edges.push_back({constructor, const_cast<ConstructorDecl*>(construction.constructor), &construction});
   }
 
-  // An edge back into the active DFS stack identifies exactly the constructors in a cycle.
-  std::unordered_map<const ConstructorDecl*, DelegationEdge*> outgoing;
-  for (auto& edge : edges) outgoing.emplace(edge.source, &edge);
+  std::vector<ConstructorDecl*> constructors;
+  for (auto* declaration : declarations_) {
+    if (declaration && declaration->GetKind() == NodeKind::ConstructorDecl) {
+      constructors.push_back(static_cast<ConstructorDecl*>(declaration));
+    }
+  }
+
+  // Constructors that can delegate to each other form one strongly connected component (Tarjan),
+  // and every delegation inside a component can take part in a cycle.
+  std::unordered_map<const ConstructorDecl*, std::size_t> components;
+  {
+    std::unordered_map<const ConstructorDecl*, std::size_t> indices;
+    std::unordered_map<const ConstructorDecl*, std::size_t> low_links;
+    std::vector<const ConstructorDecl*> stack;
+    std::unordered_set<const ConstructorDecl*> on_stack;
+    std::size_t next_component = 0;
+    const auto connect = [&](const auto& self, const ConstructorDecl& constructor) -> void {
+      const std::size_t index = indices.size();
+      indices[&constructor] = index;
+      low_links[&constructor] = index;
+      stack.push_back(&constructor);
+      on_stack.insert(&constructor);
+      if (const auto it = outgoing.find(&constructor); it != outgoing.end()) {
+        for (const DelegationEdge& edge : it->second) {
+          if (indices.find(edge.target) == indices.end()) {
+            self(self, *edge.target);
+            low_links[&constructor] = std::min(low_links[&constructor], low_links[edge.target]);
+          } else if (on_stack.count(edge.target)) {
+            low_links[&constructor] = std::min(low_links[&constructor], indices[edge.target]);
+          }
+        }
+      }
+      if (low_links[&constructor] == index) {
+        const ConstructorDecl* member = nullptr;
+        do {
+          member = stack.back();
+          stack.pop_back();
+          on_stack.erase(member);
+          components[member] = next_component;
+        } while (member != &constructor);
+        ++next_component;
+      }
+    };
+    for (ConstructorDecl* constructor : constructors) {
+      if (indices.find(constructor) == indices.end()) {
+        connect(connect, *constructor);
+      }
+    }
+  }
+
+  // A depth-first search reports each cyclic component once, at the first edge that leads back
+  // into the active search path, and points at every delegation inside the component.
   enum class VisitState { Unvisited, Visiting, Complete };
   std::unordered_map<const ConstructorDecl*, VisitState> states;
-  std::vector<ConstructorDecl*> stack;
-  std::unordered_map<const ConstructorDecl*, std::size_t> stack_positions;
-
+  std::unordered_set<std::size_t> reported_components;
+  const auto report = [&](const DelegationEdge& closing) {
+    const std::size_t component = components.at(closing.target);
+    if (!reported_components.insert(component).second) {
+      return;
+    }
+    ConstructorDecl& diagnostic_owner = *closing.target;
+    Diagnose(diagnostic_owner, kErrorDiagnostic, closing.construction->range,
+             fmt::format("delegating constructor cycle for type '{}'", diagnostic_owner.name));
+    for (ConstructorDecl* constructor : constructors) {
+      const auto it = outgoing.find(constructor);
+      if (components.at(constructor) != component || it == outgoing.end()) {
+        continue;
+      }
+      for (const DelegationEdge& edge : it->second) {
+        if (components.at(edge.target) != component) {
+          continue;
+        }
+        EmitDiagnostic(kNoteDiagnostic, edge.construction->range,
+                       fmt::format("constructor '{}' delegates here", edge.source->name));
+        edge.source->contains_errors = true;
+        edge.construction->contains_errors = true;
+      }
+    }
+  };
   const auto visit = [&](const auto& self, ConstructorDecl& constructor) -> void {
     states[&constructor] = VisitState::Visiting;
-    stack_positions[&constructor] = stack.size();
-    stack.push_back(&constructor);
-
-    const auto edge_it = outgoing.find(&constructor);
-    if (edge_it != outgoing.end()) {
-      DelegationEdge& edge = *edge_it->second;
-      const VisitState target_state = states[edge.target];
-      if (target_state == VisitState::Unvisited) {
-        self(self, *edge.target);
-      } else if (target_state == VisitState::Visiting) {
-        const std::size_t cycle_begin = stack_positions[edge.target];
-        ConstructorDecl& diagnostic_owner = *stack[cycle_begin];
-        Diagnose(diagnostic_owner, kErrorDiagnostic, edge.construction->range,
-                 fmt::format("delegating constructor cycle for type '{}'", diagnostic_owner.name));
-        for (std::size_t index = cycle_begin; index < stack.size(); ++index) {
-          ConstructorDecl* cycle_constructor = stack[index];
-          DelegationEdge* cycle_edge = outgoing[cycle_constructor];
-          BOOST_ASSERT(cycle_edge && cycle_edge->construction);
-          EmitDiagnostic(kNoteDiagnostic, cycle_edge->construction->range,
-                         fmt::format("constructor '{}' delegates here", cycle_constructor->name));
-          cycle_constructor->contains_errors = true;
-          cycle_edge->construction->contains_errors = true;
+    if (const auto it = outgoing.find(&constructor); it != outgoing.end()) {
+      for (const DelegationEdge& edge : it->second) {
+        const VisitState target_state = states[edge.target];
+        if (target_state == VisitState::Unvisited) {
+          self(self, *edge.target);
+        } else if (target_state == VisitState::Visiting) {
+          report(edge);
         }
       }
     }
-
-    stack.pop_back();
-    stack_positions.erase(&constructor);
     states[&constructor] = VisitState::Complete;
   };
-
-  for (auto* declaration : declarations_) {
-    if (!declaration || declaration->GetKind() != NodeKind::ConstructorDecl) {
-      continue;
-    }
-    auto& constructor = static_cast<ConstructorDecl&>(*declaration);
-    if (states[&constructor] == VisitState::Unvisited) {
-      visit(visit, constructor);
+  for (ConstructorDecl* constructor : constructors) {
+    if (states[constructor] == VisitState::Unvisited) {
+      visit(visit, *constructor);
     }
   }
 }
@@ -3030,11 +3047,7 @@ void Sema::AnalyzeCompoundStmt(CompoundStmt& statement, bool creates_scope,
   for (std::size_t index = 0; index < statement.Stmts.size(); ++index) {
     const auto& child = statement.Stmts[index];
     if (child) {
-      const bool is_constructor_prologue = current_function_ &&
-                                           current_function_->GetKind() == NodeKind::ConstructorDecl &&
-                                           current_function_->Body.get() == &statement && index == 0;
-      AnalyzeStmt(*child, result_block_context, forwards_result_position && index + 1 == statement.Stmts.size(),
-                  is_constructor_prologue);
+      AnalyzeStmt(*child, result_block_context, forwards_result_position && index + 1 == statement.Stmts.size());
       InheritErrors(statement, child.get());
     }
   }
@@ -3062,16 +3075,15 @@ void Sema::AnalyzeCompoundStmt(CompoundStmt& statement, bool creates_scope,
 }
 
 void Sema::AnalyzeStmt(Stmt& statement, const ResultBlockAnalysisContext& result_block_context,
-                       bool forwards_result_position, bool is_constructor_prologue) {
+                       bool forwards_result_position) {
   switch (statement.GetKind()) {
     case NodeKind::CompoundStmt:
       AnalyzeCompoundStmt(static_cast<CompoundStmt&>(statement), true, result_block_context);
       break;
     case NodeKind::ExprStmt: {
       auto& expression_statement = static_cast<ExprStmt&>(statement);
-      expression_statement.Expr = AnalyzeExpr(
-          std::move(expression_statement.Expr),
-          is_constructor_prologue ? ExpressionUse::ConstructorPrologue : ExpressionUse::InitializationStatement);
+      expression_statement.Expr =
+          AnalyzeExpr(std::move(expression_statement.Expr), ExpressionUse::InitializationStatement);
       if (expression_statement.Expr && !expression_statement.Expr->ContainsErrors() &&
           expression_statement.Expr->type) {
         if (expression_statement.Expr->type.GetTypePtr()->AsFunctionOverloadSetType()) {
@@ -3939,7 +3951,8 @@ std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> ex
     BOOST_ASSERT(failure->index < call->Args.size());
     Diagnose(*call, kErrorDiagnostic, call->Args[failure->index]->range,
              fmt::format("cannot initialize parameter {} of operator '{}': {}", failure->index + 1, op_spelling,
-                         FormatObjectFormationFailure(failure->failure)));
+                         FormatCompletionFailure(failure->failure)));
+    EmitBasePathNotes(failure->failure);
     return call;
   }
 
@@ -4183,10 +4196,24 @@ void Sema::AnalyzeBuiltinBinaryOperator(BinaryOperator& expression) {
 
   auto lhs_result = BuildValueConversion(MakeConversionSource(*expression.LHS).state, common_type, *ast_context_);
   auto rhs_result = BuildValueConversion(MakeConversionSource(*expression.RHS).state, common_type, *ast_context_);
-  const auto* lhs_plan = std::get_if<ConversionSequence>(&lhs_result);
-  const auto* rhs_plan = std::get_if<ConversionSequence>(&rhs_result);
+  auto* lhs_plan = std::get_if<ConversionSequence>(&lhs_result);
+  auto* rhs_plan = std::get_if<ConversionSequence>(&rhs_result);
   BOOST_ASSERT(lhs_plan && rhs_plan);
   if (!lhs_plan || !rhs_plan) {
+    return;
+  }
+  // A pointer operand converted to a base that it contains more than once has no single address.
+  const auto completes = [&](const Expr& operand, ConversionSequence& plan) {
+    if (const auto failure = CompleteConversion(MakeConversionSource(operand), common_type, plan)) {
+      Diagnose(expression, kErrorDiagnostic, operand.range,
+               fmt::format("cannot convert operand of binary operator '{}': {}", to_string(expression.op),
+                           FormatCompletionFailure(failure->failure)));
+      EmitBasePathNotes(failure->failure);
+      return false;
+    }
+    return true;
+  };
+  if ((!is_compound_assignment && !completes(*expression.LHS, *lhs_plan)) || !completes(*expression.RHS, *rhs_plan)) {
     return;
   }
   if (is_compound_assignment) {
@@ -4259,6 +4286,25 @@ void Sema::AnalyzeBuiltinPointerArithmetic(BinaryOperator& expression, PointerAr
   ApplyDefaultValueConversion(pointer);
   expression.type = pointer->type.WithoutConst();
   expression.value_category = ValueCategory::PureRValue;
+}
+
+// Lists each path of an ambiguous derived-to-base conversion, at the base named by its last step.
+void Sema::EmitBasePathNotes(const CompletionFailure& failure) {
+  const auto* ambiguous = std::get_if<AmbiguousBaseFailure>(&failure);
+  if (!ambiguous) {
+    return;
+  }
+  const Type* derived = ambiguous->derived_type.GetTypePtr();
+  const StructDecl& source = *derived->AsStructType()->GetDeclaration();
+  for (const auto& path : FindDerivedToBasePaths(derived, ambiguous->base_type.GetTypePtr())) {
+    const StructDecl& owner = path.size() > 1 ? *path[path.size() - 2] : source;
+    const auto step = std::find_if(owner.base_types.begin(), owner.base_types.end(), [&](const StructType* base) {
+      return base && base->GetDeclaration() == path.back();
+    });
+    BOOST_ASSERT(step != owner.base_types.end());
+    EmitDiagnostic(kNoteDiagnostic, owner.bases[static_cast<std::size_t>(step - owner.base_types.begin())].Range(),
+                   fmt::format("base path '{}'", FormatBasePath(source, path)));
+  }
 }
 
 bool Sema::ValidatePointerArithmeticStep(Expr& expression, QualType pointer_type) {
@@ -4419,9 +4465,9 @@ void Sema::AnalyzeArrayValueExpr(ArrayValueExpr& expression, QualType contextual
     }
     auto conversion = std::get<ConversionSequence>(std::move(result));
     if (const auto failure = CompleteConversion(source, element_type, conversion)) {
-      Diagnose(
-          expression, kErrorDiagnostic, element->range,
-          fmt::format("cannot initialize array element {}: {}", index, FormatObjectFormationFailure(failure->failure)));
+      Diagnose(expression, kErrorDiagnostic, element->range,
+               fmt::format("cannot initialize array element {}: {}", index, FormatCompletionFailure(failure->failure)));
+      EmitBasePathNotes(failure->failure);
       valid = false;
       continue;
     }
@@ -4566,7 +4612,13 @@ std::unique_ptr<Expr> Sema::AnalyzeAssignment(std::unique_ptr<Expr> expression_n
              fmt::format("cannot assign to target: {}", FormatImplicitConversionFailure(*failure)));
     return expression_node;
   }
-  const auto& conversion = std::get<ConversionSequence>(result);
+  auto& conversion = std::get<ConversionSequence>(result);
+  if (const auto failure = CompleteConversion(MakeConversionSource(*expression.RHS), target_type, conversion)) {
+    Diagnose(expression, kErrorDiagnostic, source_range,
+             fmt::format("cannot assign to target: {}", FormatCompletionFailure(failure->failure)));
+    EmitBasePathNotes(failure->failure);
+    return expression_node;
+  }
   DiagnoseConversionRisks(expression, *expression.RHS, target_type, conversion);
   expression.RHS =
       CommitConversion(std::move(expression.RHS), target_type, conversion, ConstructionKind::CompleteObject);
@@ -4588,8 +4640,7 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
 
   // Check statement placement and target spelling before resolving which object may be initialized.
   bool target_is_valid = expression.Target && !expression.Target->ContainsErrors();
-  const bool is_initialization_statement =
-      use == ExpressionUse::InitializationStatement || use == ExpressionUse::ConstructorPrologue;
+  const bool is_initialization_statement = use == ExpressionUse::InitializationStatement;
   if (!is_initialization_statement) {
     if (expression.Target) {
       Diagnose(*expression.Target, kErrorDiagnostic, expression.range,
@@ -4686,7 +4737,7 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
   }
 
   // Constructors may delegate to the whole object or initialize their direct base and own fields.
-  // Delegation and direct-base initialization must occupy the constructor prologue.
+  // Their order and completeness belong to definite initialization, not to statement position.
   const bool targets_current_this = root && root->GetKind() == NodeKind::ThisExpr && current_function_ &&
                                     current_function_->GetKind() == NodeKind::ConstructorDecl;
   bool is_delegating_target = false;
@@ -4699,50 +4750,37 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
   } else if (targets_current_this && path.empty()) {
     if (target_is_valid) {
       is_delegating_target = true;
-      if (use != ExpressionUse::ConstructorPrologue) {
-        Diagnose(*expression.Target, kErrorDiagnostic, expression.Target->range,
-                 "constructor delegation must be the first complete statement in the constructor body");
-        target_is_valid = false;
-      }
     }
   } else if (targets_current_this && !path.empty() && target_is_valid) {
     const auto& constructor = static_cast<const ConstructorDecl&>(*current_function_);
     const Expr* first = path.front();
     if (first->GetKind() == NodeKind::BaseSubobjectExpr) {
       const auto& selected_base = static_cast<const BaseSubobjectExpr&>(*first);
-      const StructDecl* required_base = constructor.target_type && constructor.target_type->GetDeclaration()->base_type
-                                            ? constructor.target_type->GetDeclaration()->base_type->GetDeclaration()
-                                            : nullptr;
+      const StructDecl* selected = selected_base.GetDeclaration();
+      const auto& direct_bases = constructor.target_type->GetDeclaration()->base_types;
+      const bool targets_direct_base =
+          selected && selected_base.base_path.size() == 1 &&
+          std::any_of(direct_bases.begin(), direct_bases.end(),
+                      [&](const StructType* base) { return base && base->GetDeclaration() == selected; });
       const bool targets_whole_base = path.size() == 1 && expression.Target.get() == first;
-      const bool targets_required_base =
-          selected_base.base_path.size() == 1 && required_base && selected_base.GetDeclaration() == required_base;
-      if (!targets_whole_base) {
-        if (required_base) {
-          Diagnose(*expression.Target, kErrorDiagnostic, expression.Target->range,
-                   fmt::format("constructor for '{}' must initialize direct base '{}' as a whole", constructor.name,
-                               required_base->name));
-        } else {
-          expression.Target->contains_errors = true;
-        }
-        target_is_valid = false;
-      } else if (!targets_required_base) {
-        if (required_base && selected_base.GetDeclaration()) {
+      if (!targets_direct_base) {
+        if (selected && selected_base.base_path.size() > 1) {
           Diagnose(*expression.Target, kErrorDiagnostic, expression.Target->range,
                    fmt::format("constructor for '{}' must initialize direct base '{}', not indirect base '{}'",
-                               constructor.name, required_base->name, selected_base.GetDeclaration()->name));
+                               constructor.name, selected_base.base_path.front()->name, selected->name));
         } else {
           expression.Target->contains_errors = true;
         }
         target_is_valid = false;
-      } else if (use != ExpressionUse::ConstructorPrologue) {
+      } else if (!targets_whole_base) {
         Diagnose(*expression.Target, kErrorDiagnostic, expression.Target->range,
-                 fmt::format("direct base '{}' must be initialized by the first complete statement of constructor "
-                             "'{}'",
-                             required_base->name, constructor.name));
+                 fmt::format("constructor for '{}' must initialize direct base '{}' as a whole", constructor.name,
+                             selected->name));
         target_is_valid = false;
       }
     } else {
-      const FieldDecl* first_field = static_cast<const MemberExpr&>(*first).declaration;
+      const auto& member = static_cast<const MemberExpr&>(*first);
+      const FieldDecl* first_field = member.declaration;
       bool is_direct_field = false;
       if (constructor.target_type && first_field) {
         for (const auto& field : constructor.target_type->GetDeclaration()->Fields) {
@@ -4753,9 +4791,14 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
         }
       }
       if (!is_direct_field) {
-        const StructDecl* direct_base = constructor.target_type && constructor.target_type->GetDeclaration()->base_type
-                                            ? constructor.target_type->GetDeclaration()->base_type->GetDeclaration()
-                                            : nullptr;
+        // An inherited field is reached through an implicit projection whose path starts at a direct base.
+        const StructDecl* direct_base = nullptr;
+        if (member.Base && member.Base->GetKind() == NodeKind::ImplicitCastExpr) {
+          const auto& cast = static_cast<const ImplicitCastExpr&>(*member.Base);
+          if (cast.conversion_kind == ImplicitConversionKind::BaseSubobject && !cast.base_path.empty()) {
+            direct_base = cast.base_path.front();
+          }
+        }
         if (first_field && direct_base) {
           Diagnose(*expression.Target, kErrorDiagnostic, first->range,
                    fmt::format("constructor for '{}' cannot initialize inherited field '{}' directly; initialize "
@@ -4968,7 +5011,8 @@ void Sema::AnalyzeConditionalOperator(ConditionalOperator& expression,
           if (const auto failure = CompleteConversion(source, common_type, conversion)) {
             Diagnose(expression, kErrorDiagnostic, branch.range,
                      fmt::format("cannot form conditional result from {} branch: {}", name,
-                                 FormatObjectFormationFailure(failure->failure)));
+                                 FormatCompletionFailure(failure->failure)));
+            EmitBasePathNotes(failure->failure);
             return false;
           }
           return true;
@@ -5166,46 +5210,87 @@ std::unique_ptr<Expr> Sema::AnalyzeMemberExpr(std::unique_ptr<Expr> expression_n
   }
 
   BOOST_ASSERT(structure);
-  std::unordered_set<const StructDecl*> visited;
-  const StructDecl* current = structure;
-  const FieldDecl* selected_field = nullptr;
-  const StructType* selected_base_type = nullptr;
-  std::vector<const StructDecl*> base_path;
-  while (current) {
-    if (!visited.insert(current).second) {
-      expression.contains_errors = true;
-      return expression_node;
+  // A name found among a struct's direct fields or direct base names hides the same name in its
+  // bases. Otherwise each direct base is searched; finding the name in more than one base
+  // subobject makes the access ambiguous.
+  struct Candidate {
+    const FieldDecl* field{};               ///< Found field, owned by `owner`.
+    const StructType* base{};               ///< Found base, named by the access.
+    const StructDecl* owner{};              ///< Struct that declares the field or names the base.
+    std::size_t base_index{};               ///< Position of `base` among the bases of `owner`.
+    std::vector<const StructDecl*> path{};  ///< Direct-base path from the accessed struct.
+  };
+  struct LookupResult {
+    std::vector<Candidate> candidates;
+    bool failed{};
+  };
+  std::unordered_set<const StructDecl*> active;
+  const auto lookup = [&](const auto& self, const StructDecl& current) -> LookupResult {
+    LookupResult result;
+    if (!active.insert(&current).second) {
+      result.failed = true;
+      return result;
     }
-
-    const StructType* direct_base_type = current->base_type;
-    const StructDecl* direct_base = direct_base_type ? direct_base_type->GetDeclaration() : nullptr;
     // Preserve an already resolved base relation when unrelated declaration errors made the structure invalid.
-    if (direct_base && direct_base->name == expression.member) {
-      base_path.push_back(direct_base);
-      selected_base_type = direct_base_type;
-      break;
-    }
-    if (current->triviality == TypeTriviality::Unknown || current->triviality == TypeTriviality::Invalid) {
-      expression.contains_errors = true;
-      return expression_node;
-    }
-
-    for (const auto& field : current->Fields) {
-      if (field && field->name == expression.member) {
-        selected_field = field.get();
-        break;
+    for (std::size_t index = 0; index < current.base_types.size(); ++index) {
+      const StructType* base = current.base_types[index];
+      if (base && base->GetDeclaration()->name == expression.member) {
+        result.candidates.push_back({nullptr, base, &current, index, {base->GetDeclaration()}});
+        active.erase(&current);
+        return result;
       }
     }
-    if (selected_field) {
-      break;
+    if (current.triviality == TypeTriviality::Unknown || current.triviality == TypeTriviality::Invalid) {
+      result.failed = true;
+      active.erase(&current);
+      return result;
     }
-
-    if (!direct_base) {
-      break;
+    for (const auto& field : current.Fields) {
+      if (field && field->name == expression.member) {
+        result.candidates.push_back({field.get(), nullptr, &current});
+        active.erase(&current);
+        return result;
+      }
     }
-    base_path.push_back(direct_base);
-    current = direct_base;
+    for (const StructType* base : current.base_types) {
+      if (!base) {
+        continue;
+      }
+      LookupResult found = self(self, *base->GetDeclaration());
+      if (found.failed) {
+        active.erase(&current);
+        return found;
+      }
+      for (Candidate& candidate : found.candidates) {
+        candidate.path.insert(candidate.path.begin(), base->GetDeclaration());
+        result.candidates.push_back(std::move(candidate));
+      }
+    }
+    active.erase(&current);
+    return result;
+  };
+  LookupResult found = lookup(lookup, *structure);
+  if (found.failed) {
+    expression.contains_errors = true;
+    return expression_node;
   }
+  if (found.candidates.size() > 1) {
+    Diagnose(expression, kErrorDiagnostic, expression.range,
+             fmt::format("member '{}' is found in more than one base subobject of struct '{}'", expression.member,
+                         structure->name));
+    for (const Candidate& candidate : found.candidates) {
+      EmitDiagnostic(kNoteDiagnostic,
+                     candidate.field ? NamedDeclarationRange(*candidate.field)
+                                     : candidate.owner->bases[candidate.base_index].Range(),
+                     fmt::format("found through base path '{}'", FormatBasePath(*structure, candidate.path)));
+    }
+    return expression_node;
+  }
+  Candidate selected = found.candidates.empty() ? Candidate{} : std::move(found.candidates.front());
+  const FieldDecl* selected_field = selected.field;
+  const StructType* selected_base_type = selected.base;
+  const StructDecl* current = selected.owner;
+  std::vector<const StructDecl*> base_path = std::move(selected.path);
 
   if (selected_base_type) {
     if (expression.op == MemberAccessKind::Dot && expression.Base->value_category == ValueCategory::PureRValue) {
@@ -5372,7 +5457,8 @@ std::unique_ptr<Expr> Sema::AnalyzeCallableObjectCall(std::unique_ptr<Expr> expr
     BOOST_ASSERT(failure->index < arguments.size());
     Diagnose(expression, kErrorDiagnostic, arguments[failure->index]->range,
              fmt::format("cannot initialize parameter {} of operator '()': {}", failure->index + 1,
-                         FormatObjectFormationFailure(failure->failure)));
+                         FormatCompletionFailure(failure->failure)));
+    EmitBasePathNotes(failure->failure);
     return expression_node;
   }
 
@@ -5576,7 +5662,8 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
                                                       : fmt::format("function '{}'", callee.name.Spelling());
       Diagnose(expression, kErrorDiagnostic, expression.Args[failure->index]->range,
                fmt::format("cannot initialize parameter {} of {}: {}", failure->index + 1, callee_spelling,
-                           FormatObjectFormationFailure(failure->failure)));
+                           FormatCompletionFailure(failure->failure)));
+      EmitBasePathNotes(failure->failure);
       return;
     }
     // Once every parameter can be formed, commit the argument plans and expose the call result.
@@ -5688,7 +5775,8 @@ void Sema::AnalyzeCallExpr(CallExpr& expression, const ConstructionResultContext
   if (const auto* failure = std::get_if<ArgumentCompletionFailure>(&formation)) {
     Diagnose(expression, kErrorDiagnostic, expression.Args[failure->index]->range,
              fmt::format("cannot initialize parameter {} of constructor '{}': {}", failure->index + 1,
-                         callee.name.Spelling(), FormatObjectFormationFailure(failure->failure)));
+                         callee.name.Spelling(), FormatCompletionFailure(failure->failure)));
+    EmitBasePathNotes(failure->failure);
     return;
   }
   const auto& plans = std::get<std::vector<ConversionSequence>>(formation);
@@ -5738,7 +5826,8 @@ void Sema::AnalyzeIndirectCallExpr(CallExpr& expression, const FunctionType& fun
   if (const auto* failure = std::get_if<ArgumentCompletionFailure>(&formation)) {
     Diagnose(expression, kErrorDiagnostic, expression.Args[failure->index]->range,
              fmt::format("cannot initialize parameter {} of indirect function call: {}", failure->index + 1,
-                         FormatObjectFormationFailure(failure->failure)));
+                         FormatCompletionFailure(failure->failure)));
+    EmitBasePathNotes(failure->failure);
     return;
   }
 
@@ -5872,7 +5961,8 @@ void Sema::AnalyzeConstructionExpr(ConstructionExpr& expression) {
   if (const auto* failure = std::get_if<ArgumentCompletionFailure>(&formation)) {
     Diagnose(expression, kErrorDiagnostic, expression.Args[failure->index]->range,
              fmt::format("cannot initialize parameter {} of constructor '{}': {}", failure->index + 1,
-                         expression.target_name.Spelling(), FormatObjectFormationFailure(failure->failure)));
+                         expression.target_name.Spelling(), FormatCompletionFailure(failure->failure)));
+    EmitBasePathNotes(failure->failure);
     return;
   }
   const auto& plans = std::get<std::vector<ConversionSequence>>(formation);
@@ -6131,13 +6221,15 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
     if (failure->index == 0) {
       Diagnose(expression, kErrorDiagnostic, expression.Receiver->range,
                fmt::format("cannot initialize receiver of function '{}': {}", callee->name.Spelling(),
-                           FormatObjectFormationFailure(failure->failure)));
+                           FormatCompletionFailure(failure->failure)));
+      EmitBasePathNotes(failure->failure);
     } else {
       const std::size_t explicit_index = failure->index - 1;
       BOOST_ASSERT(explicit_index < expression.Args.size());
       Diagnose(expression, kErrorDiagnostic, expression.Args[explicit_index]->range,
                fmt::format("cannot initialize parameter {} of receiver function '{}': {}", explicit_index + 1,
-                           callee->name.Spelling(), FormatObjectFormationFailure(failure->failure)));
+                           callee->name.Spelling(), FormatCompletionFailure(failure->failure)));
+      EmitBasePathNotes(failure->failure);
     }
     return;
   }
@@ -6482,17 +6574,36 @@ void Sema::CheckVariableAttributes(VarDecl& declaration) {
 
 void Sema::ResolveStructDeclarationTypes(StructDecl& declaration) {
   llvm::SaveAndRestore<const NamespaceContext*> namespace_scope(namespace_context_, declaration.owning_namespace);
-  if (!declaration.base.empty()) {
-    const auto symbol =
-        ResolveName(declaration, declaration.base, fmt::format("unknown type '{}'", declaration.base.Spelling()));
+  // A base that cannot be used keeps a null entry, so each resolved type stays beside its written name.
+  declaration.base_types.assign(declaration.bases.size(), nullptr);
+  for (std::size_t index = 0; index < declaration.bases.size(); ++index) {
+    const NameSyntax& name = declaration.bases[index];
+    if (name.empty()) {
+      continue;
+    }
+    const auto symbol = ResolveName(declaration, name, fmt::format("unknown type '{}'", name.Spelling()));
     const StructDecl* structure = symbol.GetType();
     if (!structure) {
-      if (symbol)
-        Diagnose(declaration, kErrorDiagnostic, declaration.base.Range(),
-                 fmt::format("unknown type '{}'", declaration.base.Spelling()));
-    } else {
-      declaration.base_type = ast_context_->GetStructType(structure);
+      if (symbol) {
+        Diagnose(declaration, kErrorDiagnostic, name.Range(), fmt::format("unknown type '{}'", name.Spelling()));
+      }
+      continue;
     }
+    // Base subobjects are named by their unqualified struct names, which must therefore be distinct.
+    const auto previous =
+        std::find_if(declaration.base_types.begin(), declaration.base_types.begin() + index,
+                     [&](const StructType* base) { return base && base->GetDeclaration()->name == structure->name; });
+    if (previous != declaration.base_types.begin() + index) {
+      const NameSyntax& previous_name = declaration.bases[previous - declaration.base_types.begin()];
+      DiagnoseConflict(declaration, name.Range(),
+                       (*previous)->GetDeclaration() == structure
+                           ? fmt::format("struct '{}' is specified more than once as a direct base", structure->name)
+                           : fmt::format("direct bases of struct '{}' cannot share the name '{}'", declaration.name,
+                                         structure->name),
+                       previous_name.Range(), "previous direct base is specified here");
+      continue;
+    }
+    declaration.base_types[index] = ast_context_->GetStructType(structure);
   }
 
   if (declaration.VirtualDecl) {
@@ -6550,12 +6661,16 @@ void Sema::ValidateStructInheritance(TranslationUnitDecl& translation_unit) {
     BOOST_ASSERT(state == State::Unvisited);
     state = State::Visiting;
 
-    if (declaration.base_type) {
-      StructDecl* base = const_cast<StructDecl*>(declaration.base_type->GetDeclaration());
+    for (std::size_t index = 0; index < declaration.base_types.size(); ++index) {
+      if (!declaration.base_types[index]) {
+        continue;
+      }
+      StructDecl* base = const_cast<StructDecl*>(declaration.base_types[index]->GetDeclaration());
       BOOST_ASSERT(base);
+      const SourceRange base_range = declaration.bases[index].Range();
       const State base_state = states[base];
       if (base_state == State::Visiting) {
-        Diagnose(declaration, kErrorDiagnostic, declaration.base.Range(),
+        Diagnose(declaration, kErrorDiagnostic, base_range,
                  fmt::format("inheritance cycle involving struct '{}'", base->name));
         state = State::Invalid;
         return false;
@@ -6571,8 +6686,8 @@ void Sema::ValidateStructInheritance(TranslationUnitDecl& translation_unit) {
           continue;
         }
         DiagnoseConflict(*field, NamedDeclarationRange(*field),
-                         fmt::format("field '{}' conflicts with direct base '{}'", field->name, base->name),
-                         declaration.base.Range(), "direct base is specified here");
+                         fmt::format("field '{}' conflicts with direct base '{}'", field->name, base->name), base_range,
+                         "direct base is specified here");
         break;
       }
     }
@@ -6621,9 +6736,11 @@ void Sema::ValidateObjectContainment(TranslationUnitDecl& translation_unit) {
     structures.push_back(structure);
 
     auto& outgoing = graph[structure];
-    if (structure->base_type) {
-      outgoing.push_back(Edge{const_cast<StructDecl*>(structure->base_type->GetDeclaration()), structure,
-                              structure->base.Range(), false});
+    for (std::size_t index = 0; index < structure->base_types.size(); ++index) {
+      if (const StructType* base = structure->base_types[index]) {
+        outgoing.push_back(
+            Edge{const_cast<StructDecl*>(base->GetDeclaration()), structure, structure->bases[index].Range(), false});
+      }
     }
     for (const auto& field : structure->Fields) {
       if (!field || !field->type) {

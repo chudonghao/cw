@@ -65,6 +65,8 @@ Import cases use C++ declarations whose definitions belong to another translatio
 
 The `import_virtual` reference uses a free-function adapter for the ordinary implementation address. Its derived destructor leaves the base-vptr transition to the external base destructor, while CW also restores the imported base table in the caller. In `import_covariance`, Clang references external return-adjusting thunks and emits `Local`'s table with `linkonce_odr` linkage; CW emits private thunks shared by `Local` and `Another`, and named tables with external linkage. In `import_indirect`, Clang omits unused external declarations while CW retains them; neither creates direct references to the virtual implementations or a concrete table.
 
+Multiple inheritance cases use C++ classes with several non-virtual bases. Most dynamic and nontrivial supporting structs are imported, so their definitions belong to another translation unit and the IR stays focused. `multiple_inheritance_layout` compares base offsets with Clang, including repeated empty bases at distinct addresses, a primary base declared after another base, tail-padding reuse and a repeated base; the LLVM struct types may differ where both represent the same offsets. `multiple_inheritance_conversions` covers nonzero-offset and null-preserving conversions, a path through a repeated base, in-place base construction and member access through a pointer, which reaches the base at its offset without a null check. `multiple_inheritance_dispatch` and `multiple_inheritance_covariance` compare vtable groups, secondary vtables and receiver- and result-adjusting thunks, including a primary-vtable entry that only adjusts the result; CW thunks are private, named `thunk(<receiver>,<result>)` and keep null pointer results with `select`. `multiple_inheritance_lifetimes` follows the virtual lifetime case: CW stores every vtable pointer of the group when Both's dispatch starts and restores each dynamic base's group before the members are destroyed. `multiple_inheritance_calls` checks call classification across several bases. In `import_multiple_inheritance`, Clang refers to the external thunk of the imported override, while CW defines a private one. `multiple_inheritance_repeated_bases` gives the two subobjects of a repeated dynamic base different final overriders, so one secondary vtable holds both a direct entry and a thunk.
+
 The `symbol_types` case covers stable semantic identities: same-width integers, reference modes,
 const at different pointer layers, evaluated array bounds, ordinary and virtual function pointers,
 namespaced `main`, and UTF-8 names. Its C++ address objects retain external declarations for comparison;
@@ -189,6 +191,15 @@ The cases, in registration order, are:
 109. `import_covariance`
 110. `import_indirect`
 111. `symbol_types`
+112. `constructor_body_initialization`
+113. `multiple_inheritance_layout`
+114. `multiple_inheritance_conversions`
+115. `multiple_inheritance_dispatch`
+116. `multiple_inheritance_covariance`
+117. `multiple_inheritance_lifetimes`
+118. `multiple_inheritance_calls`
+119. `import_multiple_inheritance`
+120. `multiple_inheritance_repeated_bases`
 
 ## Generating Clang References
 

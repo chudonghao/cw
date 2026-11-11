@@ -525,10 +525,11 @@ struct StructDecl : NamedDecl {
   std::unique_ptr<VirtualDecl> VirtualDecl{};        ///< Virtual function block.
   std::vector<std::unique_ptr<FieldDecl>> Fields{};  ///< Field declarations.
 
-  NameSyntax base{};           ///< Optional base class name.
-  bool is_declared_trivial{};  ///< Source-level `trivial` modifier.
+  std::vector<NameSyntax> bases{};  ///< Written direct base names, in declaration order.
+  bool is_declared_trivial{};       ///< Source-level `trivial` modifier.
 
-  const StructType* base_type{};                       ///< Non-owning resolved base type.
+  /// Non-owning resolved direct base types, parallel to `bases`; null where resolution failed.
+  std::vector<const StructType*> base_types{};
   TypeTriviality triviality{TypeTriviality::Unknown};  ///< Final semantic triviality classification.
   bool is_abstract{};                                  ///< Whether a final virtual slot remains abstract.
 
@@ -592,8 +593,9 @@ struct VirtualFunctionDecl : FunctionDecl {
   bool is_abstract{};  ///< Whether the declaration is explicitly abstract.
   bool is_override{};  ///< Whether the declaration is explicitly an override.
 
-  VirtualFunctionDecl* overridden_virtual_function{};  ///< Non-owning directly overridden declaration.
-  FunctionDecl* implementation{};                      ///< Non-owning associated ordinary function declaration.
+  /// Non-owning directly overridden declarations, in base declaration order and without duplicates.
+  std::vector<VirtualFunctionDecl*> overridden_virtual_functions{};
+  FunctionDecl* implementation{};  ///< Non-owning associated ordinary function declaration.
 
   NodeKind GetKind() const override { return NodeKind::VirtualFunctionDecl; }
   void Accept(ASTVisitor& visitor) override;

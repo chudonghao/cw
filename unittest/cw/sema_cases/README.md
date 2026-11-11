@@ -75,6 +75,10 @@ The cases, in registration order, are:
 36. `callable_object`
 37. `fixed_array`
 38. `pointer_arithmetic`
+39. `multiple_inheritance_lookup`
+40. `multiple_inheritance_conversion`
+41. `multiple_inheritance_construction`
+42. `multiple_inheritance_virtual`
 
 ## Generating Clang References
 

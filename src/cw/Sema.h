@@ -17,6 +17,7 @@
 
 #include "Diagnostic.h"
 #include "NameLookup.h"
+#include "SemaConversion.h"
 #include "Source.h"
 #include "ast.h"
 
@@ -78,7 +79,6 @@ class Sema {
   enum class ExpressionUse {
     General,
     InitializationStatement,
-    ConstructorPrologue,
   };
 
   struct ConstructionResultContext {
@@ -205,6 +205,7 @@ class Sema {
   QualType ResolveTypeImpl(TypeSyntax& type_syntax);
   void ValidateInitialLayouts(TranslationUnitDecl& translation_unit);
   bool HasLayoutPrerequisites(const Type& type);
+  void EmitBasePathNotes(const sema_detail::CompletionFailure& failure);
   bool ValidateStructLayout(StructDecl& declaration);
   bool ValidateObjectLayout(Node& owner, const Type& type);
   bool ValidateLayoutUse(Node& owner, const Type& type);
@@ -261,7 +262,7 @@ class Sema {
   void AnalyzeCompoundStmt(CompoundStmt& statement, bool creates_scope,
                            const ResultBlockAnalysisContext& result_block_context, bool is_result_block = false);
   void AnalyzeStmt(Stmt& statement, const ResultBlockAnalysisContext& result_block_context,
-                   bool forwards_result_position = false, bool is_constructor_prologue = false);
+                   bool forwards_result_position = false);
   void AnalyzeReturnStmt(ReturnStmt& statement, const ResultBlockAnalysisContext& result_block_context);
   void AnalyzeResultBlockTailExpressions(CompoundStmt& statement,
                                          const ResultBlockAnalysisContext& result_block_context);

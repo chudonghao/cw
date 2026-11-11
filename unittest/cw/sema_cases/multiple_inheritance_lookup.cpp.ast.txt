@@ -1,0 +1,65 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address}} <multiple_inheritance_lookup.cpp:1:1, line:3:1> line:1:8 referenced struct Base definition external-linkage
+| |-DefinitionData pass_in_registers aggregate standard_layout trivially_copyable pod trivial literal
+| | |-DefaultConstructor exists trivial needs_implicit
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial needs_implicit
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct Base
+| `-FieldDecl {{address:1}} <line:2:3, col:7> col:7 referenced value 'int'
+|-CXXRecordDecl {{address}} <line:4:1, line:6:1> line:4:8 referenced struct Left definition external-linkage
+| |-DefinitionData pass_in_registers aggregate trivially_copyable trivial literal
+| | |-DefaultConstructor exists trivial needs_implicit
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial needs_implicit
+| |-public 'Base'
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct Left
+| `-FieldDecl {{address:2}} <line:5:3, col:7> col:7 referenced left 'int'
+|-CXXRecordDecl {{address}} <line:7:1, line:9:1> line:7:8 referenced struct Right definition external-linkage
+| |-DefinitionData pass_in_registers aggregate trivially_copyable trivial literal
+| | |-DefaultConstructor exists trivial needs_implicit
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial needs_implicit
+| |-public 'Base'
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct Right
+| `-FieldDecl {{address:3}} <line:8:3, col:7> col:7 referenced value 'int'
+|-CXXRecordDecl {{address}} <line:10:1, col:28> col:8 referenced struct Pair definition external-linkage
+| |-DefinitionData pass_in_registers aggregate trivially_copyable trivial literal
+| | |-DefaultConstructor exists trivial needs_implicit
+| | |-CopyConstructor simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveConstructor exists simple trivial needs_implicit
+| | |-CopyAssignment simple trivial has_const_param needs_implicit implicit_has_const_param
+| | |-MoveAssignment exists simple trivial needs_implicit
+| | `-Destructor simple irrelevant trivial needs_implicit
+| |-public 'Left'
+| |-public 'Right'
+| `-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit struct Pair
+`-FunctionDecl {{address}} <line:11:1, line:16:1> line:11:6 MultipleInheritanceLookup 'void (Pair)' external-linkage
+  |-ParmVarDecl {{address:4}} <col:32, col:37> col:37 used pair 'Pair'
+  `-CompoundStmt {{address}} <col:43, line:16:1>
+    |-MemberExpr {{address}} <line:12:3, col:8> 'int' lvalue .left {{address:2}}
+    | `-ImplicitCastExpr {{address}} <col:3> 'Left' lvalue <UncheckedDerivedToBase (Left)>
+    |   `-DeclRefExpr {{address}} <col:3> 'Pair' lvalue ParmVar {{address:4}} 'pair' 'Pair'
+    |-MemberExpr {{address}} <line:13:3, col:28> 'int' lvalue .value {{address:1}}
+    | `-ImplicitCastExpr {{address}} <col:3, col:26> 'Base' lvalue <UncheckedDerivedToBase (Base)>
+    |   `-CXXStaticCastExpr {{address}} <col:3, col:26> 'Left' lvalue static_cast<Left &> <NoOp>
+    |     `-ImplicitCastExpr {{address}} <col:22> 'Left' lvalue <DerivedToBase (Left)> part_of_explicit_cast
+    |       `-DeclRefExpr {{address}} <col:22> 'Pair' lvalue ParmVar {{address:4}} 'pair' 'Pair'
+    |-MemberExpr {{address}} <line:14:3, col:29> 'int' lvalue .value {{address:3}}
+    | `-CXXStaticCastExpr {{address}} <col:3, col:27> 'Right' lvalue static_cast<Right &> <NoOp>
+    |   `-ImplicitCastExpr {{address}} <col:23> 'Right' lvalue <DerivedToBase (Right)> part_of_explicit_cast
+    |     `-DeclRefExpr {{address}} <col:23> 'Pair' lvalue ParmVar {{address:4}} 'pair' 'Pair'
+    `-MemberExpr {{address}} <line:15:3, col:49> 'int' lvalue .value {{address:1}}
+      `-CXXStaticCastExpr {{address}} <col:3, col:47> 'Base' lvalue static_cast<Base &> <NoOp>
+        `-ImplicitCastExpr {{address}} <col:22, col:46> 'Base' lvalue <DerivedToBase (Base)> part_of_explicit_cast
+          `-CXXStaticCastExpr {{address}} <col:22, col:46> 'Right' lvalue static_cast<Right &> <NoOp>
+            `-ImplicitCastExpr {{address}} <col:42> 'Right' lvalue <DerivedToBase (Right)> part_of_explicit_cast
+              `-DeclRefExpr {{address}} <col:42> 'Pair' lvalue ParmVar {{address:4}} 'pair' 'Pair'

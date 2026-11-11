@@ -109,9 +109,9 @@ void WriteFunction(const FunctionDecl& function, llvm::raw_ostream& output) {
 void WriteStruct(const StructDecl& structure, unsigned indent, llvm::raw_ostream& output) {
   if (structure.is_declared_trivial) output << "trivial ";
   output << "struct " << structure.name;
-  if (structure.base_type) {
-    output << " : ";
-    WriteType(QualType(structure.base_type), output);
+  for (std::size_t index = 0; index < structure.base_types.size(); ++index) {
+    output << (index == 0 ? " : " : ", ");
+    WriteType(QualType(structure.base_types[index]), output);
   }
   output << " {\n";
   if (structure.VirtualDecl) {

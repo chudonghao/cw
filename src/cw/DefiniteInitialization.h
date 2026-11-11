@@ -18,6 +18,8 @@ enum class DefiniteInitializationFindingKind {
   RepeatedInitialization,
   OutOfOrderInitialization,
   OutOfOrderSubobjectInitialization,
+  PartialObjectDelegation,
+  DelegationAfterUse,
   ConflictingStates,
   UninitializedResult,
 };
@@ -30,6 +32,7 @@ struct DefiniteInitializationFinding {
   DefiniteInitializationFindingKind kind{};
   const Node* owner{};                ///< Non-owning AST node that locates the finding.
   SourceRange range{};                ///< Preferred source range for the diagnostic.
+  SourceRange related_range{};        ///< Earlier source range the finding depends on, if any.
   const VarDecl* declaration{};       ///< Non-owning declaration whose state caused the finding.
   const FunctionDecl* this_owner{};   ///< Non-owning constructor owning a tracked `this` root.
   std::size_t program_point{};        ///< Stable structural execution point used for ordering.
@@ -37,7 +40,10 @@ struct DefiniteInitializationFinding {
 };
 
 /// \brief Stable diagnostics and constructor completion boundaries, without AST mutation.
-/// Delegating constructors update initialization state but report no local completion boundaries.
+/// A delegation updates initialization state but is not a local completion boundary: the
+/// delegated constructor owns that boundary. A current object without subobjects is complete
+/// at entry, even when a later path delegates; such a path may still delegate only once, and
+/// only before it uses `this`.
 struct DefiniteInitializationResult {
   std::vector<DefiniteInitializationFinding> findings;
   std::vector<const ExprStmt*> this_initialization_completions;

@@ -1,8 +1,8 @@
 %struct.Derived = type { %struct.Base }
 %struct.Base = type { ptr }
 
-@"cw:Base:vtable" = constant [4 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Base)i32", ptr @"cw:Keep:func(&copy Base)i32"], align 8
-@"cw:Derived:vtable" = constant [4 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Derived)i32", ptr @"cw:Keep:func(&copy Base)i32"], align 8
+@"cw:Base:vtable" = constant { [4 x ptr] } { [4 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Base)i32", ptr @"cw:Keep:func(&copy Base)i32"] }, align 8
+@"cw:Derived:vtable" = constant { [4 x ptr] } { [4 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Derived)i32", ptr @"cw:Keep:func(&copy Base)i32"] }, align 8
 
 define noundef i32 @"cw:Read:func(&copy Base)i32"(ptr noundef nonnull align 8 dereferenceable(8) %this) {
 entry:
@@ -36,54 +36,54 @@ entry:
 
 define noundef ptr @"cw:Base:ctor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Base:ctor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Base:dtor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Derived:ctor():complete"(ptr noundef returned %this) {
 entry:
   %call = call noundef ptr @"cw:Base:ctor():base"(ptr noundef returned %this)
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Derived:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Derived:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Derived:ctor():base"(ptr noundef returned %this) {
 entry:
   %call = call noundef ptr @"cw:Base:ctor():base"(ptr noundef returned %this)
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Derived:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Derived:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Derived:dtor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Derived:vtable", i64 0, i64 2), ptr %this, align 8
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Derived:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call = call noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this)
   ret ptr %this
 }
 
 define noundef ptr @"cw:Derived:dtor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Derived:vtable", i64 0, i64 2), ptr %this, align 8
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Derived:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call = call noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this)
   ret ptr %this
 }

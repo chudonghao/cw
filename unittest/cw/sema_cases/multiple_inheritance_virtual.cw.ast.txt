@@ -1,0 +1,119 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:node}} <multiple_inheritance_virtual.cw:1:1, line:3:2> Node abstract
+| `-VirtualDecl {{address}} <line:2:3, col:56>
+|   `-VirtualFunctionDecl {{address:node_visit}} <col:13, col:54> Visit 'func (&copy Node) i32' abstract
+|     |-ParmVarDecl {{address}} <col:33, col:48> this '&copy Node'
+|     | `-ReferenceType {{address}} <col:38, col:48> '&copy'
+|     |   `-NamedType {{address}} <col:44, col:48> 'Node'
+|     `-ReturnVarDecl {{address}} <col:50, col:53> 'i32'
+|       `-BuiltinType {{address}} <col:50, col:53> 'i32'
+|-ConstructorDecl {{address:node_constructor}} <line:5:1, col:15> Node target Struct {{address:node}} 'Node' 'ctor Node()'
+| `-CompoundStmt {{address}} <col:13, col:15>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-DestructorDecl {{address}} <line:7:1, col:15> Node target Struct {{address:node}} 'Node' 'dtor Node()'
+| `-CompoundStmt {{address}} <col:13, col:15>
+|-StructDecl {{address:left}} <line:9:1, line:11:2> Left : 'Node'
+| |-BaseType 'Node' Struct {{address:node}} 'Node'
+| `-VirtualDecl {{address}} <line:10:3, col:56>
+|   `-VirtualFunctionDecl {{address:left_visit}} <col:13, col:54> Visit 'func (&copy Left) i32' override overrides VirtualFunction {{address:node_visit}} 'Visit' 'func (&copy Node) i32' implementation Function {{address:left_visit_definition}} 'Visit' 'func (&copy Left) i32'
+|     |-ParmVarDecl {{address}} <col:33, col:48> this '&copy Left'
+|     | `-ReferenceType {{address}} <col:38, col:48> '&copy'
+|     |   `-NamedType {{address}} <col:44, col:48> 'Left'
+|     `-ReturnVarDecl {{address}} <col:50, col:53> 'i32'
+|       `-BuiltinType {{address}} <col:50, col:53> 'i32'
+|-FunctionDecl {{address:left_visit_definition}} <line:13:1, col:38> Visit 'func (&copy Left) i32' virtual-declaration VirtualFunction {{address:left_visit}} 'Visit' 'func (&copy Left) i32'
+| |-ParmVarDecl {{address}} <col:12, col:27> this '&copy Left'
+| | `-ReferenceType {{address}} <col:17, col:27> '&copy'
+| |   `-NamedType {{address}} <col:23, col:27> 'Left'
+| |-ReturnVarDecl {{address:left_result}} <col:29, col:32> 'i32'
+| | `-BuiltinType {{address}} <col:29, col:32> 'i32'
+| `-CompoundStmt {{address}} <col:33, col:38>
+|   `-ImplicitResultInitializationExpr {{address}} <col:35, col:36> 'void' non-object ReturnVar {{address:left_result}} 'i32'
+|     `-ImplicitCastExpr {{address}} <col:35, col:36> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|       `-IntegerLiteral {{address}} <col:35, col:36> 'comptime_int' non-object 1
+|-ConstructorDecl {{address:left_constructor}} <line:15:1, col:37> Left target Struct {{address:left}} 'Left' 'ctor Left()'
+| `-CompoundStmt {{address}} <col:13, col:37>
+|   |-ExprStmt {{address}} <col:15, col:35>
+|   | `-InitializationExpr {{address}} <col:15, col:34> 'void' non-object
+|   |   |-BaseSubobjectExpr {{address}} <col:15, col:24> 'Node' lvalue .Node Struct {{address:node}} 'Node'
+|   |   | `-ThisExpr {{address}} <col:15, col:19> 'Left' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:28, col:34> 'Node' pure-rvalue base-subobject target <col:28, col:32> 'Node' Constructor {{address:node_constructor}} 'Node' 'ctor Node()'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-DestructorDecl {{address}} <line:17:1, col:15> Left target Struct {{address:left}} 'Left' 'dtor Left()'
+| `-CompoundStmt {{address}} <col:13, col:15>
+|-StructDecl {{address:right}} <line:19:1, col:23> Right abstract : 'Node'
+| `-BaseType 'Node' Struct {{address:node}} 'Node'
+|-ConstructorDecl {{address:right_constructor}} <line:21:1, col:38> Right target Struct {{address:right}} 'Right' 'ctor Right()'
+| `-CompoundStmt {{address}} <col:14, col:38>
+|   |-ExprStmt {{address}} <col:16, col:36>
+|   | `-InitializationExpr {{address}} <col:16, col:35> 'void' non-object
+|   |   |-BaseSubobjectExpr {{address}} <col:16, col:25> 'Node' lvalue .Node Struct {{address:node}} 'Node'
+|   |   | `-ThisExpr {{address}} <col:16, col:20> 'Right' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:29, col:35> 'Node' pure-rvalue base-subobject target <col:29, col:33> 'Node' Constructor {{address:node_constructor}} 'Node' 'ctor Node()'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-DestructorDecl {{address}} <line:23:1, col:16> Right target Struct {{address:right}} 'Right' 'dtor Right()'
+| `-CompoundStmt {{address}} <col:14, col:16>
+|-StructDecl {{address:partial}} <line:25:1, col:32> Partial abstract : 'Left', 'Right'
+| |-BaseType 'Left' Struct {{address:left}} 'Left'
+| `-BaseType 'Right' Struct {{address:right}} 'Right'
+|-ConstructorDecl {{address}} <line:27:1, line:30:2> Partial target Struct {{address:partial}} 'Partial' 'ctor Partial()'
+| `-CompoundStmt {{address}} <line:27:16, line:30:2>
+|   |-ExprStmt {{address}} <line:28:3, col:23>
+|   | `-InitializationExpr {{address}} <col:3, col:22> 'void' non-object
+|   |   |-BaseSubobjectExpr {{address}} <col:3, col:12> 'Left' lvalue .Left Struct {{address:left}} 'Left'
+|   |   | `-ThisExpr {{address}} <col:3, col:7> 'Partial' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:16, col:22> 'Left' pure-rvalue base-subobject target <col:16, col:20> 'Left' Constructor {{address:left_constructor}} 'Left' 'ctor Left()'
+|   |-ExprStmt {{address}} <line:29:3, col:25>
+|   | `-InitializationExpr {{address}} <col:3, col:24> 'void' non-object
+|   |   |-BaseSubobjectExpr {{address}} <col:3, col:13> 'Right' lvalue .Right Struct {{address:right}} 'Right'
+|   |   | `-ThisExpr {{address}} <col:3, col:7> 'Partial' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:17, col:24> 'Right' pure-rvalue base-subobject target <col:17, col:22> 'Right' Constructor {{address:right_constructor}} 'Right' 'ctor Right()'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-DestructorDecl {{address}} <line:32:1, col:18> Partial target Struct {{address:partial}} 'Partial' 'dtor Partial()'
+| `-CompoundStmt {{address}} <col:16, col:18>
+|-StructDecl {{address:both}} <line:34:1, line:36:2> Both : 'Left', 'Right'
+| |-BaseType 'Left' Struct {{address:left}} 'Left'
+| |-BaseType 'Right' Struct {{address:right}} 'Right'
+| `-VirtualDecl {{address}} <line:35:3, col:56>
+|   `-VirtualFunctionDecl {{address:both_visit}} <col:13, col:54> Visit 'func (&copy Both) i32' override overrides VirtualFunction {{address:left_visit}} 'Visit' 'func (&copy Left) i32' VirtualFunction {{address:node_visit}} 'Visit' 'func (&copy Node) i32' implementation Function {{address:both_visit_definition}} 'Visit' 'func (&copy Both) i32'
+|     |-ParmVarDecl {{address}} <col:33, col:48> this '&copy Both'
+|     | `-ReferenceType {{address}} <col:38, col:48> '&copy'
+|     |   `-NamedType {{address}} <col:44, col:48> 'Both'
+|     `-ReturnVarDecl {{address}} <col:50, col:53> 'i32'
+|       `-BuiltinType {{address}} <col:50, col:53> 'i32'
+|-FunctionDecl {{address:both_visit_definition}} <line:38:1, col:38> Visit 'func (&copy Both) i32' virtual-declaration VirtualFunction {{address:both_visit}} 'Visit' 'func (&copy Both) i32'
+| |-ParmVarDecl {{address}} <col:12, col:27> this '&copy Both'
+| | `-ReferenceType {{address}} <col:17, col:27> '&copy'
+| |   `-NamedType {{address}} <col:23, col:27> 'Both'
+| |-ReturnVarDecl {{address:both_result}} <col:29, col:32> 'i32'
+| | `-BuiltinType {{address}} <col:29, col:32> 'i32'
+| `-CompoundStmt {{address}} <col:33, col:38>
+|   `-ImplicitResultInitializationExpr {{address}} <col:35, col:36> 'void' non-object ReturnVar {{address:both_result}} 'i32'
+|     `-ImplicitCastExpr {{address}} <col:35, col:36> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|       `-IntegerLiteral {{address}} <col:35, col:36> 'comptime_int' non-object 2
+|-ConstructorDecl {{address}} <line:40:1, line:43:2> Both target Struct {{address:both}} 'Both' 'ctor Both()'
+| `-CompoundStmt {{address}} <line:40:13, line:43:2>
+|   |-ExprStmt {{address}} <line:41:3, col:23>
+|   | `-InitializationExpr {{address}} <col:3, col:22> 'void' non-object
+|   |   |-BaseSubobjectExpr {{address}} <col:3, col:12> 'Left' lvalue .Left Struct {{address:left}} 'Left'
+|   |   | `-ThisExpr {{address}} <col:3, col:7> 'Both' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:16, col:22> 'Left' pure-rvalue base-subobject target <col:16, col:20> 'Left' Constructor {{address:left_constructor}} 'Left' 'ctor Left()'
+|   |-ExprStmt {{address}} <line:42:3, col:25>
+|   | `-InitializationExpr {{address}} <col:3, col:24> 'void' non-object
+|   |   |-BaseSubobjectExpr {{address}} <col:3, col:13> 'Right' lvalue .Right Struct {{address:right}} 'Right'
+|   |   | `-ThisExpr {{address}} <col:3, col:7> 'Both' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:17, col:24> 'Right' pure-rvalue base-subobject target <col:17, col:22> 'Right' Constructor {{address:right_constructor}} 'Right' 'ctor Right()'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-DestructorDecl {{address}} <line:45:1, col:15> Both target Struct {{address:both}} 'Both' 'dtor Both()'
+| `-CompoundStmt {{address}} <col:13, col:15>
+`-FunctionDecl {{address}} <line:47:1, line:49:2> MultipleInheritanceVirtual 'func (&copy Both) i32'
+  |-ParmVarDecl {{address:both_parameter}} <line:47:33, col:48> both '&copy Both'
+  | `-ReferenceType {{address}} <col:38, col:48> '&copy'
+  |   `-NamedType {{address}} <col:44, col:48> 'Both'
+  |-ReturnVarDecl {{address:virtual_result}} <col:50, col:53> 'i32'
+  | `-BuiltinType {{address}} <col:50, col:53> 'i32'
+  `-CompoundStmt {{address}} <col:54, line:49:2>
+    `-ImplicitResultInitializationExpr {{address}} <line:48:3, col:14> 'void' non-object ReturnVar {{address:virtual_result}} 'i32'
+      `-CallExpr {{address}} <col:3, col:14> 'i32' pure-rvalue
+        |-DeclRefExpr {{address}} <col:3, col:8> 'func (&copy Both) i32' non-object 'Visit' VirtualFunction {{address:both_visit}} 'Visit' 'func (&copy Both) i32'
+        `-DeclRefExpr {{address}} <col:9, col:13> 'const Both' lvalue 'both' ParmVar {{address:both_parameter}} 'both' '&copy Both'
