@@ -17,6 +17,10 @@ func MarkPointer(twice *Twice) *Mark { twice }
 func SecondPoint(twice &mut Twice) &mut Point { twice.Second }
 func AssignPoint(twice &mut Twice, source &copy Point) { twice.Second.Point = source; }
 
+// Member access through a pointer reaches the base at its offset without a null check.
+func ReadWide(pair *Pair) i64 { pair->b }
+func ReadMark(twice *Twice) i32 { twice->Second.m }
+
 // Construction initializes each base in place, including the one at a nonzero offset.
 import struct Left { l i32; }
 import ctor Left(value i32);

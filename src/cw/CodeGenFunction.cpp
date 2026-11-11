@@ -49,6 +49,14 @@ bool HasArrayElements(const ArrayType& type) {
   return true;
 }
 
+const ImplicitCastExpr* AsBaseSubobjectCast(const Expr& expression) {
+  if (expression.GetKind() != NodeKind::ImplicitCastExpr) {
+    return nullptr;
+  }
+  const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
+  return cast.conversion_kind == ImplicitConversionKind::BaseSubobject ? &cast : nullptr;
+}
+
 }  // namespace
 
 CodeGenFunction::ConditionalEvaluation::ConditionalEvaluation(CodeGenFunction& owner, llvm::BasicBlock* entry,
@@ -1163,12 +1171,13 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
       return EmitMemberExpr(static_cast<const MemberExpr&>(expression));
     case NodeKind::BaseSubobjectExpr: {
       const auto& base = static_cast<const BaseSubobjectExpr&>(expression);
-      return EmitBaseSubobject(*base.Base, base.base_path, base.op == MemberAccessKind::Arrow);
+      return EmitBaseSubobject(*base.Base, base.base_path,
+                               base.op == MemberAccessKind::Arrow ? BaseSource::Pointer : BaseSource::Object);
     }
     case NodeKind::ImplicitCastExpr: {
       const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
       if (cast.conversion_kind == ImplicitConversionKind::BaseSubobject) {
-        return EmitBaseSubobject(*cast.SubExpr, cast.base_path, /*through_pointer=*/false);
+        return EmitBaseSubobject(*cast.SubExpr, cast.base_path, BaseSource::Object);
       }
       if (cast.conversion_kind == ImplicitConversionKind::NoOp ||
           cast.conversion_kind == ImplicitConversionKind::Identity) {
@@ -1344,7 +1353,8 @@ Address CodeGenFunction::EmitLValue(const Expr& expression) {
 }
 
 Address CodeGenFunction::EmitBaseSubobject(const Expr& source, const std::vector<const StructDecl*>& path,
-                                           bool through_pointer) {
+                                           BaseSource origin) {
+  const bool through_pointer = origin != BaseSource::Object;
   const Type* type = source.type.GetTypePtr();
   if (through_pointer) {
     type = type->AsPointerType()->GetPointee().GetTypePtr();
@@ -1376,7 +1386,7 @@ Address CodeGenFunction::EmitBaseSubobject(const Expr& source, const std::vector
     declaration = base;
   }
   // Pointer conversions preserve null; zero-offset base paths need no runtime check.
-  if (through_pointer && offset != 0) {
+  if (origin == BaseSource::PointerConversion && offset != 0) {
     auto* null = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(original->getType()));
     address.pointer = builder_.CreateSelect(builder_.CreateICmpEQ(original, null), null, address.pointer, "base.null");
   }
@@ -1394,9 +1404,16 @@ Address CodeGenFunction::EmitMemberExpr(const MemberExpr& expression) {
     codegen_.DiagnoseTypeConversionFailure(expression, *failure, "this member access type");
     return {};
   }
-  Address base = expression.op == MemberAccessKind::Arrow
-                     ? MakeAddress(EmitScalarExpr(*expression.Base), std::get<llvm::Type*>(conversion), base_type)
-                     : EmitLValue(*expression.Base);
+  Address base;
+  if (expression.op == MemberAccessKind::Dot) {
+    base = EmitLValue(*expression.Base);
+  } else if (const auto* cast = AsBaseSubobjectCast(*expression.Base)) {
+    // Sema keeps the lookup path of an inherited field as a cast of the pointer. Member access
+    // reaches the base at its offset; only pointer conversions keep null.
+    base = EmitBaseSubobject(*cast->SubExpr, cast->base_path, BaseSource::Pointer);
+  } else {
+    base = MakeAddress(EmitScalarExpr(*expression.Base), std::get<llvm::Type*>(conversion), base_type);
+  }
   if (!base) {
     return {};
   }
@@ -1695,7 +1712,7 @@ llvm::Value* CodeGenFunction::EmitScalarExpr(const Expr& expression) {
       const auto& cast = static_cast<const ImplicitCastExpr&>(expression);
       switch (cast.conversion_kind) {
         case ImplicitConversionKind::BaseSubobject:
-          return EmitBaseSubobject(*cast.SubExpr, cast.base_path, /*through_pointer=*/true).pointer;
+          return EmitBaseSubobject(*cast.SubExpr, cast.base_path, BaseSource::PointerConversion).pointer;
         case ImplicitConversionKind::NullToPointer:
           return llvm::Constant::getNullValue(result_type);
         case ImplicitConversionKind::LValueToRValue: {

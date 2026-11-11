@@ -87,6 +87,35 @@ entry:
   ret void
 }
 
+define noundef i64 @"cw:ReadWide:func(*Pair)i64"(ptr noundef %pair) {
+entry:
+  %.result = alloca i64, align 8
+  %pair.addr = alloca ptr, align 8
+  store ptr %pair, ptr %pair.addr, align 8
+  %0 = load ptr, ptr %pair.addr, align 8
+  %base = getelementptr inbounds nuw %struct.Pair, ptr %0, i32 0, i32 1
+  %b = getelementptr inbounds nuw %struct.Wide, ptr %base, i32 0, i32 0
+  %1 = load i64, ptr %b, align 8
+  store i64 %1, ptr %.result, align 8
+  %2 = load i64, ptr %.result, align 8
+  ret i64 %2
+}
+
+define noundef i32 @"cw:ReadMark:func(*Twice)i32"(ptr noundef %twice) {
+entry:
+  %.result = alloca i32, align 4
+  %twice.addr = alloca ptr, align 8
+  store ptr %twice, ptr %twice.addr, align 8
+  %0 = load ptr, ptr %twice.addr, align 8
+  %base = getelementptr inbounds nuw %struct.Twice, ptr %0, i32 0, i32 1
+  %base1 = getelementptr inbounds nuw %struct.Second, ptr %base, i32 0, i32 1
+  %m = getelementptr inbounds nuw %struct.Mark, ptr %base1, i32 0, i32 0
+  %1 = load i32, ptr %m, align 4
+  store i32 %1, ptr %.result, align 4
+  %2 = load i32, ptr %.result, align 4
+  ret i32 %2
+}
+
 declare noundef ptr @"cw:Left:ctor(i32):complete"(ptr noundef returned, i32 noundef)
 
 declare noundef ptr @"cw:Left:ctor(i32):base"(ptr noundef returned, i32 noundef)

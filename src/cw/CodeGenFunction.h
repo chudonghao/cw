@@ -184,7 +184,10 @@ class CodeGenFunction {
   bool EmitIgnoredExpr(const Expr& expression);
   bool EmitIgnoredConditionalExpr(const ConditionalOperator& expression);
   Address EmitLValue(const Expr& expression);
-  Address EmitBaseSubobject(const Expr& source, const std::vector<const StructDecl*>& path, bool through_pointer);
+  /// \brief Where a base path starts. Only a pointer conversion keeps null; member access through a
+  /// pointer reaches the base at its offset.
+  enum class BaseSource { Object, Pointer, PointerConversion };
+  Address EmitBaseSubobject(const Expr& source, const std::vector<const StructDecl*>& path, BaseSource origin);
   Address EmitMemberExpr(const MemberExpr& expression);
   Address EmitConditionalLValue(const ConditionalOperator& expression);
 

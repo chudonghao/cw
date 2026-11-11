@@ -5,6 +5,9 @@ source_filename = "multiple_inheritance_conversions.cpp"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32"
 target triple = "arm64-apple-macosx26.0.0"
 
+%struct.Wide = type { i64 }
+%struct.Mark = type { i32 }
+
 ; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
 define noundef nonnull align 8 dereferenceable(8) ptr @_Z13WideReferenceR4Pair(ptr noundef nonnull align 8 dereferenceable(20) %pair) #0 {
 entry:
@@ -86,6 +89,31 @@ entry:
 
 ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
 declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
+
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef i64 @_Z8ReadWideP4Pair(ptr noundef %pair) #0 {
+entry:
+  %pair.addr = alloca ptr, align 8
+  store ptr %pair, ptr %pair.addr, align 8
+  %0 = load ptr, ptr %pair.addr, align 8
+  %add.ptr = getelementptr inbounds i8, ptr %0, i64 8
+  %b = getelementptr inbounds nuw %struct.Wide, ptr %add.ptr, i32 0, i32 0
+  %1 = load i64, ptr %b, align 8
+  ret i64 %1
+}
+
+; Function Attrs: mustprogress noinline nounwind optnone ssp uwtable(sync)
+define noundef i32 @_Z8ReadMarkP5Twice(ptr noundef %twice) #0 {
+entry:
+  %twice.addr = alloca ptr, align 8
+  store ptr %twice, ptr %twice.addr, align 8
+  %0 = load ptr, ptr %twice.addr, align 8
+  %add.ptr = getelementptr inbounds i8, ptr %0, i64 4
+  %add.ptr1 = getelementptr inbounds i8, ptr %add.ptr, i64 4
+  %m = getelementptr inbounds nuw %struct.Mark, ptr %add.ptr1, i32 0, i32 0
+  %1 = load i32, ptr %m, align 4
+  ret i32 %1
+}
 
 ; Function Attrs: mustprogress noinline optnone ssp uwtable(sync)
 define noundef ptr @_ZN4JoinC2Ev(ptr noundef nonnull returned align 8 dereferenceable(16) %this) unnamed_addr #2 personality ptr @__gxx_personality_v0 {

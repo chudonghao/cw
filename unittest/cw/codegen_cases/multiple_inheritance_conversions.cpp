@@ -29,6 +29,10 @@ void AssignPoint(Twice& twice, const Point& source) {
   static_cast<Point&>(static_cast<Second&>(twice)) = source;
 }
 
+// Member access through a pointer reaches the base at its offset without a null check.
+long long ReadWide(Pair* pair) { return pair->b; }
+int ReadMark(Twice* twice) { return static_cast<Second&>(*twice).m; }
+
 // Left and Right are defined in another translation unit, as CW's imported declarations are.
 // Construction initializes each base in place, including the one at a nonzero offset.
 struct Left {
