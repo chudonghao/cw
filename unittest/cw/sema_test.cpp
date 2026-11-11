@@ -2262,6 +2262,7 @@ dtor S() {})");
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |-ConstructorDecl {{address}} <line:3:1, col:31> S target Struct {{address:structure}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:31>
+|   |-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |   `-ExprStmt {{address}} <col:12, col:29>
 |     `-InitializationExpr {{address}} <col:12, col:28> 'void' non-object
 |       |-ThisExpr {{address}} <col:12, col:16> 'S' lvalue this
@@ -2382,7 +2383,6 @@ ctor S(value bool) { this := value; }
 dtor S() { this := S(1); this; }
 func outside() { this; })");
 
-  ExpectError(2, 14, "constructor delegation must be the first complete statement in the constructor body", 4);
   ExpectError(3, 29, "constructor delegation must directly construct the current type 'S'", 5);
   ExpectError(4, 11, "only a constructor can initialize the current object", 4);
   ExpectError(5, 17, "use of undeclared identifier 'this'", 4);
@@ -2410,7 +2410,91 @@ dtor S() {})");
   ExpectNote(2, 21, "constructor 'S' delegates here", 4);
 }
 
-TEST_F(SemaTest, TreatsGroupedBaseInitializationAsOneInvalidPrologueAttempt) {
+TEST_F(SemaTest, DiagnosesDelegatingConstructorCyclesThroughConditionalDelegation) {
+  Analyze(R"(struct S {}
+ctor S(value i32) {
+  if value > 0 {
+    this := S();
+  }
+}
+ctor S() { this := S(0); }
+dtor S() {})");
+
+  ExpectError(6, 19, "delegating constructor cycle for type 'S'", 4);
+  ExpectNote(3, 12, "constructor 'S' delegates here", 3);
+  ExpectNote(6, 19, "constructor 'S' delegates here", 4);
+}
+
+TEST_F(SemaTest, PointsAtEveryDelegationInADelegatingConstructorCycle) {
+  Analyze(R"(struct S { value i32; }
+ctor S(value i32, flag bool) { if flag { this := S(); } else { this := S(); } }
+ctor S() { this := S(1, true); }
+dtor S() {})");
+
+  ExpectError(2, 19, "delegating constructor cycle for type 'S'", 10);
+  ExpectNote(1, 49, "constructor 'S' delegates here", 3);
+  ExpectNote(1, 71, "constructor 'S' delegates here", 3);
+  ExpectNote(2, 19, "constructor 'S' delegates here", 10);
+}
+
+TEST_F(SemaTest, RejectsDelegationCombinedWithSubobjectInitialization) {
+  Analyze(R"(struct Base {}
+ctor Base() {}
+dtor Base() {}
+struct Derived : Base { value i32; }
+ctor Derived(value i32) { this.Base := Base(); this.value := value; }
+ctor Derived() { this.Base := Base(); this := Derived(1); }
+ctor Derived(flag bool) { this := Derived(1); this.value := 2; }
+dtor Derived() {})");
+
+  ExpectError(5, 38, "cannot delegate after part of 'this' is initialized", 4);
+  ExpectError(6, 46, "repeated initialization of variable 'this'", 10);
+}
+
+TEST_F(SemaTest, AllowsOneDelegationPerPathWithoutSubobjects) {
+  Analyze(R"(struct S {}
+ctor S() {}
+ctor S(flag bool) {
+  if flag {
+    this := S();
+  } else {
+    var local := 1;
+  }
+}
+func Use(object &copy S) {}
+ctor S(value i32) {
+  this := S();
+  Use(this);
+}
+dtor S() {})");
+}
+
+TEST_F(SemaTest, RejectsRepeatedDelegationAndDelegationAfterUseWithoutSubobjects) {
+  Analyze(R"(struct S {}
+ctor S() {}
+ctor S(value i32) {
+  this := S();
+  this := S();
+}
+ctor S(flag bool) {
+  while flag {
+    this := S();
+  }
+}
+func Use(object &copy S) {}
+ctor S(value i64) {
+  Use(this);
+  this := S();
+}
+dtor S() {})");
+
+  ExpectError(4, 2, "repeated initialization of variable 'this'", 4);
+  ExpectError(8, 4, "repeated initialization of variable 'this'", 4);
+  ExpectError(14, 2, "cannot delegate after 'this' is used", 4);
+  ExpectNote(13, 6, "'this' is used here", 4);
+}
+
+TEST_F(SemaTest, RejectsGroupedBaseInitializationStatements) {
   Analyze(R"(struct Base {}
 ctor Base() {}
 dtor Base() {}
@@ -2419,6 +2503,7 @@ ctor Derived() { (this.Base := Base()); }
 dtor Derived() {})");
 
   ExpectError(4, 18, "initialization expression must be used directly as an expression statement", 19);
+  ExpectError(4, 15, "object 'this' is not fully initialized on this path", 26);
 }
 
 TEST_F(SemaTest, TransfersNonTrivialPureRValuesAndRejectsGlvalues) {
@@ -2501,9 +2586,10 @@ ctor Derived() { this.Root := Root(); }
 dtor Derived() {})");
 
   ExpectError(7, 17, "constructor for 'Derived' must initialize direct base 'Middle', not indirect base 'Root'", 9);
+  ExpectError(7, 15, "object 'this' is not fully initialized on this path", 24);
 }
 
-TEST_F(SemaTest, RequiresDelegationOrDirectBaseConstructionAtDerivedConstructorEntry) {
+TEST_F(SemaTest, RequiresDirectBaseConstructionBeforeFields) {
   Analyze(R"(struct Base { value i32; }
 ctor Base() { this.value := 1; }
 dtor Base() {}
@@ -2511,7 +2597,8 @@ struct Derived : Base { own i32; }
 ctor Derived() { this.own := 2; }
 dtor Derived() {})");
 
-  ExpectError(4, 5, "constructor for 'Derived' must begin by delegating or by initializing direct base 'Base'", 7);
+  ExpectError(4, 17, "cannot initialize subobject of 'this' before preceding subobjects are fully initialized", 8);
+  ExpectError(4, 15, "object 'this' is not fully initialized on this path", 18);
 }
 
 TEST_F(SemaTest, DiagnosesInvalidDirectBaseInitializationAtTheAttempt) {
@@ -2528,9 +2615,9 @@ struct Copy : Base {}
 ctor Copy(source &copy Base) { this.Base := source; }
 dtor Copy() {})");
 
-  ExpectError(4, 17, "direct base 'Base' must be initialized by the first complete statement of constructor 'Late'", 9);
   ExpectError(7, 26, "constructor for 'Partial' must initialize direct base 'Base' as a whole", 16);
   ExpectError(10, 44, "cannot initialize base subobject 'Base': no copy constructor is available for 'Base'", 6);
+  ExpectError(7, 24, "object 'this' is not fully initialized on this path", 30);
 }
 
 TEST_F(SemaTest, RecoversSpecialCallsAcrossIncompleteDeclarationsBodiesAndArguments) {

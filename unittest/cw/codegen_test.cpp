@@ -327,5 +327,6 @@ INSTANTIATE_TEST_SUITE_P(
         LanguageFeatureCase{"abstract_dispatch", "AbstractDispatch"},
         LanguageFeatureCase{"import_calls", "ImportCalls"}, LanguageFeatureCase{"import_virtual", "ImportVirtual"},
         LanguageFeatureCase{"import_covariance", "ImportCovariance"},
-        LanguageFeatureCase{"import_indirect", "ImportIndirect"}, LanguageFeatureCase{"symbol_types", "SymbolTypes"}),
+        LanguageFeatureCase{"import_indirect", "ImportIndirect"}, LanguageFeatureCase{"symbol_types", "SymbolTypes"},
+        LanguageFeatureCase{"constructor_body_initialization", "ConstructorBodyInitialization"}),
     LanguageFeatureCaseName);

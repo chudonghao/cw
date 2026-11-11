@@ -78,7 +78,6 @@ class Sema {
   enum class ExpressionUse {
     General,
     InitializationStatement,
-    ConstructorPrologue,
   };
 
   struct ConstructionResultContext {
@@ -261,7 +260,7 @@ class Sema {
   void AnalyzeCompoundStmt(CompoundStmt& statement, bool creates_scope,
                            const ResultBlockAnalysisContext& result_block_context, bool is_result_block = false);
   void AnalyzeStmt(Stmt& statement, const ResultBlockAnalysisContext& result_block_context,
-                   bool forwards_result_position = false, bool is_constructor_prologue = false);
+                   bool forwards_result_position = false);
   void AnalyzeReturnStmt(ReturnStmt& statement, const ResultBlockAnalysisContext& result_block_context);
   void AnalyzeResultBlockTailExpressions(CompoundStmt& statement,
                                          const ResultBlockAnalysisContext& result_block_context);

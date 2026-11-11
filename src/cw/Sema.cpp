@@ -292,10 +292,6 @@ bool HasValidFunctionInterface(const FunctionDecl& declaration) {
   }
 }
 
-enum class ConstructorPrologueStatus { NotRequired, Valid, InvalidAttempt, Missing };
-
-enum class ConstructorInitializationTargetKind { Other, ValidPrologue, InvalidPrologue };
-
 // Initialization syntax is checked against the written access path. Implicit object
 // adjustment must not turn inherited field access into explicit base initialization.
 const Expr* IgnoreImplicitBaseSubobjectCasts(const Expr* expression) {
@@ -308,104 +304,6 @@ const Expr* IgnoreImplicitBaseSubobjectCasts(const Expr* expression) {
     expression = cast.SubExpr.get();
   }
   return expression;
-}
-
-ConstructorInitializationTargetKind ClassifyConstructorInitializationTarget(const ConstructorDecl& constructor,
-                                                                            const Expr* target) {
-  if (!target || !constructor.target_type) {
-    return ConstructorInitializationTargetKind::Other;
-  }
-
-  bool contains_parentheses = false;
-  const auto ignore_parentheses = [&](const Expr* expression) {
-    expression = IgnoreImplicitBaseSubobjectCasts(expression);
-    while (expression && expression->GetKind() == NodeKind::ParenExpr) {
-      contains_parentheses = true;
-      expression = IgnoreImplicitBaseSubobjectCasts(static_cast<const ParenExpr*>(expression)->SubExpr.get());
-    }
-    return expression;
-  };
-
-  target = ignore_parentheses(target);
-  if (!target) {
-    return ConstructorInitializationTargetKind::Other;
-  }
-  if (target->GetKind() == NodeKind::ThisExpr) {
-    return contains_parentheses ? ConstructorInitializationTargetKind::InvalidPrologue
-                                : ConstructorInitializationTargetKind::ValidPrologue;
-  }
-
-  const Expr* root = target;
-  std::vector<const Expr*> path;
-  while (root && (root->GetKind() == NodeKind::MemberExpr || root->GetKind() == NodeKind::BaseSubobjectExpr)) {
-    path.push_back(root);
-    root = root->GetKind() == NodeKind::MemberExpr ? static_cast<const MemberExpr*>(root)->Base.get()
-                                                   : static_cast<const BaseSubobjectExpr*>(root)->Base.get();
-    root = ignore_parentheses(root);
-  }
-  if (!root || root->GetKind() != NodeKind::ThisExpr || path.empty()) {
-    return ConstructorInitializationTargetKind::Other;
-  }
-  std::reverse(path.begin(), path.end());
-
-  const Expr* first = path.front();
-  if (first->GetKind() == NodeKind::BaseSubobjectExpr) {
-    const auto& base = static_cast<const BaseSubobjectExpr&>(*first);
-    const StructType* required_base = constructor.target_type->GetDeclaration()->base_type;
-    const bool is_valid = !contains_parentheses && path.size() == 1 && target == first &&
-                          base.op == MemberAccessKind::Dot && base.base_path.size() == 1 && required_base &&
-                          base.GetDeclaration() == required_base->GetDeclaration();
-    return is_valid ? ConstructorInitializationTargetKind::ValidPrologue
-                    : ConstructorInitializationTargetKind::InvalidPrologue;
-  }
-
-  const FieldDecl* first_field = static_cast<const MemberExpr&>(*first).declaration;
-  if (!first_field) {
-    return ConstructorInitializationTargetKind::InvalidPrologue;
-  }
-  for (const auto& field : constructor.target_type->GetDeclaration()->Fields) {
-    if (field.get() == first_field) {
-      return ConstructorInitializationTargetKind::Other;
-    }
-  }
-  return ConstructorInitializationTargetKind::InvalidPrologue;
-}
-
-ConstructorPrologueStatus ClassifyConstructorPrologue(const ConstructorDecl& declaration) {
-  if (!declaration.target_type || !declaration.Body) {
-    return ConstructorPrologueStatus::NotRequired;
-  }
-  const StructType* base_type = declaration.target_type->GetDeclaration()->base_type;
-  if (!base_type || base_type->GetDeclaration()->triviality != TypeTriviality::NonTrivial) {
-    return ConstructorPrologueStatus::NotRequired;
-  }
-
-  for (std::size_t index = 0; index < declaration.Body->Stmts.size(); ++index) {
-    const auto& statement = declaration.Body->Stmts[index];
-    if (!statement || statement->GetKind() != NodeKind::ExprStmt) {
-      continue;
-    }
-    const auto& expression_statement = static_cast<const ExprStmt&>(*statement);
-    if (!expression_statement.Expr) {
-      continue;
-    }
-    const Expr* direct_expression = expression_statement.Expr.get();
-    const Expr* recovered_expression = direct_expression->IgnoreParens();
-    if (!recovered_expression || recovered_expression->GetKind() != NodeKind::InitializationExpr) {
-      continue;
-    }
-    const auto& initialization = static_cast<const InitializationExpr&>(*recovered_expression);
-    const ConstructorInitializationTargetKind target_kind =
-        ClassifyConstructorInitializationTarget(declaration, initialization.Target.get());
-    if (direct_expression == recovered_expression && index == 0 &&
-        target_kind == ConstructorInitializationTargetKind::ValidPrologue) {
-      return ConstructorPrologueStatus::Valid;
-    }
-    if (target_kind != ConstructorInitializationTargetKind::Other) {
-      return ConstructorPrologueStatus::InvalidAttempt;
-    }
-  }
-  return ConstructorPrologueStatus::Missing;
 }
 
 bool InitializationTargetContainsParentheses(const Expr* target) {
@@ -1109,6 +1007,10 @@ std::string DefiniteInitializationMessage(const DefiniteInitializationFinding& f
       return fmt::format("cannot initialize before preceding variable '{}' is fully initialized", name);
     case DefiniteInitializationFindingKind::OutOfOrderSubobjectInitialization:
       return fmt::format("cannot initialize subobject of '{}' before preceding subobjects are fully initialized", name);
+    case DefiniteInitializationFindingKind::PartialObjectDelegation:
+      return "cannot delegate after part of 'this' is initialized";
+    case DefiniteInitializationFindingKind::DelegationAfterUse:
+      return "cannot delegate after 'this' is used";
     case DefiniteInitializationFindingKind::ConflictingStates:
       return fmt::format("initialization state of variable '{}' differs across control-flow paths", name);
     case DefiniteInitializationFindingKind::UninitializedResult:
@@ -2822,15 +2724,6 @@ void Sema::AnalyzeFunction(FunctionDecl& declaration) {
     AnalyzeCompoundStmt(*declaration.Body, false, result_block_context, true);
     InheritErrors(declaration, declaration.Body.get());
   }
-  if (declaration.GetKind() == NodeKind::ConstructorDecl) {
-    const auto& constructor = static_cast<const ConstructorDecl&>(declaration);
-    if (ClassifyConstructorPrologue(constructor) == ConstructorPrologueStatus::Missing) {
-      const StructDecl* direct_base = constructor.target_type->GetDeclaration()->base_type->GetDeclaration();
-      Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-               fmt::format("constructor for '{}' must begin by delegating or by initializing direct base '{}'",
-                           constructor.name, direct_base->name));
-    }
-  }
   local_symbols_->PopScope();
   current_function_ = nullptr;
   BOOST_ASSERT(loop_depth_ == 0);
@@ -2860,6 +2753,25 @@ class ConstructorCompletionInserter final : public ASTVisitor {
   }
 };
 
+// Collects every delegation in a constructor body, wherever control flow places it.
+class DelegationCollector final : public ASTVisitor {
+  std::vector<ConstructionExpr*>& delegations_;
+
+ public:
+  explicit DelegationCollector(std::vector<ConstructionExpr*>& delegations) : delegations_(delegations) {}
+
+  void Visit(InitializationExpr& expression) override {
+    if (expression.Target && expression.Target->GetKind() == NodeKind::ThisExpr && expression.Source) {
+      Expr* source = expression.Source->IgnoreParens();
+      if (source && source->GetKind() == NodeKind::ConstructionExpr &&
+          static_cast<ConstructionExpr&>(*source).construction_kind == ConstructionKind::Delegating) {
+        delegations_.push_back(static_cast<ConstructionExpr*>(source));
+      }
+    }
+    ASTVisitor::Visit(expression);
+  }
+};
+
 }  // namespace
 
 void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) {
@@ -2885,23 +2797,14 @@ void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) 
 
     std::unique_ptr<CFG> cfg = CFG::Build(function);
     BOOST_ASSERT(cfg);
-    const ConstructorPrologueStatus constructor_prologue_status =
-        function.GetKind() == NodeKind::ConstructorDecl
-            ? ClassifyConstructorPrologue(static_cast<const ConstructorDecl&>(function))
-            : ConstructorPrologueStatus::NotRequired;
-    // A failed constructor prologue already explains missing or out-of-order base initialization.
     const auto result = DefiniteInitializationAnalysis::Run(function, *cfg);
     for (const DefiniteInitializationFinding& finding : result.findings) {
-      if ((finding.kind == DefiniteInitializationFindingKind::UninitializedResult ||
-           finding.kind == DefiniteInitializationFindingKind::OutOfOrderSubobjectInitialization) &&
-          !finding.declaration &&
-          (constructor_prologue_status == ConstructorPrologueStatus::InvalidAttempt ||
-           constructor_prologue_status == ConstructorPrologueStatus::Missing)) {
-        continue;
-      }
       BOOST_ASSERT(finding.owner);
       Node& owner = *const_cast<Node*>(finding.owner);
       Diagnose(owner, kErrorDiagnostic, finding.range, DefiniteInitializationMessage(finding));
+      if (finding.kind == DefiniteInitializationFindingKind::DelegationAfterUse) {
+        EmitDiagnostic(kNoteDiagnostic, finding.related_range, "'this' is used here");
+      }
     }
     if (function.GetKind() == NodeKind::ConstructorDecl && !function.ContainsErrors() && result.findings.empty()) {
       ConstructorCompletionInserter inserter(result.this_initialization_completions);
@@ -2921,85 +2824,123 @@ void Sema::ValidateDelegatingConstructorCycles(TranslationUnitDecl& translation_
     ConstructionExpr* construction{};
   };
 
-  // Only a successfully resolved leading delegation contributes an edge.
-  std::vector<DelegationEdge> edges;
+  // Every successfully resolved delegation contributes an edge, whichever path reaches it.
+  std::unordered_map<const ConstructorDecl*, std::vector<DelegationEdge>> outgoing;
   for (auto* declaration : declarations_) {
     if (!declaration || declaration->GetKind() != NodeKind::ConstructorDecl) {
       continue;
     }
     auto* constructor = static_cast<ConstructorDecl*>(declaration);
-    if (!constructor->Body || constructor->Body->Stmts.empty() || !constructor->Body->Stmts.front() ||
-        constructor->Body->Stmts.front()->GetKind() != NodeKind::ExprStmt) {
+    if (!constructor->Body) {
       continue;
     }
-    auto& statement = static_cast<ExprStmt&>(*constructor->Body->Stmts.front());
-    if (!statement.Expr || statement.Expr->GetKind() != NodeKind::InitializationExpr) {
-      continue;
+    std::vector<ConstructionExpr*> delegations;
+    DelegationCollector collector(delegations);
+    constructor->Body->Accept(collector);
+    for (ConstructionExpr* construction : delegations) {
+      if (!construction->ContainsErrors() && construction->constructor) {
+        outgoing[constructor].push_back(
+            {constructor, const_cast<ConstructorDecl*>(construction->constructor), construction});
+      }
     }
-    auto& initialization = static_cast<InitializationExpr&>(*statement.Expr);
-    if (!initialization.Target || initialization.Target->GetKind() != NodeKind::ThisExpr || !initialization.Source) {
-      continue;
-    }
-    Expr* source = initialization.Source->IgnoreParens();
-    if (!source || source->GetKind() != NodeKind::ConstructionExpr) {
-      continue;
-    }
-    auto& construction = static_cast<ConstructionExpr&>(*source);
-    if (construction.construction_kind != ConstructionKind::Delegating || construction.ContainsErrors() ||
-        !construction.constructor) {
-      continue;
-    }
-    edges.push_back({constructor, const_cast<ConstructorDecl*>(construction.constructor), &construction});
   }
 
-  // An edge back into the active DFS stack identifies exactly the constructors in a cycle.
-  std::unordered_map<const ConstructorDecl*, DelegationEdge*> outgoing;
-  for (auto& edge : edges) outgoing.emplace(edge.source, &edge);
+  std::vector<ConstructorDecl*> constructors;
+  for (auto* declaration : declarations_) {
+    if (declaration && declaration->GetKind() == NodeKind::ConstructorDecl) {
+      constructors.push_back(static_cast<ConstructorDecl*>(declaration));
+    }
+  }
+
+  // Constructors that can delegate to each other form one strongly connected component (Tarjan),
+  // and every delegation inside a component can take part in a cycle.
+  std::unordered_map<const ConstructorDecl*, std::size_t> components;
+  {
+    std::unordered_map<const ConstructorDecl*, std::size_t> indices;
+    std::unordered_map<const ConstructorDecl*, std::size_t> low_links;
+    std::vector<const ConstructorDecl*> stack;
+    std::unordered_set<const ConstructorDecl*> on_stack;
+    std::size_t next_component = 0;
+    const auto connect = [&](const auto& self, const ConstructorDecl& constructor) -> void {
+      const std::size_t index = indices.size();
+      indices[&constructor] = index;
+      low_links[&constructor] = index;
+      stack.push_back(&constructor);
+      on_stack.insert(&constructor);
+      if (const auto it = outgoing.find(&constructor); it != outgoing.end()) {
+        for (const DelegationEdge& edge : it->second) {
+          if (indices.find(edge.target) == indices.end()) {
+            self(self, *edge.target);
+            low_links[&constructor] = std::min(low_links[&constructor], low_links[edge.target]);
+          } else if (on_stack.count(edge.target)) {
+            low_links[&constructor] = std::min(low_links[&constructor], indices[edge.target]);
+          }
+        }
+      }
+      if (low_links[&constructor] == index) {
+        const ConstructorDecl* member = nullptr;
+        do {
+          member = stack.back();
+          stack.pop_back();
+          on_stack.erase(member);
+          components[member] = next_component;
+        } while (member != &constructor);
+        ++next_component;
+      }
+    };
+    for (ConstructorDecl* constructor : constructors) {
+      if (indices.find(constructor) == indices.end()) {
+        connect(connect, *constructor);
+      }
+    }
+  }
+
+  // A depth-first search reports each cyclic component once, at the first edge that leads back
+  // into the active search path, and points at every delegation inside the component.
   enum class VisitState { Unvisited, Visiting, Complete };
   std::unordered_map<const ConstructorDecl*, VisitState> states;
-  std::vector<ConstructorDecl*> stack;
-  std::unordered_map<const ConstructorDecl*, std::size_t> stack_positions;
-
+  std::unordered_set<std::size_t> reported_components;
+  const auto report = [&](const DelegationEdge& closing) {
+    const std::size_t component = components.at(closing.target);
+    if (!reported_components.insert(component).second) {
+      return;
+    }
+    ConstructorDecl& diagnostic_owner = *closing.target;
+    Diagnose(diagnostic_owner, kErrorDiagnostic, closing.construction->range,
+             fmt::format("delegating constructor cycle for type '{}'", diagnostic_owner.name));
+    for (ConstructorDecl* constructor : constructors) {
+      const auto it = outgoing.find(constructor);
+      if (components.at(constructor) != component || it == outgoing.end()) {
+        continue;
+      }
+      for (const DelegationEdge& edge : it->second) {
+        if (components.at(edge.target) != component) {
+          continue;
+        }
+        EmitDiagnostic(kNoteDiagnostic, edge.construction->range,
+                       fmt::format("constructor '{}' delegates here", edge.source->name));
+        edge.source->contains_errors = true;
+        edge.construction->contains_errors = true;
+      }
+    }
+  };
   const auto visit = [&](const auto& self, ConstructorDecl& constructor) -> void {
     states[&constructor] = VisitState::Visiting;
-    stack_positions[&constructor] = stack.size();
-    stack.push_back(&constructor);
-
-    const auto edge_it = outgoing.find(&constructor);
-    if (edge_it != outgoing.end()) {
-      DelegationEdge& edge = *edge_it->second;
-      const VisitState target_state = states[edge.target];
-      if (target_state == VisitState::Unvisited) {
-        self(self, *edge.target);
-      } else if (target_state == VisitState::Visiting) {
-        const std::size_t cycle_begin = stack_positions[edge.target];
-        ConstructorDecl& diagnostic_owner = *stack[cycle_begin];
-        Diagnose(diagnostic_owner, kErrorDiagnostic, edge.construction->range,
-                 fmt::format("delegating constructor cycle for type '{}'", diagnostic_owner.name));
-        for (std::size_t index = cycle_begin; index < stack.size(); ++index) {
-          ConstructorDecl* cycle_constructor = stack[index];
-          DelegationEdge* cycle_edge = outgoing[cycle_constructor];
-          BOOST_ASSERT(cycle_edge && cycle_edge->construction);
-          EmitDiagnostic(kNoteDiagnostic, cycle_edge->construction->range,
-                         fmt::format("constructor '{}' delegates here", cycle_constructor->name));
-          cycle_constructor->contains_errors = true;
-          cycle_edge->construction->contains_errors = true;
+    if (const auto it = outgoing.find(&constructor); it != outgoing.end()) {
+      for (const DelegationEdge& edge : it->second) {
+        const VisitState target_state = states[edge.target];
+        if (target_state == VisitState::Unvisited) {
+          self(self, *edge.target);
+        } else if (target_state == VisitState::Visiting) {
+          report(edge);
         }
       }
     }
-
-    stack.pop_back();
-    stack_positions.erase(&constructor);
     states[&constructor] = VisitState::Complete;
   };
-
-  for (auto* declaration : declarations_) {
-    if (!declaration || declaration->GetKind() != NodeKind::ConstructorDecl) {
-      continue;
-    }
-    auto& constructor = static_cast<ConstructorDecl&>(*declaration);
-    if (states[&constructor] == VisitState::Unvisited) {
-      visit(visit, constructor);
+  for (ConstructorDecl* constructor : constructors) {
+    if (states[constructor] == VisitState::Unvisited) {
+      visit(visit, *constructor);
     }
   }
 }
@@ -3030,11 +2971,7 @@ void Sema::AnalyzeCompoundStmt(CompoundStmt& statement, bool creates_scope,
   for (std::size_t index = 0; index < statement.Stmts.size(); ++index) {
     const auto& child = statement.Stmts[index];
     if (child) {
-      const bool is_constructor_prologue = current_function_ &&
-                                           current_function_->GetKind() == NodeKind::ConstructorDecl &&
-                                           current_function_->Body.get() == &statement && index == 0;
-      AnalyzeStmt(*child, result_block_context, forwards_result_position && index + 1 == statement.Stmts.size(),
-                  is_constructor_prologue);
+      AnalyzeStmt(*child, result_block_context, forwards_result_position && index + 1 == statement.Stmts.size());
       InheritErrors(statement, child.get());
     }
   }
@@ -3062,16 +2999,15 @@ void Sema::AnalyzeCompoundStmt(CompoundStmt& statement, bool creates_scope,
 }
 
 void Sema::AnalyzeStmt(Stmt& statement, const ResultBlockAnalysisContext& result_block_context,
-                       bool forwards_result_position, bool is_constructor_prologue) {
+                       bool forwards_result_position) {
   switch (statement.GetKind()) {
     case NodeKind::CompoundStmt:
       AnalyzeCompoundStmt(static_cast<CompoundStmt&>(statement), true, result_block_context);
       break;
     case NodeKind::ExprStmt: {
       auto& expression_statement = static_cast<ExprStmt&>(statement);
-      expression_statement.Expr = AnalyzeExpr(
-          std::move(expression_statement.Expr),
-          is_constructor_prologue ? ExpressionUse::ConstructorPrologue : ExpressionUse::InitializationStatement);
+      expression_statement.Expr =
+          AnalyzeExpr(std::move(expression_statement.Expr), ExpressionUse::InitializationStatement);
       if (expression_statement.Expr && !expression_statement.Expr->ContainsErrors() &&
           expression_statement.Expr->type) {
         if (expression_statement.Expr->type.GetTypePtr()->AsFunctionOverloadSetType()) {
@@ -4588,8 +4524,7 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
 
   // Check statement placement and target spelling before resolving which object may be initialized.
   bool target_is_valid = expression.Target && !expression.Target->ContainsErrors();
-  const bool is_initialization_statement =
-      use == ExpressionUse::InitializationStatement || use == ExpressionUse::ConstructorPrologue;
+  const bool is_initialization_statement = use == ExpressionUse::InitializationStatement;
   if (!is_initialization_statement) {
     if (expression.Target) {
       Diagnose(*expression.Target, kErrorDiagnostic, expression.range,
@@ -4686,7 +4621,7 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
   }
 
   // Constructors may delegate to the whole object or initialize their direct base and own fields.
-  // Delegation and direct-base initialization must occupy the constructor prologue.
+  // Their order and completeness belong to definite initialization, not to statement position.
   const bool targets_current_this = root && root->GetKind() == NodeKind::ThisExpr && current_function_ &&
                                     current_function_->GetKind() == NodeKind::ConstructorDecl;
   bool is_delegating_target = false;
@@ -4699,11 +4634,6 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
   } else if (targets_current_this && path.empty()) {
     if (target_is_valid) {
       is_delegating_target = true;
-      if (use != ExpressionUse::ConstructorPrologue) {
-        Diagnose(*expression.Target, kErrorDiagnostic, expression.Target->range,
-                 "constructor delegation must be the first complete statement in the constructor body");
-        target_is_valid = false;
-      }
     }
   } else if (targets_current_this && !path.empty() && target_is_valid) {
     const auto& constructor = static_cast<const ConstructorDecl&>(*current_function_);
@@ -4733,12 +4663,6 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
         } else {
           expression.Target->contains_errors = true;
         }
-        target_is_valid = false;
-      } else if (use != ExpressionUse::ConstructorPrologue) {
-        Diagnose(*expression.Target, kErrorDiagnostic, expression.Target->range,
-                 fmt::format("direct base '{}' must be initialized by the first complete statement of constructor "
-                             "'{}'",
-                             required_base->name, constructor.name));
         target_is_valid = false;
       }
     } else {

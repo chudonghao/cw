@@ -189,6 +189,7 @@ The cases, in registration order, are:
 109. `import_covariance`
 110. `import_indirect`
 111. `symbol_types`
+112. `constructor_body_initialization`
 
 ## Generating Clang References
 
