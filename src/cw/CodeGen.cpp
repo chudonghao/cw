@@ -15,6 +15,7 @@
 #include <llvm/ADT/APInt.h>
 #include <llvm/IR/AttributeMask.h>
 #include <llvm/IR/Attributes.h>
+#include <llvm/IR/ConstantRange.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
@@ -1022,8 +1023,13 @@ llvm::GlobalVariable* CodeGen::GetOrCreateVTable(const StructDecl& declaration) 
       InternalError(declaration, "conflicting stable symbol '" + name + "'");
       return nullptr;
     }
+    // Each vtable of the group is one array, so an address point stays within its own vtable.
     auto* pointer_type = llvm::PointerType::getUnqual(*llvm_context_);
-    auto* type = llvm::ArrayType::get(pointer_type, ast_context_->GetVTableLayout(declaration).entries.size() + 2);
+    std::vector<llvm::Type*> vtables;
+    for (const auto& components : ast_context_->GetVTableLayout(declaration).vtables) {
+      vtables.push_back(llvm::ArrayType::get(pointer_type, components.size()));
+    }
+    auto* type = llvm::StructType::get(*llvm_context_, vtables);
     auto* table = new llvm::GlobalVariable(*module_, type, true, llvm::GlobalValue::ExternalLinkage, nullptr, name);
     table->setAlignment(llvm::Align(ast_context_->GetTargetInfo().GetPointerAlignment()));
     it = vtables_.emplace(&declaration, table).first;
@@ -1037,23 +1043,48 @@ bool CodeGen::EmitVTableDefinition(const StructDecl& declaration) {
   if (!table) return false;
   if (table->hasInitializer()) return true;
   auto* pointer_type = llvm::PointerType::getUnqual(*llvm_context_);
-  // The primary vtable has offset-to-top zero and a null RTTI descriptor.
-  std::vector<llvm::Constant*> entries(2, llvm::ConstantPointerNull::get(pointer_type));
-  for (const auto& entry : ast_context_->GetVTableLayout(declaration).entries) {
-    auto* function = GetVTableEntry(entry);
-    if (!function) return false;
-    entries.push_back(function);
+  auto* group_type = llvm::cast<llvm::StructType>(table->getValueType());
+  std::vector<llvm::Constant*> vtables;
+  for (const auto& components : ast_context_->GetVTableLayout(declaration).vtables) {
+    std::vector<llvm::Constant*> values;
+    for (const auto& component : components) {
+      if (const auto* offset = std::get_if<VTableOffsetToTop>(&component)) {
+        values.push_back(llvm::ConstantExpr::getIntToPtr(
+            llvm::ConstantInt::get(GetPointerIndexType(), offset->offset, /*isSigned=*/true), pointer_type));
+      } else if (std::holds_alternative<VTableTypeInfo>(component)) {
+        values.push_back(llvm::ConstantPointerNull::get(pointer_type));
+      } else {
+        auto* function = GetVTableEntry(std::get<VTableEntry>(component));
+        if (!function) return false;
+        values.push_back(function);
+      }
+    }
+    vtables.push_back(llvm::ConstantArray::get(
+        llvm::cast<llvm::ArrayType>(group_type->getElementType(static_cast<unsigned>(vtables.size()))), values));
   }
-  table->setInitializer(llvm::ConstantArray::get(llvm::cast<llvm::ArrayType>(table->getValueType()), entries));
+  table->setInitializer(llvm::ConstantStruct::get(group_type, vtables));
   return true;
 }
 
-llvm::Constant* CodeGen::GetVTableAddressPoint(const StructDecl& declaration) {
+// The address point of `base` in the vtable group of `declaration`, as Clang's
+// ItaniumCXXABI::getVTableAddressPoint. `inrange` limits accesses to that one vtable.
+llvm::Constant* CodeGen::GetVTableAddressPoint(const StructDecl& declaration, const BaseSubobject& base) {
   auto* table = GetOrCreateVTable(declaration);
   if (!table) return nullptr;
-  auto* index_type = GetPointerIndexType();
-  llvm::Constant* indices[] = {llvm::ConstantInt::get(index_type, 0), llvm::ConstantInt::get(index_type, 2)};
-  return llvm::ConstantExpr::getGetElementPtr(table->getValueType(), table, indices);
+  const auto& layout = ast_context_->GetVTableLayout(declaration);
+  const auto& address_point = layout.address_points.at(base);
+  auto* index_type = llvm::Type::getInt32Ty(*llvm_context_);
+  llvm::Constant* indices[] = {llvm::ConstantInt::get(index_type, 0),
+                               llvm::ConstantInt::get(index_type, address_point.vtable_index),
+                               llvm::ConstantInt::get(index_type, address_point.component_index)};
+  const auto component_size = static_cast<std::int64_t>(ast_context_->GetTargetInfo().GetPointerBitWidth() / 8);
+  const auto vtable_size =
+      component_size * static_cast<std::int64_t>(layout.vtables[address_point.vtable_index].size());
+  const auto offset = component_size * static_cast<std::int64_t>(address_point.component_index);
+  const llvm::ConstantRange in_range(llvm::APInt(32, static_cast<std::uint64_t>(-offset), /*isSigned=*/true),
+                                     llvm::APInt(32, static_cast<std::uint64_t>(vtable_size - offset), true));
+  return llvm::ConstantExpr::getGetElementPtr(table->getValueType(), table, indices, llvm::GEPNoWrapFlags::inBounds(),
+                                              in_range);
 }
 
 llvm::Constant* CodeGen::GetVirtualFunctionPointer(const VirtualFunctionDecl& declaration) {
@@ -1112,20 +1143,22 @@ llvm::Function* CodeGen::GetVTableEntry(const VTableEntry& entry) {
     }
     return attributes;
   };
-  if (entry.return_adjustment == 0 && implementation->getFunctionType() == info.type &&
+  if (entry.this_adjustment == 0 && entry.return_adjustment == 0 && implementation->getFunctionType() == info.type &&
       implementation->getCallingConv() == llvm::CallingConv::C &&
       without_reference_attributes(*implementation_declaration->type.GetTypePtr()->AsFunctionType(),
                                    implementation_info) ==
           without_reference_attributes(*entry.interface->type.GetTypePtr()->AsFunctionType(), info)) {
     return implementation;
   }
-  const auto name = implementation->getName().str() + ":thunk(0," + std::to_string(entry.return_adjustment) + ")";
+  const auto name = implementation->getName().str() + ":thunk(" + std::to_string(entry.this_adjustment) + "," +
+                    std::to_string(entry.return_adjustment) + ")";
   // A shared entry must not inherit stronger reference guarantees from its first interface.
   const auto attributes = without_reference_attributes(*entry.interface->type.GetTypePtr()->AsFunctionType(), info);
   if (auto* existing = module_->getNamedValue(name)) {
     const auto it = thunks_.find(name);
     auto* function = llvm::dyn_cast<llvm::Function>(existing);
     if (it == thunks_.end() || it->second.function != function || it->second.target != implementation ||
+        it->second.this_adjustment != entry.this_adjustment ||
         it->second.return_adjustment != entry.return_adjustment || !function ||
         function->getFunctionType() != info.type || function->getCallingConv() != llvm::CallingConv::C ||
         function->getAttributes() != attributes) {
@@ -1138,7 +1171,7 @@ llvm::Function* CodeGen::GetVTableEntry(const VTableEntry& entry) {
   }
   auto* thunk = llvm::Function::Create(info.type, llvm::GlobalValue::InternalLinkage, name, *module_);
   thunk->setAttributes(attributes);
-  thunks_.emplace(name, Thunk{thunk, implementation, entry.return_adjustment});
+  thunks_.emplace(name, Thunk{thunk, implementation, entry.this_adjustment, entry.return_adjustment});
   codegen_detail::CodeGenFunction(*this, *thunk).GenerateThunk(entry, info, *implementation);
   return thunk;
 }

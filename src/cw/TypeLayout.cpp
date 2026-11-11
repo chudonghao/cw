@@ -238,6 +238,7 @@ std::variant<StructLayout, LayoutFailure> ComputeStructLayout(const ASTContext& 
                                     [](const StructType* base) { return base->GetDeclaration()->IsPolymorphic(); });
   const auto primary_index = static_cast<std::size_t>(primary - declaration.base_types.begin());
   if (primary != declaration.base_types.end()) {
+    result.primary_base = primary_index;
     if (!place_base(primary_index)) {
       return too_large();
     }

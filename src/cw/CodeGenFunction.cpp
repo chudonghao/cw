@@ -139,8 +139,8 @@ bool CodeGenFunction::Generate(const FunctionDecl& declaration, const CodeGen::F
     }
   }
   if (declaration.GetKind() == NodeKind::DestructorDecl) {
-    if (!EmitVTablePointer(this_address_,
-                           *static_cast<const DestructorDecl&>(declaration).target_type->GetDeclaration()))
+    if (!EmitVTablePointers(this_address_,
+                            *static_cast<const DestructorDecl&>(declaration).target_type->GetDeclaration()))
       return false;
     EnterDestructorCleanups(static_cast<const DestructorDecl&>(declaration));
   }
@@ -159,6 +159,11 @@ void CodeGenFunction::GenerateThunk(const VTableEntry& entry, const CodeGen::Fun
   std::vector<llvm::Value*> arguments;
   for (auto& argument : function_.args()) {
     arguments.push_back(&argument);
+  }
+  if (entry.this_adjustment != 0) {
+    auto& receiver = arguments[*info.parameters.front().llvm_index];
+    receiver = builder_.CreateGEP(builder_.getInt8Ty(), receiver, GetTargetOffset(entry.this_adjustment),
+                                  "this.adjusted", llvm::GEPNoWrapFlags::inBounds());
   }
   auto* call = builder_.CreateCall(implementation.getFunctionType(), &implementation, arguments);
   NameCallResult(*call);
@@ -596,7 +601,7 @@ bool CodeGenFunction::EmitLocalCleanups(std::size_t depth) {
       continue;
     }
     if (cleanup.kind == LocalCleanup::Kind::ExitVirtualDispatch) {
-      if (!EmitVTablePointer(cleanup.address, *cleanup.type->AsStructType()->GetDeclaration())) return false;
+      if (!EmitVTablePointers(cleanup.address, *cleanup.type->AsStructType()->GetDeclaration())) return false;
     } else if (!EmitDestroy(cleanup.address, *cleanup.type, cleanup.structor_kind)) {
       return false;
     }
@@ -676,13 +681,31 @@ bool CodeGenFunction::RegisterGlobalDestructor(const VarDecl& declaration) {
   return true;
 }
 
-bool CodeGenFunction::EmitVTablePointer(Address object, const StructDecl& stage) {
-  if (stage.IsPolymorphic()) {
-    auto* table = codegen_.GetVTableAddressPoint(stage);
-    if (!table) return false;
-    builder_.CreateAlignedStore(table, object.pointer, object.alignment);
-  }
-  return true;
+// Points every vtable pointer of an object of `stage` into the vtable group of `stage`, as Clang's
+// InitializeVTablePointers. A primary base shares the vtable pointer of the struct that contains it.
+bool CodeGenFunction::EmitVTablePointers(Address object, const StructDecl& stage) {
+  const auto store = [&](const auto& self, const StructDecl& base, std::uint64_t offset, bool is_primary_base) -> bool {
+    if (!is_primary_base) {
+      auto* address_point = codegen_.GetVTableAddressPoint(stage, {&base, offset});
+      if (!address_point) return false;
+      auto* pointer = object.pointer;
+      if (offset != 0) {
+        pointer = builder_.CreateGEP(builder_.getInt8Ty(), pointer, GetTargetIndex(offset), "vtable.field",
+                                     llvm::GEPNoWrapFlags::inBounds() | llvm::GEPNoWrapFlags::noUnsignedWrap());
+      }
+      builder_.CreateAlignedStore(address_point, pointer, llvm::commonAlignment(object.alignment, offset));
+    }
+    const auto& layout = *std::get<const StructLayout*>(codegen_.ast_context_->GetStructLayout(base));
+    for (std::size_t index = 0; index < base.base_types.size(); ++index) {
+      const StructDecl& base_declaration = *base.base_types[index]->GetDeclaration();
+      if (base_declaration.IsPolymorphic() &&
+          !self(self, base_declaration, offset + layout.base_offsets[index], layout.primary_base == index)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  return !stage.IsPolymorphic() || store(store, stage, 0, false);
 }
 
 llvm::Value* CodeGenFunction::EmitVirtualCallee(const VirtualFunctionDecl& declaration, llvm::Value* receiver) {
@@ -760,7 +783,7 @@ bool CodeGenFunction::EmitStmt(const Stmt& statement) {
       return !expression || EmitFullExpr(*expression);
     }
     case NodeKind::ImplicitThisInitializationCompleteStmt:
-      return EmitVTablePointer(this_address_, *this_address_.semantic_type->AsStructType()->GetDeclaration());
+      return EmitVTablePointers(this_address_, *this_address_.semantic_type->AsStructType()->GetDeclaration());
     case NodeKind::DeclStmt: {
       const auto& declaration = static_cast<const DeclStmt&>(statement).Decl;
       if (declaration && declaration->GetKind() == NodeKind::VarGroupDecl) {

@@ -1,9 +1,9 @@
 %struct.Counter = type { %struct.Base, i32 }
 %struct.Base = type { ptr }
 
-@"cw:Base:vtable" = constant [3 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Base)i32"], align 8
-@"cw:Counter:vtable" = constant [3 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Counter)i32"], align 8
-@"cw:Probe:vtable" = constant [3 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Probe)i32"], align 8
+@"cw:Base:vtable" = constant { [3 x ptr] } { [3 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Base)i32"] }, align 8
+@"cw:Counter:vtable" = constant { [3 x ptr] } { [3 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Counter)i32"] }, align 8
+@"cw:Probe:vtable" = constant { [3 x ptr] } { [3 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Probe)i32"] }, align 8
 
 define noundef i32 @"cw:Read:func(&copy Base)i32"(ptr noundef nonnull align 8 dereferenceable(8) %this) {
 entry:
@@ -19,7 +19,7 @@ define noundef ptr @"cw:Base:ctor(i32):complete"(ptr noundef returned %this, i32
 entry:
   %value.addr = alloca i32, align 4
   store i32 %value, ptr %value.addr, align 4
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
@@ -27,19 +27,19 @@ define noundef ptr @"cw:Base:ctor(i32):base"(ptr noundef returned %this, i32 nou
 entry:
   %value.addr = alloca i32, align 4
   store i32 %value, ptr %value.addr, align 4
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Base:dtor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
@@ -83,7 +83,7 @@ if.end:                                           ; preds = %if.else, %if.then
   %4 = load i32, ptr %first, align 4
   %add2 = add i32 %4, 10
   store i32 %add2, ptr %limit, align 8
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Counter:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Counter:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
@@ -117,7 +117,7 @@ if.end:                                           ; preds = %if.else, %if.then
   %4 = load i32, ptr %first, align 4
   %add2 = add i32 %4, 10
   store i32 %add2, ptr %limit, align 8
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Counter:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Counter:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
@@ -138,7 +138,7 @@ if.else:                                          ; preds = %entry
   %call1 = call noundef ptr @"cw:Base:ctor(i32):base"(ptr noundef returned %this, i32 noundef 3)
   %limit = getelementptr inbounds nuw %struct.Counter, ptr %this, i32 0, i32 1
   store i32 4, ptr %limit, align 8
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Counter:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Counter:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   br label %if.end
 
 if.end:                                           ; preds = %if.else, %if.then
@@ -162,7 +162,7 @@ if.else:                                          ; preds = %entry
   %call1 = call noundef ptr @"cw:Base:ctor(i32):base"(ptr noundef returned %this, i32 noundef 3)
   %limit = getelementptr inbounds nuw %struct.Counter, ptr %this, i32 0, i32 1
   store i32 4, ptr %limit, align 8
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Counter:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Counter:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   br label %if.end
 
 if.end:                                           ; preds = %if.else, %if.then
@@ -171,16 +171,16 @@ if.end:                                           ; preds = %if.else, %if.then
 
 define noundef ptr @"cw:Counter:dtor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Counter:vtable", i64 0, i64 2), ptr %this, align 8
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Counter:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call = call noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this)
   ret ptr %this
 }
 
 define noundef ptr @"cw:Counter:dtor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Counter:vtable", i64 0, i64 2), ptr %this, align 8
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Counter:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call = call noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this)
   ret ptr %this
 }
@@ -199,7 +199,7 @@ define noundef ptr @"cw:Probe:ctor(i32):complete"(ptr noundef returned %this, i3
 entry:
   %value.addr = alloca i32, align 4
   store i32 %value, ptr %value.addr, align 4
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Probe:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Probe:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
@@ -207,7 +207,7 @@ define noundef ptr @"cw:Probe:ctor(i32):base"(ptr noundef returned %this, i32 no
 entry:
   %value.addr = alloca i32, align 4
   store i32 %value, ptr %value.addr, align 4
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Probe:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Probe:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
@@ -217,7 +217,7 @@ entry:
   %before = alloca i32, align 4
   %storedv = zext i1 %flag to i8
   store i8 %storedv, ptr %flag.addr, align 1
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Probe:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Probe:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %0 = load i8, ptr %flag.addr, align 1
   %loadedv = icmp ne i8 %0, 0
   br i1 %loadedv, label %if.then, label %if.else
@@ -244,7 +244,7 @@ entry:
   %before = alloca i32, align 4
   %storedv = zext i1 %flag to i8
   store i8 %storedv, ptr %flag.addr, align 1
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Probe:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Probe:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %0 = load i8, ptr %flag.addr, align 1
   %loadedv = icmp ne i8 %0, 0
   br i1 %loadedv, label %if.then, label %if.else
@@ -267,12 +267,12 @@ if.end:                                           ; preds = %if.else, %if.then
 
 define noundef ptr @"cw:Probe:dtor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Probe:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Probe:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Probe:dtor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Probe:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Probe:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }

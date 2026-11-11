@@ -5,7 +5,9 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -29,6 +31,7 @@ struct StructLayout {
   std::uint64_t data_size{};
   std::uint64_t non_virtual_size{};
   std::vector<std::uint64_t> base_offsets;  ///< Offset of each direct base, parallel to `StructDecl::base_types`.
+  std::optional<std::size_t> primary_base;  ///< Index of the first dynamic direct base, placed at offset zero.
   std::vector<std::uint64_t> field_offsets;
 };
 

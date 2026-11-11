@@ -49,6 +49,7 @@ struct StructDecl;
 struct TranslationUnitDecl;
 struct VarDecl;
 struct VirtualFunctionDecl;
+struct BaseSubobject;
 struct VTableEntry;
 class StructType;
 
@@ -117,7 +118,8 @@ class CodeGen {
   struct Thunk {
     llvm::Function* function{};
     llvm::Function* target{};
-    std::uint64_t return_adjustment{};
+    std::int64_t this_adjustment{};
+    std::int64_t return_adjustment{};
   };
 
   struct StructRepresentation {
@@ -202,7 +204,7 @@ class CodeGen {
   // Virtual tables, address points, and entries.
   llvm::GlobalVariable* GetOrCreateVTable(const StructDecl& declaration);
   bool EmitVTableDefinition(const StructDecl& declaration);
-  llvm::Constant* GetVTableAddressPoint(const StructDecl& declaration);
+  llvm::Constant* GetVTableAddressPoint(const StructDecl& declaration, const BaseSubobject& base);
   llvm::Constant* GetVirtualFunctionPointer(const VirtualFunctionDecl& declaration);
   llvm::Function* GetVTableEntry(const VTableEntry& entry);
 

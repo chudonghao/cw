@@ -5,8 +5,8 @@
 @__dso_handle = external hidden global i8
 @"cw:trace:var" = global i64 0, align 8
 @"cw:global:var" = global %struct.Derived zeroinitializer, align 8
-@"cw:Base:vtable" = constant [3 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Base)i32"], align 8
-@"cw:Derived:vtable" = constant [3 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Derived)i32"], align 8
+@"cw:Base:vtable" = constant { [3 x ptr] } { [3 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Base)i32"] }, align 8
+@"cw:Derived:vtable" = constant { [3 x ptr] } { [3 x ptr] [ptr null, ptr null, ptr @"cw:Read:func(&copy Derived)i32"] }, align 8
 @llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] [{ i32, ptr, ptr } { i32 65535, ptr @"cw:global_init", ptr null }]
 
 ; Function Attrs: nounwind
@@ -41,26 +41,26 @@ entry:
 
 define noundef ptr @"cw:Base:ctor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Base:ctor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Base:dtor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   call void @"cw:Record:func(&copy Base)void"(ptr noundef nonnull align 8 dereferenceable(8) %this)
   ret ptr %this
 }
 
 define noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   call void @"cw:Record:func(&copy Base)void"(ptr noundef nonnull align 8 dereferenceable(8) %this)
   ret ptr %this
 }
@@ -144,7 +144,7 @@ if.then:                                          ; preds = %entry
   %call4 = call noundef i32 @"cw:Complete:func(&copy Watch)i32"(ptr noundef nonnull align 8 dereferenceable(8) %temporary)
   store i32 %call4, ptr %value, align 8
   %call5 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %temporary)
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Derived:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Derived:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   call void @"cw:Record:func(&copy Base)void"(ptr noundef nonnull align 8 dereferenceable(8) %this)
   %call6 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %local)
   br label %if.end
@@ -157,7 +157,7 @@ if.else:                                          ; preds = %entry
   %add = add i32 %call12, 1
   store i32 %add, ptr %value9, align 8
   %call13 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %temporary10)
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Derived:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Derived:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   call void @"cw:Record:func(&copy Base)void"(ptr noundef nonnull align 8 dereferenceable(8) %this)
   %call14 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %local7)
   br label %if.end
@@ -189,7 +189,7 @@ if.then:                                          ; preds = %entry
   %call4 = call noundef i32 @"cw:Complete:func(&copy Watch)i32"(ptr noundef nonnull align 8 dereferenceable(8) %temporary)
   store i32 %call4, ptr %value, align 8
   %call5 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %temporary)
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Derived:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Derived:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   call void @"cw:Record:func(&copy Base)void"(ptr noundef nonnull align 8 dereferenceable(8) %this)
   %call6 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %local)
   br label %if.end
@@ -202,7 +202,7 @@ if.else:                                          ; preds = %entry
   %add = add i32 %call12, 1
   store i32 %add, ptr %value9, align 8
   %call13 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %temporary10)
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Derived:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Derived:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   call void @"cw:Record:func(&copy Base)void"(ptr noundef nonnull align 8 dereferenceable(8) %this)
   %call14 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %local7)
   br label %if.end
@@ -228,7 +228,7 @@ entry:
 define noundef ptr @"cw:Derived:dtor():complete"(ptr noundef returned %this) {
 entry:
   %local = alloca %struct.Watch, align 8
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Derived:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Derived:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %watch = getelementptr inbounds nuw %struct.Derived, ptr %this, i32 0, i32 1
   %call = call noundef ptr @"cw:Watch:ctor(*const Base):complete"(ptr noundef returned %local, ptr noundef %this)
   call void @"cw:Record:func(&copy Base)void"(ptr noundef nonnull align 8 dereferenceable(8) %this)
@@ -239,14 +239,14 @@ entry:
 
 if.then:                                          ; preds = %entry
   %call1 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %local)
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call2 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %watch)
   %call3 = call noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this)
   br label %return
 
 if.end:                                           ; preds = %entry
   %call4 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %local)
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call5 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %watch)
   %call6 = call noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this)
   br label %return
@@ -258,7 +258,7 @@ return:                                           ; preds = %if.end, %if.then
 define noundef ptr @"cw:Derived:dtor():base"(ptr noundef returned %this) {
 entry:
   %local = alloca %struct.Watch, align 8
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Derived:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Derived:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %watch = getelementptr inbounds nuw %struct.Derived, ptr %this, i32 0, i32 1
   %call = call noundef ptr @"cw:Watch:ctor(*const Base):complete"(ptr noundef returned %local, ptr noundef %this)
   call void @"cw:Record:func(&copy Base)void"(ptr noundef nonnull align 8 dereferenceable(8) %this)
@@ -269,14 +269,14 @@ entry:
 
 if.then:                                          ; preds = %entry
   %call1 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %local)
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call2 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %watch)
   %call3 = call noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this)
   br label %return
 
 if.end:                                           ; preds = %entry
   %call4 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %local)
-  store ptr getelementptr ([3 x ptr], ptr @"cw:Base:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 8) ({ [3 x ptr] }, ptr @"cw:Base:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call5 = call noundef ptr @"cw:Watch:dtor():complete"(ptr noundef returned %watch)
   %call6 = call noundef ptr @"cw:Base:dtor():base"(ptr noundef returned %this)
   br label %return

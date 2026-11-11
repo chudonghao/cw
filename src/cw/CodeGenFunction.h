@@ -164,7 +164,7 @@ class CodeGenFunction {
   bool RegisterGlobalDestructor(const VarDecl& declaration);
 
   // Virtual table pointers and virtual dispatch.
-  bool EmitVTablePointer(Address object, const StructDecl& stage);
+  bool EmitVTablePointers(Address object, const StructDecl& stage);
   llvm::Value* EmitVirtualCallee(const VirtualFunctionDecl& declaration, llvm::Value* receiver);
   llvm::Value* EmitVirtualCallee(llvm::Value* pointer, llvm::Value*& receiver);
   llvm::Value* EmitVirtualPointerIsNotNull(llvm::Value* pointer);

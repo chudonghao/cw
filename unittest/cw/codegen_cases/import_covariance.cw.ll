@@ -1,6 +1,6 @@
-@"cw:Local:vtable" = constant [6 x ptr] [ptr null, ptr null, ptr @"cw:Pointer:func(&copy SpecialSource)*SpecialProduct:thunk(0,8)", ptr @"cw:Reference:func(&copy SpecialSource)&copy SpecialProduct:thunk(0,8)", ptr @"cw:Pointer:func(&copy SpecialSource)*SpecialProduct", ptr @"cw:Reference:func(&copy SpecialSource)&copy SpecialProduct"], align 8
-@"cw:SpecialSource:vtable" = external constant [6 x ptr], align 8
-@"cw:Another:vtable" = constant [6 x ptr] [ptr null, ptr null, ptr @"cw:Pointer:func(&copy SpecialSource)*SpecialProduct:thunk(0,8)", ptr @"cw:Reference:func(&copy SpecialSource)&copy SpecialProduct:thunk(0,8)", ptr @"cw:Pointer:func(&copy SpecialSource)*SpecialProduct", ptr @"cw:Reference:func(&copy SpecialSource)&copy SpecialProduct"], align 8
+@"cw:Local:vtable" = constant { [6 x ptr] } { [6 x ptr] [ptr null, ptr null, ptr @"cw:Pointer:func(&copy SpecialSource)*SpecialProduct:thunk(0,8)", ptr @"cw:Reference:func(&copy SpecialSource)&copy SpecialProduct:thunk(0,8)", ptr @"cw:Pointer:func(&copy SpecialSource)*SpecialProduct", ptr @"cw:Reference:func(&copy SpecialSource)&copy SpecialProduct"] }, align 8
+@"cw:SpecialSource:vtable" = external constant { [6 x ptr] }, align 8
+@"cw:Another:vtable" = constant { [6 x ptr] } { [6 x ptr] [ptr null, ptr null, ptr @"cw:Pointer:func(&copy SpecialSource)*SpecialProduct:thunk(0,8)", ptr @"cw:Reference:func(&copy SpecialSource)&copy SpecialProduct:thunk(0,8)", ptr @"cw:Pointer:func(&copy SpecialSource)*SpecialProduct", ptr @"cw:Reference:func(&copy SpecialSource)&copy SpecialProduct"] }, align 8
 
 ; Function Attrs: noreturn
 declare void @__cxa_pure_virtual() #0
@@ -28,29 +28,29 @@ declare noundef ptr @"cw:SpecialSource:dtor():base"(ptr noundef returned)
 define noundef ptr @"cw:Local:ctor():complete"(ptr noundef returned %this) {
 entry:
   %call = call noundef ptr @"cw:SpecialSource:ctor():base"(ptr noundef returned %this)
-  store ptr getelementptr ([6 x ptr], ptr @"cw:Local:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:Local:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Local:ctor():base"(ptr noundef returned %this) {
 entry:
   %call = call noundef ptr @"cw:SpecialSource:ctor():base"(ptr noundef returned %this)
-  store ptr getelementptr ([6 x ptr], ptr @"cw:Local:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:Local:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Local:dtor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([6 x ptr], ptr @"cw:Local:vtable", i64 0, i64 2), ptr %this, align 8
-  store ptr getelementptr ([6 x ptr], ptr @"cw:SpecialSource:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:Local:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:SpecialSource:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call = call noundef ptr @"cw:SpecialSource:dtor():base"(ptr noundef returned %this)
   ret ptr %this
 }
 
 define noundef ptr @"cw:Local:dtor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([6 x ptr], ptr @"cw:Local:vtable", i64 0, i64 2), ptr %this, align 8
-  store ptr getelementptr ([6 x ptr], ptr @"cw:SpecialSource:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:Local:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:SpecialSource:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call = call noundef ptr @"cw:SpecialSource:dtor():base"(ptr noundef returned %this)
   ret ptr %this
 }
@@ -88,29 +88,29 @@ entry:
 define noundef ptr @"cw:Another:ctor():complete"(ptr noundef returned %this) {
 entry:
   %call = call noundef ptr @"cw:SpecialSource:ctor():base"(ptr noundef returned %this)
-  store ptr getelementptr ([6 x ptr], ptr @"cw:Another:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:Another:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Another:ctor():base"(ptr noundef returned %this) {
 entry:
   %call = call noundef ptr @"cw:SpecialSource:ctor():base"(ptr noundef returned %this)
-  store ptr getelementptr ([6 x ptr], ptr @"cw:Another:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:Another:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Another:dtor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([6 x ptr], ptr @"cw:Another:vtable", i64 0, i64 2), ptr %this, align 8
-  store ptr getelementptr ([6 x ptr], ptr @"cw:SpecialSource:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:Another:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:SpecialSource:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call = call noundef ptr @"cw:SpecialSource:dtor():base"(ptr noundef returned %this)
   ret ptr %this
 }
 
 define noundef ptr @"cw:Another:dtor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([6 x ptr], ptr @"cw:Another:vtable", i64 0, i64 2), ptr %this, align 8
-  store ptr getelementptr ([6 x ptr], ptr @"cw:SpecialSource:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:Another:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 32) ({ [6 x ptr] }, ptr @"cw:SpecialSource:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   %call = call noundef ptr @"cw:SpecialSource:dtor():base"(ptr noundef returned %this)
   ret ptr %this
 }

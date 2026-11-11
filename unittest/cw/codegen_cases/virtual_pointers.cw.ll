@@ -1,6 +1,6 @@
 %struct.Item = type { ptr, i32 }
 
-@"cw:Item:vtable" = constant [4 x ptr] [ptr null, ptr null, ptr @"cw:First:func(&copy Item)i32", ptr @"cw:Second:func(&copy Item)i32"], align 8
+@"cw:Item:vtable" = constant { [4 x ptr] } { [4 x ptr] [ptr null, ptr null, ptr @"cw:First:func(&copy Item)i32", ptr @"cw:Second:func(&copy Item)i32"] }, align 8
 
 define noundef i32 @"cw:First:func(&copy Item)i32"(ptr noundef nonnull align 8 dereferenceable(12) %this) {
 entry:
@@ -36,7 +36,7 @@ entry:
   %value1 = getelementptr inbounds nuw %struct.Item, ptr %this, i32 0, i32 1
   %0 = load i32, ptr %value.addr, align 4
   store i32 %0, ptr %value1, align 8
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Item:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Item:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
@@ -47,19 +47,19 @@ entry:
   %value1 = getelementptr inbounds nuw %struct.Item, ptr %this, i32 0, i32 1
   %0 = load i32, ptr %value.addr, align 4
   store i32 %0, ptr %value1, align 8
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Item:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Item:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Item:dtor():complete"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Item:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Item:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
 define noundef ptr @"cw:Item:dtor():base"(ptr noundef returned %this) {
 entry:
-  store ptr getelementptr ([4 x ptr], ptr @"cw:Item:vtable", i64 0, i64 2), ptr %this, align 8
+  store ptr getelementptr inbounds inrange(-16, 16) ({ [4 x ptr] }, ptr @"cw:Item:vtable", i32 0, i32 0, i32 2), ptr %this, align 8
   ret ptr %this
 }
 
