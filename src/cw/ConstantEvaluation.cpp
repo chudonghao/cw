@@ -1,14 +1,14 @@
-/// \file SemaConstant.cpp
+/// \file ConstantEvaluation.cpp
 /// \copyright 2026 Donghao Chu
 /// \license SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 /// \url https://github.com/chudonghao/cw
 
-#include "SemaConstant.h"
+#include "ConstantEvaluation.h"
 
 #include "ASTContext.h"
 #include "ast.h"
 
-namespace cw::sema_detail {
+namespace cw {
 
 namespace {
 
@@ -85,7 +85,8 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       if (!unary.Operand) {
         return Failure(ConstantIntegerFailureKind::NotConstant, expression);
       }
-      if (unary.op != expr::plus && unary.op != expr::minus && unary.op != expr::tilde) {
+      if (unary.op != UnaryOperatorKind::Plus && unary.op != UnaryOperatorKind::Minus &&
+          unary.op != UnaryOperatorKind::BitwiseNot) {
         return Failure(ConstantIntegerFailureKind::UnsupportedOperation, expression);
       }
       auto operand = Evaluate(*unary.Operand, ast_context);
@@ -94,10 +95,10 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       }
       auto value = std::get<llvm::APSInt>(std::move(operand));
       if (!expression.type || expression.type.GetTypePtr()->GetKind() == TypeKind::ComptimeInt) {
-        if (unary.op == expr::tilde) {
+        if (unary.op == UnaryOperatorKind::BitwiseNot) {
           return Failure(ConstantIntegerFailureKind::NotInteger, expression);
         }
-        if (unary.op == expr::minus) {
+        if (unary.op == UnaryOperatorKind::Minus) {
           NegateExactInteger(value);
         }
         return value;
@@ -105,9 +106,9 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       if (!ConvertToType(value, expression.type, ast_context)) {
         return Failure(ConstantIntegerFailureKind::NotRepresentable, expression);
       }
-      if (unary.op == expr::tilde) {
+      if (unary.op == UnaryOperatorKind::BitwiseNot) {
         value.flipAllBits();
-      } else if (unary.op == expr::minus) {
+      } else if (unary.op == UnaryOperatorKind::Minus) {
         bool overflow = false;
         const llvm::APInt zero(value.getBitWidth(), 0);
         value = value.isSigned() ? zero.ssub_ov(value, overflow) : zero.usub_ov(value, overflow);
@@ -122,9 +123,11 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
       if (!binary.LHS || !binary.RHS) {
         return Failure(ConstantIntegerFailureKind::NotConstant, expression);
       }
-      if (binary.op != expr::plus && binary.op != expr::minus && binary.op != expr::star && binary.op != expr::slash &&
-          binary.op != expr::percent && binary.op != expr::amp && binary.op != expr::pipe && binary.op != expr::caret &&
-          binary.op != expr::lessless && binary.op != expr::greatergreater) {
+      if (binary.op != BinaryOperatorKind::Add && binary.op != BinaryOperatorKind::Subtract &&
+          binary.op != BinaryOperatorKind::Multiply && binary.op != BinaryOperatorKind::Divide &&
+          binary.op != BinaryOperatorKind::Remainder && binary.op != BinaryOperatorKind::BitwiseAnd &&
+          binary.op != BinaryOperatorKind::BitwiseOr && binary.op != BinaryOperatorKind::BitwiseXor &&
+          binary.op != BinaryOperatorKind::ShiftLeft && binary.op != BinaryOperatorKind::ShiftRight) {
         return Failure(ConstantIntegerFailureKind::UnsupportedOperation, expression);
       }
       auto left = Evaluate(*binary.LHS, ast_context);
@@ -151,36 +154,37 @@ ConstantIntegerResult Evaluate(const Expr& expression, const ASTContext& ast_con
           return Failure(ConstantIntegerFailureKind::InvalidShiftCount, *binary.RHS);
         }
         const unsigned count = static_cast<unsigned>(right_value.getZExtValue());
-        if (binary.op == expr::lessless) {
+        if (binary.op == BinaryOperatorKind::ShiftLeft) {
           left_value <<= count;
         } else {
           left_value >>= count;
         }
         return left_value;
       }
-      if ((binary.op == expr::slash || binary.op == expr::percent) && right_value.isZero()) {
+      if ((binary.op == BinaryOperatorKind::Divide || binary.op == BinaryOperatorKind::Remainder) &&
+          right_value.isZero()) {
         return Failure(ConstantIntegerFailureKind::ZeroDivisor, *binary.RHS);
       }
       // Required constant evaluation rejects each overflow before evaluating its parent.
       llvm::APSInt value(left_value.getBitWidth(), left_value.isUnsigned());
       bool overflow = false;
-      if (binary.op == expr::plus) {
+      if (binary.op == BinaryOperatorKind::Add) {
         value =
             value.isSigned() ? left_value.sadd_ov(right_value, overflow) : left_value.uadd_ov(right_value, overflow);
-      } else if (binary.op == expr::minus) {
+      } else if (binary.op == BinaryOperatorKind::Subtract) {
         value =
             value.isSigned() ? left_value.ssub_ov(right_value, overflow) : left_value.usub_ov(right_value, overflow);
-      } else if (binary.op == expr::star) {
+      } else if (binary.op == BinaryOperatorKind::Multiply) {
         value =
             value.isSigned() ? left_value.smul_ov(right_value, overflow) : left_value.umul_ov(right_value, overflow);
-      } else if (binary.op == expr::slash) {
+      } else if (binary.op == BinaryOperatorKind::Divide) {
         value = value.isSigned() ? left_value.sdiv_ov(right_value, overflow) : left_value.udiv(right_value);
-      } else if (binary.op == expr::percent) {
+      } else if (binary.op == BinaryOperatorKind::Remainder) {
         // MIN % -1 is zero even though the corresponding quotient is not representable.
         value = left_value % right_value;
-      } else if (binary.op == expr::amp) {
+      } else if (binary.op == BinaryOperatorKind::BitwiseAnd) {
         value = left_value & right_value;
-      } else if (binary.op == expr::pipe) {
+      } else if (binary.op == BinaryOperatorKind::BitwiseOr) {
         value = left_value | right_value;
       } else {
         value = left_value ^ right_value;
@@ -231,4 +235,4 @@ ConstantIntegerResult EvaluateConstantInteger(const Expr& expression, const ASTC
   return Evaluate(expression, ast_context);
 }
 
-}  // namespace cw::sema_detail
+}  // namespace cw

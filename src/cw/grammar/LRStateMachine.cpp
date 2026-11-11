@@ -9,7 +9,7 @@
 
 #include "LRParseTable.h"
 
-namespace cw::lang {
+namespace cw::grammar {
 
 LRStateMachine::LRStateMachine(Grammar grammar, LRParseTable parse_table)
     : grammar_(std::move(grammar)), parse_table_(std::move(parse_table)) {}
@@ -68,4 +68,4 @@ int LRStateMachine::operator()(int symbol) {
   }
 }
 
-}  // namespace cw::lang
+}  // namespace cw::grammar

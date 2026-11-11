@@ -8,13 +8,16 @@
 #include <cstdint>
 #include <iomanip>
 
+#include <boost/assert.hpp>
+
 #include <llvm/ADT/SmallString.h>
 
 #include "NamespaceContext.h"
 
 namespace cw {
 
-ASTDumper::ASTDumper(std::ostream& os, const std::vector<Source>& sources) : os_(os), sources_(sources) {}
+ASTDumper::ASTDumper(std::ostream& os, const std::vector<Source>& sources, Stage stage)
+    : os_(os), sources_(sources), stage_(stage) {}
 
 void ASTDumper::Dump(Node& node) {
   indent_stack_.clear();
@@ -172,15 +175,9 @@ void ASTDumper::PrintUnqualifiedTypeName(const Type& type) {
       break;
     case TypeKind::Function: {
       const auto& function_type = static_cast<const FunctionType&>(type);
-      os_ << "func (";
-      const auto& parameter_types = function_type.GetParameterTypes();
-      for (std::size_t i = 0; i < parameter_types.size(); ++i) {
-        if (i != 0) {
-          os_ << ", ";
-        }
-        PrintTypeName(QualType(parameter_types[i]));
-      }
-      os_ << ") ";
+      os_ << "func ";
+      PrintParameterTypes(function_type);
+      os_ << " ";
       PrintTypeName(QualType(function_type.GetReturnType()));
       break;
     }
@@ -203,8 +200,37 @@ void ASTDumper::PrintUnqualifiedTypeName(const Type& type) {
   }
 }
 
+void ASTDumper::PrintParameterTypes(const FunctionType& type) {
+  os_ << "(";
+  const auto& parameter_types = type.GetParameterTypes();
+  for (std::size_t i = 0; i < parameter_types.size(); ++i) {
+    if (i != 0) {
+      os_ << ", ";
+    }
+    PrintTypeName(QualType(parameter_types[i]));
+  }
+  os_ << ")";
+}
+
+void ASTDumper::PrintWrittenName(const NameSyntax& name) {
+  if (name.empty()) {
+    return;
+  }
+  os_ << " '";
+  if (name.IsOperator()) {
+    // An operator segment stores only its token; restore the keyword in declaration spelling.
+    const std::string spelling = name.Spelling();
+    const auto& short_name = name.Unqualified();
+    os_ << spelling.substr(0, spelling.size() - short_name.size()) << "operator" << short_name;
+  } else {
+    os_ << name;
+  }
+  os_ << "'";
+}
+
 void ASTDumper::PrintType(QualType type) {
   if (!type) {
+    os_ << " '<error>'";
     return;
   }
   os_ << " '";
@@ -213,9 +239,22 @@ void ASTDumper::PrintType(QualType type) {
 }
 
 void ASTDumper::PrintExprType(const Expr& expression) {
+  if (!IsSemanticStage()) {
+    return;
+  }
+  // Type and value category form one result, so an undetermined result prints one marker.
+  if (!expression.type) {
+    os_ << " '<error>'";
+    return;
+  }
   PrintType(expression.type);
-  switch (expression.value_category) {
+  PrintValueCategory(expression.value_category);
+}
+
+void ASTDumper::PrintValueCategory(ValueCategory category) {
+  switch (category) {
     case ValueCategory::None:
+      os_ << " non-object";
       break;
     case ValueCategory::LValue:
       os_ << " lvalue";
@@ -227,6 +266,73 @@ void ASTDumper::PrintExprType(const Expr& expression) {
       os_ << " pure-rvalue";
       break;
   }
+}
+
+void ASTDumper::PrintDeclType(const ValueDecl& declaration) {
+  if (IsSemanticStage()) {
+    PrintDeclaredType(declaration);
+  }
+}
+
+void ASTDumper::PrintDeclaredType(const ValueDecl& declaration) {
+  const char* keyword = nullptr;
+  const StructType* target = nullptr;
+  switch (declaration.GetKind()) {
+    case NodeKind::ConstructorDecl:
+      keyword = "ctor";
+      target = static_cast<const ConstructorDecl&>(declaration).target_type;
+      break;
+    case NodeKind::DestructorDecl:
+      keyword = "dtor";
+      target = static_cast<const DestructorDecl&>(declaration).target_type;
+      break;
+    default:
+      PrintType(declaration.type);
+      return;
+  }
+  // The declaration form names the target, so a missing target leaves the type undetermined.
+  if (!declaration.type || !target) {
+    os_ << " '<error>'";
+    return;
+  }
+  const auto* function_type = declaration.type.GetTypePtr()->AsFunctionType();
+  BOOST_ASSERT(function_type);
+  os_ << " '" << keyword << " ";
+  PrintTypeName(QualType(target));
+  PrintParameterTypes(*function_type);
+  os_ << "'";
+}
+
+void ASTDumper::PrintReferenceTarget(const ValueDecl* declaration) {
+  if (!IsSemanticStage()) {
+    return;
+  }
+  if (declaration) {
+    PrintDeclReference(*declaration);
+  } else {
+    os_ << " <error>";
+  }
+}
+
+void ASTDumper::PrintSelectedConstructor(const ConstructorDecl* constructor, const Expr& construction) {
+  if (!IsSemanticStage()) {
+    return;
+  }
+  if (constructor) {
+    PrintDeclReference(*constructor);
+    return;
+  }
+  // Trivial default formation and failed selection both leave no constructor; only an
+  // error-free node guarantees the former.
+  os_ << (construction.ContainsErrors() ? " <error>" : " trivial");
+}
+
+void ASTDumper::PrintRelation(const char* label, const ValueDecl* declaration) {
+  if (!IsSemanticStage() || !declaration) {
+    return;
+  }
+  os_ << " " << label;
+  PrintDeclReference(*declaration);
 }
 
 void ASTDumper::PrintDeclReference(const ValueDecl& declaration) {
@@ -273,7 +379,7 @@ void ASTDumper::PrintDeclReference(const ValueDecl& declaration) {
       os_ << " '" << declaration.QualifiedName() << "'";
     }
   }
-  PrintType(declaration.type);
+  PrintDeclaredType(declaration);
 }
 
 void ASTDumper::PrintStructReference(const StructDecl& declaration) {
@@ -285,21 +391,31 @@ void ASTDumper::PrintStructReference(const StructDecl& declaration) {
 }
 
 void ASTDumper::PrintSpecialFunctionTarget(const StructType* target_type) {
-  if (!target_type) {
+  if (!IsSemanticStage()) {
     return;
   }
-  os_ << " target Struct ";
+  os_ << " target";
+  if (!target_type) {
+    os_ << " <error>";
+    return;
+  }
+  os_ << " Struct ";
   PrintAddress(target_type->GetDeclaration());
   PrintType(QualType(target_type));
 }
 
-void ASTDumper::PrintBaseType(const StructType& type, bool is_last) {
+void ASTDumper::PrintBaseType(const StructType* type, bool is_last) {
   PushIndent(is_last);
   PrintIndent();
   os_ << "BaseType";
-  PrintType(QualType{&type});
+  if (!type) {
+    os_ << " '<error>'\n";
+    PopIndent();
+    return;
+  }
+  PrintType(QualType{type});
 
-  const StructDecl* declaration = type.GetDeclaration();
+  const StructDecl* declaration = type->GetDeclaration();
   os_ << " Struct ";
   PrintAddress(declaration);
   if (declaration && !declaration->name.empty()) {
@@ -474,7 +590,7 @@ void ASTDumper::Visit(VarDecl& n) {
   if (!n.name.empty()) {
     os_ << " " << n.name;
   }
-  PrintType(n.type);
+  PrintDeclType(n);
   for (const auto& attribute : n.attributes) {
     os_ << " attr='" << attribute.name << "'";
   }
@@ -493,7 +609,7 @@ void ASTDumper::Visit(StructDecl& n) {
   if (n.is_declared_trivial) {
     os_ << " trivial";
   }
-  if (n.is_abstract) {
+  if (IsSemanticStage() && n.is_abstract) {
     os_ << " abstract";
   }
   if (!n.base.empty()) {
@@ -503,10 +619,12 @@ void ASTDumper::Visit(StructDecl& n) {
   PrintErrorMark(n);
   os_ << "\n";
 
-  size_t total_children = (n.base_type ? 1 : 0) + (n.VirtualDecl ? 1 : 0) + n.Fields.size();
+  // The resolved base type belongs to the written base name.
+  const bool has_base_type = IsSemanticStage() && !n.base.empty();
+  size_t total_children = (has_base_type ? 1 : 0) + (n.VirtualDecl ? 1 : 0) + n.Fields.size();
   size_t child_idx = 0;
-  if (n.base_type) {
-    PrintBaseType(*n.base_type, ++child_idx == total_children);
+  if (has_base_type) {
+    PrintBaseType(n.base_type, ++child_idx == total_children);
   }
   if (n.VirtualDecl) {
     VisitChild(n.VirtualDecl.get(), ++child_idx == total_children);
@@ -521,11 +639,8 @@ void ASTDumper::Visit(FunctionDecl& n) {
   if (!n.name.empty()) {
     os_ << (IsOperatorFunctionName(n.name) ? " operator" : " ") << n.name;
   }
-  PrintType(n.type);
-  if (n.virtual_declaration) {
-    os_ << " virtual-declaration";
-    PrintDeclReference(*n.virtual_declaration);
-  }
+  PrintDeclType(n);
+  PrintRelation("virtual-declaration", n.virtual_declaration);
   PrintDeclModifier(n);
   PrintErrorMark(n);
   os_ << "\n";
@@ -549,7 +664,7 @@ void ASTDumper::Visit(ConstructorDecl& n) {
     os_ << " " << n.name;
   }
   PrintSpecialFunctionTarget(n.target_type);
-  PrintType(n.type);
+  PrintDeclType(n);
   PrintDeclModifier(n);
   PrintErrorMark(n);
   os_ << "\n";
@@ -573,7 +688,7 @@ void ASTDumper::Visit(DestructorDecl& n) {
     os_ << " " << n.name;
   }
   PrintSpecialFunctionTarget(n.target_type);
-  PrintType(n.type);
+  PrintDeclType(n);
   PrintDeclModifier(n);
   PrintErrorMark(n);
   os_ << "\n";
@@ -596,21 +711,15 @@ void ASTDumper::Visit(VirtualFunctionDecl& n) {
   if (!n.name.empty()) {
     os_ << " " << n.name;
   }
-  PrintType(n.type);
+  PrintDeclType(n);
   if (n.is_override) {
     os_ << " override";
   }
   if (n.is_abstract) {
     os_ << " abstract";
   }
-  if (n.overridden_virtual_function) {
-    os_ << " overrides";
-    PrintDeclReference(*n.overridden_virtual_function);
-  }
-  if (n.implementation) {
-    os_ << " implementation";
-    PrintDeclReference(*n.implementation);
-  }
+  PrintRelation("overrides", n.overridden_virtual_function);
+  PrintRelation("implementation", n.implementation);
   PrintErrorMark(n);
   os_ << "\n";
 
@@ -629,7 +738,7 @@ void ASTDumper::Visit(ParmVarDecl& n) {
   if (!n.name.empty()) {
     os_ << " " << n.name;
   }
-  PrintType(n.type);
+  PrintDeclType(n);
   for (const auto& attribute : n.attributes) {
     os_ << " attr='" << attribute.name << "'";
   }
@@ -643,7 +752,7 @@ void ASTDumper::Visit(ReturnVarDecl& n) {
   if (!n.name.empty()) {
     os_ << " " << n.name;
   }
-  PrintType(n.type);
+  PrintDeclType(n);
   for (const auto& attribute : n.attributes) {
     os_ << " attr='" << attribute.name << "'";
   }
@@ -657,7 +766,7 @@ void ASTDumper::Visit(FieldDecl& n) {
   if (!n.name.empty()) {
     os_ << " " << n.name;
   }
-  PrintType(n.type);
+  PrintDeclType(n);
   PrintErrorMark(n);
   os_ << "\n";
   VisitChild(n.Type.get(), true);
@@ -815,21 +924,25 @@ void ASTDumper::Visit(StringLiteral& n) {
   os_ << "\n";
 }
 
-void ASTDumper::Visit(DeclRefExpr& n) {
+void ASTDumper::Visit(DeclRefExpr& n) { DumpDeclRefExpr(n, true); }
+
+void ASTDumper::DumpDeclRefExpr(DeclRefExpr& n, bool print_written_name) {
   PrintNode("DeclRefExpr", n);
-  PrintExprType(n);
-  if (n.declaration) {
-    PrintDeclReference(*n.declaration);
+  if (IsSemanticStage() && n.declaration && n.type && n.type == n.declaration->type) {
+    // A reference carrying its declaration's type spells it as the declaration does.
+    PrintDeclaredType(*n.declaration);
+    PrintValueCategory(n.value_category);
   } else {
-    os_ << " '";
-    if (n.name.IsOperator()) {
-      const auto& short_name = n.name.Unqualified();
-      const auto spelling = n.name.Spelling();
-      os_ << spelling.substr(0, spelling.size() - short_name.size()) << "operator " << short_name;
-    } else {
-      os_ << n.name;
-    }
-    os_ << "'";
+    PrintExprType(n);
+  }
+  if (print_written_name) {
+    PrintWrittenName(n.name);
+  }
+  if (IsSemanticStage() && !n.declaration && n.type &&
+      n.type.GetTypePtr()->GetKind() == TypeKind::FunctionOverloadSet) {
+    os_ << " overload-set";
+  } else {
+    PrintReferenceTarget(n.declaration);
   }
   PrintErrorMark(n);
   os_ << "\n";
@@ -854,8 +967,8 @@ void ASTDumper::Visit(ParenExpr& n) {
 void ASTDumper::Visit(UnaryOperator& n) {
   PrintNode("UnaryOperator", n);
   PrintExprType(n);
-  os_ << " '" << expr::to_string(n.op) << "'";
-  if (n.is_postfix) {
+  os_ << " '" << to_string(n.op) << "'";
+  if (IsPostfixOperator(n.op)) {
     os_ << " postfix";
   }
   PrintErrorMark(n);
@@ -866,7 +979,7 @@ void ASTDumper::Visit(UnaryOperator& n) {
 void ASTDumper::Visit(BinaryOperator& n) {
   PrintNode("BinaryOperator", n);
   PrintExprType(n);
-  os_ << " '" << expr::to_string(n.op) << "'";
+  os_ << " '" << to_string(n.op) << "'";
   PrintErrorMark(n);
   os_ << "\n";
   VisitChild(n.LHS.get(), false);
@@ -885,9 +998,7 @@ void ASTDumper::Visit(InitializationExpr& n) {
 void ASTDumper::Visit(ImplicitResultInitializationExpr& n) {
   PrintNode("ImplicitResultInitializationExpr", n);
   PrintExprType(n);
-  if (n.Target) {
-    PrintDeclReference(*n.Target);
-  }
+  PrintReferenceTarget(n.Target);
   PrintErrorMark(n);
   os_ << "\n";
   VisitChild(n.Source.get(), true);
@@ -906,10 +1017,8 @@ void ASTDumper::Visit(ConditionalOperator& n) {
 void ASTDumper::Visit(MemberExpr& n) {
   PrintNode("MemberExpr", n);
   PrintExprType(n);
-  os_ << " " << expr::to_string(n.op) << n.member;
-  if (n.declaration) {
-    PrintDeclReference(*n.declaration);
-  }
+  os_ << " " << to_string(n.op) << n.member;
+  PrintReferenceTarget(n.declaration);
   PrintErrorMark(n);
   os_ << "\n";
   VisitChild(n.Base.get(), true);
@@ -918,7 +1027,7 @@ void ASTDumper::Visit(MemberExpr& n) {
 void ASTDumper::Visit(BaseSubobjectExpr& n) {
   PrintNode("BaseSubobjectExpr", n);
   PrintExprType(n);
-  os_ << " " << expr::to_string(n.op);
+  os_ << " " << to_string(n.op);
   if (const StructDecl* declaration = n.GetDeclaration()) {
     os_ << declaration->name;
     if (n.base_path.size() == 1) {
@@ -931,6 +1040,8 @@ void ASTDumper::Visit(BaseSubobjectExpr& n) {
         }
       }
     }
+  } else if (IsSemanticStage()) {
+    os_ << " <error>";
   }
   PrintErrorMark(n);
   os_ << "\n";
@@ -1022,7 +1133,11 @@ void ASTDumper::Visit(OperatorCallExpr& n) {
   size_t total_children = (n.Callee ? 1 : 0) + n.Args.size();
   size_t child_idx = 0;
   if (n.Callee) {
-    VisitChild(n.Callee.get(), ++child_idx == total_children);
+    // Sema synthesizes this callee from operator or call syntax, so it has no written name.
+    BOOST_ASSERT(n.Callee->GetKind() == NodeKind::DeclRefExpr);
+    PushIndent(++child_idx == total_children);
+    DumpDeclRefExpr(static_cast<DeclRefExpr&>(*n.Callee), false);
+    PopIndent();
   }
   for (const auto& argument : n.Args) {
     VisitChild(argument.get(), ++child_idx == total_children);
@@ -1032,15 +1147,15 @@ void ASTDumper::Visit(OperatorCallExpr& n) {
 void ASTDumper::Visit(ConstructionExpr& n) {
   PrintNode("ConstructionExpr", n);
   PrintExprType(n);
-  os_ << " " << to_string(n.construction_kind);
+  if (IsSemanticStage()) {
+    os_ << " " << to_string(n.construction_kind);
+  }
   if (!n.target_name.empty()) {
     os_ << " target ";
     PrintSourceRange(n.target_name.Range());
     os_ << " '" << n.target_name << "'";
   }
-  if (n.constructor) {
-    PrintDeclReference(*n.constructor);
-  }
+  PrintSelectedConstructor(n.constructor, n);
   PrintErrorMark(n);
   os_ << "\n";
 
@@ -1057,9 +1172,7 @@ void ASTDumper::Visit(ConstructionExpr& n) {
 void ASTDumper::Visit(ArrayConstructionExpr& n) {
   PrintNode("ArrayConstructionExpr", n);
   PrintExprType(n);
-  if (n.element_constructor) {
-    PrintDeclReference(*n.element_constructor);
-  }
+  PrintSelectedConstructor(n.element_constructor, n);
   PrintErrorMark(n);
   os_ << "\n";
   VisitChild(n.Source.get(), true);
@@ -1104,7 +1217,7 @@ void ASTDumper::Visit(DestructorCallExpr& n) {
 void ASTDumper::Visit(ReceiverCallExpr& n) {
   PrintNode("ReceiverCallExpr", n);
   PrintExprType(n);
-  os_ << " " << expr::to_string(n.op);
+  os_ << " " << to_string(n.op);
   if (n.is_nonvirtual) {
     os_ << " nonvirtual";
   }
@@ -1127,9 +1240,7 @@ void ASTDumper::Visit(ReceiverCallExpr& n) {
 void ASTDumper::Visit(ImplicitOverloadSetSelectionExpr& n) {
   PrintNode("ImplicitOverloadSetSelectionExpr", n);
   PrintExprType(n);
-  if (n.selected_declaration) {
-    PrintDeclReference(*n.selected_declaration);
-  }
+  PrintReferenceTarget(n.selected_declaration);
   PrintErrorMark(n);
   os_ << "\n";
   VisitChild(n.SubExpr.get(), true);

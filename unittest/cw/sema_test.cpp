@@ -88,7 +88,8 @@ class SemaTest : public ::testing::Test {
   }
 
   void ExpectAstDump(std::string_view expected_dump) {
-    cw::test::ExpectAstDump(*ast_context_.GetTranslationUnitDecl(), sources_, expected_dump);
+    cw::test::ExpectAstDump(*ast_context_.GetTranslationUnitDecl(), sources_, cw::ASTDumper::Stage::Semantic,
+                            expected_dump);
   }
 
   void AnalyzeLanguageFeature(std::string_view name) {
@@ -474,6 +475,46 @@ TEST_F(SemaTest, RejectsConstructorOutsideTypeNamespace) {
 TEST_F(SemaTest, RejectsDestructorOutsideTypeNamespace) {
   Analyze("namespace A { struct T {} ctor T() {} dtor T() {} } namespace B { dtor T() {} }");
   ExpectError(0, 71, "unknown destructor target type 'T'", 1);
+}
+
+TEST_F(SemaTest, QualifiesNamespacedConstructorAndDestructorTypes) {
+  Analyze(R"(namespace outer::inner {
+struct Item {}
+ctor Item(value i32) {}
+dtor Item() {}
+}
+func Use(pointer *outer::inner::Item) {
+  var item := outer::inner::Item(1);
+  dtor (pointer) outer::inner::Item();
+})");
+
+  ExpectAstDump(R"(TranslationUnitDecl {{address}}
+|-NamespaceDecl {{address}} <test.cw:1:1, line:5:2> outer
+| `-NamespaceDecl {{address}} <line:1:16, line:5:2> inner nested
+|   |-StructDecl {{address:item}} <line:2:1, col:15> Item
+|   |-ConstructorDecl {{address:constructor}} <line:3:1, col:24> Item target Struct {{address:item}} 'outer::inner::Item' 'ctor outer::inner::Item(i32)'
+|   | |-ParmVarDecl {{address}} <col:11, col:20> value 'i32'
+|   | | `-BuiltinType {{address}} <col:17, col:20> 'i32'
+|   | `-CompoundStmt {{address}} <col:22, col:24>
+|   |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|   `-DestructorDecl {{address:destructor}} <line:4:1, col:15> Item target Struct {{address:item}} 'outer::inner::Item' 'dtor outer::inner::Item()'
+|     `-CompoundStmt {{address}} <col:13, col:15>
+`-FunctionDecl {{address}} <line:6:1, line:9:2> Use 'func (*outer::inner::Item) void'
+  |-ParmVarDecl {{address:pointer}} <line:6:10, col:37> pointer '*outer::inner::Item'
+  | `-PointerType {{address}} <col:18, col:37>
+  |   `-NamedType {{address}} <col:19, col:37> 'outer::inner::Item'
+  `-CompoundStmt {{address}} <col:39, line:9:2>
+    |-DeclStmt {{address}} <line:7:3, col:37>
+    | `-VarGroupDecl {{address}} <col:3, col:37>
+    |   |-VarDecl {{address}} <col:7, col:11> item 'outer::inner::Item'
+    |   `-ConstructionExpr {{address}} <col:15, col:36> 'outer::inner::Item' pure-rvalue complete-object target <col:15, col:33> 'outer::inner::Item' Constructor {{address:constructor}} 'outer::inner::Item' 'ctor outer::inner::Item(i32)'
+    |     `-ImplicitCastExpr {{address}} <col:34, col:35> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+    |       `-IntegerLiteral {{address}} <col:34, col:35> 'comptime_int' non-object 1
+    `-ExprStmt {{address}} <line:8:3, col:39>
+      `-DestructorCallExpr {{address}} <col:3, col:38> 'void' non-object
+        |-ImplicitCastExpr {{address}} <col:9, col:16> '*outer::inner::Item' pure-rvalue <LValueToRValue>
+        | `-DeclRefExpr {{address}} <col:9, col:16> '*outer::inner::Item' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*outer::inner::Item'
+        `-DeclRefExpr {{address}} <col:18, col:36> 'dtor outer::inner::Item()' non-object 'outer::inner::Item' Destructor {{address:destructor}} 'outer::inner::Item' 'dtor outer::inner::Item()')");
 }
 
 TEST_F(SemaTest, AcceptsCopyAssignmentOutsideTypeNamespace) {
@@ -1228,7 +1269,7 @@ func higher(callback *func (i32) void) *func () *S { null })");
 | |   `-FunctionType {{address}} <col:12, col:24>
 | |     `-BuiltinType {{address}} <col:20, col:24> 'void'
 | `-ImplicitCastExpr {{address}} <col:28, col:32> '*func () void' pure-rvalue <NullToPointer>
-|   `-NullLiteral {{address}} <col:28, col:32> '<null>'
+|   `-NullLiteral {{address}} <col:28, col:32> '<null>' non-object
 |-VarGroupDecl {{address}} <line:3:1, col:61>
 | |-VarDecl {{address}} <col:5, col:52> nested '*func (i32, *func (*S) void) *func () *S'
 | | `-PointerType {{address}} <col:12, col:52>
@@ -1244,7 +1285,7 @@ func higher(callback *func (i32) void) *func () *S { null })");
 | |         `-PointerType {{address}} <col:50, col:52>
 | |           `-NamedType {{address}} <col:51, col:52> 'S'
 | `-ImplicitCastExpr {{address}} <col:56, col:60> '*func (i32, *func (*S) void) *func () *S' pure-rvalue <NullToPointer>
-|   `-NullLiteral {{address}} <col:56, col:60> '<null>'
+|   `-NullLiteral {{address}} <col:56, col:60> '<null>' non-object
 |-VarGroupDecl {{address}} <line:4:1, col:38>
 | |-VarDecl {{address}} <col:5, col:29> pointer '*func (i32) void'
 | | `-PointerType {{address}} <col:13, col:29>
@@ -1252,7 +1293,7 @@ func higher(callback *func (i32) void) *func () *S { null })");
 | |     |-BuiltinType {{address}} <col:20, col:23> 'i32'
 | |     `-BuiltinType {{address}} <col:25, col:29> 'void'
 | `-ImplicitCastExpr {{address}} <col:33, col:37> '*func (i32) void' pure-rvalue <NullToPointer>
-|   `-NullLiteral {{address}} <col:33, col:37> '<null>'
+|   `-NullLiteral {{address}} <col:33, col:37> '<null>' non-object
 `-FunctionDecl {{address}} <line:5:1, col:60> higher 'func (*func (i32) void) *func () *S'
   |-ParmVarDecl {{address}} <col:13, col:38> callback '*func (i32) void'
   | `-PointerType {{address}} <col:22, col:38>
@@ -1265,9 +1306,9 @@ func higher(callback *func (i32) void) *func () *S { null })");
   |     `-PointerType {{address}} <col:49, col:51>
   |       `-NamedType {{address}} <col:50, col:51> 'S'
   `-CompoundStmt {{address}} <col:52, col:60>
-    `-ImplicitResultInitializationExpr {{address}} <col:54, col:58> 'void' ReturnVar {{address:result}} '*func () *S'
+    `-ImplicitResultInitializationExpr {{address}} <col:54, col:58> 'void' non-object ReturnVar {{address:result}} '*func () *S'
       `-ImplicitCastExpr {{address}} <col:54, col:58> '*func () *S' pure-rvalue <NullToPointer>
-        `-NullLiteral {{address}} <col:54, col:58> '<null>')");
+        `-NullLiteral {{address}} <col:54, col:58> '<null>' non-object)");
 }
 
 TEST_F(SemaTest, PreservesNestedConstAndReferenceFunctionTypes) {
@@ -1331,13 +1372,13 @@ var pointer *func (MissingPointee) void;)");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-VarGroupDecl {{address}} <test.cw:1:1, col:63> contains-errors
-| `-VarDecl {{address}} <col:5, col:62> callback contains-errors
+| `-VarDecl {{address}} <col:5, col:62> callback '<error>' contains-errors
 |   `-FunctionType {{address}} <col:14, col:62> contains-errors
 |     |-NamedType {{address}} <col:20, col:32> 'MissingParam' contains-errors
 |     |-NamedType {{address}} <col:34, col:47> 'MissingSecond' contains-errors
 |     `-NamedType {{address}} <col:49, col:62> 'MissingReturn' contains-errors
 `-VarGroupDecl {{address}} <line:2:1, col:41> contains-errors
-  `-VarDecl {{address}} <col:5, col:40> pointer contains-errors
+  `-VarDecl {{address}} <col:5, col:40> pointer '<error>' contains-errors
     `-PointerType {{address}} <col:13, col:40> contains-errors
       `-FunctionType {{address}} <col:14, col:40> contains-errors
         |-NamedType {{address}} <col:20, col:34> 'MissingPointee' contains-errors
@@ -1530,10 +1571,10 @@ func Use(value &copy Base) {
 |     `-ParmVarDecl {{address}} <col:27, col:46> receiver '&copy Base'
 |       `-ReferenceType {{address}} <col:36, col:46> '&copy'
 |         `-NamedType {{address}} <col:42, col:46> 'Base'
-|-ConstructorDecl {{address}} <line:9:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-ConstructorDecl {{address}} <line:9:1, col:15> Base target Struct {{address:base}} 'Base' 'ctor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:10:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-DestructorDecl {{address}} <line:10:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 `-FunctionDecl {{address}} <line:11:1, line:14:2> Use 'func (&copy Base) void'
   |-ParmVarDecl {{address:value}} <line:11:10, col:26> value '&copy Base'
@@ -1541,13 +1582,13 @@ func Use(value &copy Base) {
   |   `-NamedType {{address}} <col:22, col:26> 'Base'
   `-CompoundStmt {{address}} <col:28, line:14:2>
     |-ExprStmt {{address}} <line:12:3, col:15>
-    | `-CallExpr {{address}} <col:3, col:14> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy Base) void' VirtualFunction {{address:draw_interface}} 'Draw' 'func (&copy Base) void'
-    |   `-DeclRefExpr {{address}} <col:8, col:13> 'const Base' lvalue ParmVar {{address:value}} 'value' '&copy Base'
+    | `-CallExpr {{address}} <col:3, col:14> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy Base) void' non-object 'Draw' VirtualFunction {{address:draw_interface}} 'Draw' 'func (&copy Base) void'
+    |   `-DeclRefExpr {{address}} <col:8, col:13> 'const Base' lvalue 'value' ParmVar {{address:value}} 'value' '&copy Base'
     `-ExprStmt {{address}} <line:13:3, col:19>
-      `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' .
-        |-DeclRefExpr {{address}} <col:3, col:8> 'const Base' lvalue ParmVar {{address:value}} 'value' '&copy Base'
-        `-DeclRefExpr {{address}} <col:9, col:16> 'func (&copy Base) void' VirtualFunction {{address:measure_interface}} 'Measure' 'func (&copy Base) void'
+      `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' non-object .
+        |-DeclRefExpr {{address}} <col:3, col:8> 'const Base' lvalue 'value' ParmVar {{address:value}} 'value' '&copy Base'
+        `-DeclRefExpr {{address}} <col:9, col:16> 'func (&copy Base) void' non-object 'Measure' VirtualFunction {{address:measure_interface}} 'Measure' 'func (&copy Base) void'
 )");
 }
 
@@ -1585,10 +1626,10 @@ func G(receiver &copy S, value i32) i32 { value })");
 |     | `-BuiltinType {{address}} <col:25, col:28> 'i32'
 |     `-ReturnVarDecl {{address}} <col:30, col:39> x 'i32' contains-errors
 |       `-BuiltinType {{address}} <col:36, col:39> 'i32'
-|-ConstructorDecl {{address}} <line:7:1, col:12> S target Struct {{address:s}} 'S' 'func () void'
+|-ConstructorDecl {{address}} <line:7:1, col:12> S target Struct {{address:s}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:8:1, col:12> S target Struct {{address:s}} 'S' 'func () void'
+|-DestructorDecl {{address}} <line:8:1, col:12> S target Struct {{address:s}} 'S' 'dtor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 `-FunctionDecl {{address}} <line:9:1, col:50> G 'func (&copy S, i32) i32'
   |-ParmVarDecl {{address}} <col:8, col:24> receiver '&copy S'
@@ -1599,9 +1640,9 @@ func G(receiver &copy S, value i32) i32 { value })");
   |-ReturnVarDecl {{address:result}} <col:37, col:40> 'i32'
   | `-BuiltinType {{address}} <col:37, col:40> 'i32'
   `-CompoundStmt {{address}} <col:41, col:50>
-    `-ImplicitResultInitializationExpr {{address}} <col:43, col:48> 'void' ReturnVar {{address:result}} 'i32'
+    `-ImplicitResultInitializationExpr {{address}} <col:43, col:48> 'void' non-object ReturnVar {{address:result}} 'i32'
       `-ImplicitCastExpr {{address}} <col:43, col:48> 'i32' pure-rvalue <LValueToRValue>
-        `-DeclRefExpr {{address}} <col:43, col:48> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+        `-DeclRefExpr {{address}} <col:43, col:48> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
 )");
 }
 
@@ -2177,30 +2218,30 @@ dtor S() {})");
 |-StructDecl {{address:s}} <test.cw:1:1, col:20> S
 | `-FieldDecl {{address:x}} <col:12, col:18> x 'i32'
 |   `-BuiltinType {{address}} <col:14, col:17> 'i32'
-|-ConstructorDecl {{address}} <line:2:1, line:8:2> S target Struct {{address:s}} 'S' 'func (bool) void'
+|-ConstructorDecl {{address}} <line:2:1, line:8:2> S target Struct {{address:s}} 'S' 'ctor S(bool)'
 | |-ParmVarDecl {{address:flag}} <line:2:8, col:17> flag 'bool'
 | | `-BuiltinType {{address}} <col:13, col:17> 'bool'
 | `-CompoundStmt {{address}} <col:19, line:8:2>
 |   `-IfStmt {{address}} <line:3:3, line:7:4>
 |     |-ImplicitCastExpr {{address}} <line:3:6, col:10> 'bool' pure-rvalue <LValueToRValue>
-|     | `-DeclRefExpr {{address}} <col:6, col:10> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+|     | `-DeclRefExpr {{address}} <col:6, col:10> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
 |     |-CompoundStmt {{address}} <col:11, line:5:4>
 |     | |-ExprStmt {{address}} <line:4:5, col:17>
-|     | | `-InitializationExpr {{address}} <col:5, col:16> 'void'
+|     | | `-InitializationExpr {{address}} <col:5, col:16> 'void' non-object
 |     | |   |-MemberExpr {{address}} <col:5, col:11> 'i32' lvalue .x Field {{address:x}} 'x' 'i32'
 |     | |   | `-ThisExpr {{address}} <col:5, col:9> 'S' lvalue this
 |     | |   `-ImplicitCastExpr {{address}} <col:15, col:16> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-|     | |     `-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' 1
+|     | |     `-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' non-object 1
 |     | `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 |     `-CompoundStmt {{address}} <line:5:10, line:7:4>
 |       |-ExprStmt {{address}} <line:6:5, col:17>
-|       | `-InitializationExpr {{address}} <col:5, col:16> 'void'
+|       | `-InitializationExpr {{address}} <col:5, col:16> 'void' non-object
 |       |   |-MemberExpr {{address}} <col:5, col:11> 'i32' lvalue .x Field {{address:x}} 'x' 'i32'
 |       |   | `-ThisExpr {{address}} <col:5, col:9> 'S' lvalue this
 |       |   `-ImplicitCastExpr {{address}} <col:15, col:16> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-|       |     `-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' 2
+|       |     `-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' non-object 2
 |       `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-`-DestructorDecl {{address}} <line:9:1, col:12> S target Struct {{address:s}} 'S' 'func () void'
+`-DestructorDecl {{address}} <line:9:1, col:12> S target Struct {{address:s}} 'S' 'dtor S()'
   `-CompoundStmt {{address}} <col:10, col:12>
 )");
 }
@@ -2213,22 +2254,22 @@ dtor S() {})");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
-|-ConstructorDecl {{address:primary_constructor}} <line:2:1, col:21> S target Struct {{address:structure}} 'S' 'func (i32) void'
+|-ConstructorDecl {{address:primary_constructor}} <line:2:1, col:21> S target Struct {{address:structure}} 'S' 'ctor S(i32)'
 | |-ParmVarDecl {{address}} <col:8, col:17> value 'i32'
 | | `-BuiltinType {{address}} <col:14, col:17> 'i32'
 | `-CompoundStmt {{address}} <col:19, col:21>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-ConstructorDecl {{address}} <line:3:1, col:31> S target Struct {{address:structure}} 'S' 'func () void'
+|-ConstructorDecl {{address}} <line:3:1, col:31> S target Struct {{address:structure}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:31>
 |   `-ExprStmt {{address}} <col:12, col:29>
-|     `-InitializationExpr {{address}} <col:12, col:28> 'void'
+|     `-InitializationExpr {{address}} <col:12, col:28> 'void' non-object
 |       |-ThisExpr {{address}} <col:12, col:16> 'S' lvalue this
 |       `-ParenExpr {{address}} <col:20, col:28> 'S' pure-rvalue
 |         `-ParenExpr {{address}} <col:21, col:27> 'S' pure-rvalue
-|           `-ConstructionExpr {{address}} <col:22, col:26> 'S' pure-rvalue delegating target <col:22, col:23> 'S' Constructor {{address:primary_constructor}} 'S' 'func (i32) void'
+|           `-ConstructionExpr {{address}} <col:22, col:26> 'S' pure-rvalue delegating target <col:22, col:23> 'S' Constructor {{address:primary_constructor}} 'S' 'ctor S(i32)'
 |             `-ImplicitCastExpr {{address}} <col:24, col:25> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-|               `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' 1
-`-DestructorDecl {{address}} <line:4:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|               `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' non-object 1
+`-DestructorDecl {{address}} <line:4:1, col:12> S target Struct {{address:structure}} 'S' 'dtor S()'
   `-CompoundStmt {{address}} <col:10, col:12>
 )");
 }
@@ -2562,10 +2603,10 @@ func use() {
   ExpectError(4, 8, "use of uninitialized variable 'pointer'", 7);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
-|-ConstructorDecl {{address:constructor}} <line:2:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|-ConstructorDecl {{address:constructor}} <line:2:1, col:12> S target Struct {{address:structure}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <col:13, col:24> S target Struct {{address:structure}} 'S' 'func () void'
+|-DestructorDecl {{address}} <col:13, col:24> S target Struct {{address:structure}} 'S' 'dtor S()'
 | `-CompoundStmt {{address}} <col:22, col:24>
 `-FunctionDecl {{address}} <line:3:1, line:6:2> use 'func () void' contains-errors
   `-CompoundStmt {{address}} <line:3:12, line:6:2> contains-errors
@@ -2575,9 +2616,9 @@ func use() {
     |     `-PointerType {{address}} <col:15, col:17>
     |       `-NamedType {{address}} <col:16, col:17> 'S'
     `-ExprStmt {{address}} <line:5:3, col:22> contains-errors
-      `-ConstructionExpr {{address}} <col:3, col:21> '*S' pure-rvalue complete-object target <col:18, col:19> 'S' Constructor {{address:constructor}} 'S' 'func () void' contains-errors
+      `-ConstructionExpr {{address}} <col:3, col:21> '*S' pure-rvalue complete-object target <col:18, col:19> 'S' Constructor {{address:constructor}} 'S' 'ctor S()' contains-errors
         `-ImplicitCastExpr {{address}} <col:9, col:16> '*S' pure-rvalue <LValueToRValue> contains-errors
-          `-DeclRefExpr {{address}} <col:9, col:16> '*S' lvalue Var {{address:pointer}} 'pointer' '*S' contains-errors
+          `-DeclRefExpr {{address}} <col:9, col:16> '*S' lvalue 'pointer' Var {{address:pointer}} 'pointer' '*S' contains-errors
 )");
 }
 
@@ -2592,12 +2633,12 @@ func use(pointer *S) {
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
-|-ConstructorDecl {{address:constructor}} <line:2:1, col:21> S target Struct {{address:structure}} 'S' 'func (i32) void'
+|-ConstructorDecl {{address:constructor}} <line:2:1, col:21> S target Struct {{address:structure}} 'S' 'ctor S(i32)'
 | |-ParmVarDecl {{address}} <col:8, col:17> value 'i32'
 | | `-BuiltinType {{address}} <col:14, col:17> 'i32'
 | `-CompoundStmt {{address}} <col:19, col:21>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <col:22, col:33> S target Struct {{address:structure}} 'S' 'func () void'
+|-DestructorDecl {{address}} <col:22, col:33> S target Struct {{address:structure}} 'S' 'dtor S()'
 | `-CompoundStmt {{address}} <col:31, col:33>
 `-FunctionDecl {{address}} <line:3:1, line:5:2> use 'func (*S) void' contains-errors
   |-ParmVarDecl {{address:pointer}} <line:3:10, col:20> pointer '*S'
@@ -2605,9 +2646,9 @@ func use(pointer *S) {
   |   `-NamedType {{address}} <col:19, col:20> 'S'
   `-CompoundStmt {{address}} <col:22, line:5:2> contains-errors
     `-ExprStmt {{address}} <line:4:3, col:29> contains-errors
-      `-ConstructionExpr {{address}} <col:3, col:28> complete-object target <col:18, col:19> 'S' contains-errors
-        |-DeclRefExpr {{address}} <col:9, col:16> '*S' lvalue ParmVar {{address:pointer}} 'pointer' '*S'
-        `-DeclRefExpr {{address}} <col:20, col:27> 'missing' contains-errors
+      `-ConstructionExpr {{address}} <col:3, col:28> '<error>' complete-object target <col:18, col:19> 'S' <error> contains-errors
+        |-DeclRefExpr {{address}} <col:9, col:16> '*S' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*S'
+        `-DeclRefExpr {{address}} <col:20, col:27> '<error>' 'missing' <error> contains-errors
 )");
 }
 
@@ -2630,8 +2671,8 @@ func Make() Empty { Empty() })");
   |-ReturnVarDecl {{address:result}} <col:13, col:18> 'Empty'
   | `-NamedType {{address}} <col:13, col:18> 'Empty'
   `-CompoundStmt {{address}} <col:19, col:30>
-    `-ImplicitResultInitializationExpr {{address}} <col:21, col:28> 'void' ReturnVar {{address:result}} 'Empty'
-      `-ConstructionExpr {{address}} <col:21, col:28> 'Empty' pure-rvalue complete-object target <col:21, col:26> 'Empty')");
+    `-ImplicitResultInitializationExpr {{address}} <col:21, col:28> 'void' non-object ReturnVar {{address:result}} 'Empty'
+      `-ConstructionExpr {{address}} <col:21, col:28> 'Empty' pure-rvalue complete-object target <col:21, col:26> 'Empty' trivial)");
 }
 
 TEST_F(SemaTest, DefaultsAllTrivialComponentsWithoutSyntheticConstructors) {
@@ -2690,10 +2731,10 @@ func Use() { Empty(1); })");
 `-FunctionDecl {{address}} <line:2:1, col:25> Use 'func () void' contains-errors
   `-CompoundStmt {{address}} <col:12, col:25> contains-errors
     `-ExprStmt {{address}} <col:14, col:23> contains-errors
-      `-CallExpr {{address}} <col:14, col:22> contains-errors
-        |-DeclRefExpr {{address}} <col:14, col:19> 'Empty' contains-errors
+      `-CallExpr {{address}} <col:14, col:22> '<error>' contains-errors
+        |-DeclRefExpr {{address}} <col:14, col:19> '<error>' 'Empty' <error> contains-errors
         `-ImplicitCastExpr {{address}} <col:20, col:21> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          `-IntegerLiteral {{address}} <col:20, col:21> 'comptime_int' 1)");
+          `-IntegerLiteral {{address}} <col:20, col:21> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, RejectsVirtualSlotsOnExplicitTrivialStruct) {
@@ -2715,17 +2756,17 @@ func target() i32 { return target(); })");
 | | `-BuiltinType {{address}} <col:15, col:18> 'i32'
 | `-CompoundStmt {{address}} <col:19, col:39>
 |   `-ReturnStmt {{address}} <col:21, col:37>
-|     `-ImplicitResultInitializationExpr {{address}} <col:28, col:36> 'void' ReturnVar {{address:caller_return}} 'i32'
+|     `-ImplicitResultInitializationExpr {{address}} <col:28, col:36> 'void' non-object ReturnVar {{address:caller_return}} 'i32'
 |       `-CallExpr {{address}} <col:28, col:36> 'i32' pure-rvalue
-|         `-DeclRefExpr {{address}} <col:28, col:34> 'func () i32' Function {{address:target}} 'target' 'func () i32'
+|         `-DeclRefExpr {{address}} <col:28, col:34> 'func () i32' non-object 'target' Function {{address:target}} 'target' 'func () i32'
 `-FunctionDecl {{address:target}} <line:2:1, col:39> target 'func () i32'
   |-ReturnVarDecl {{address:target_return}} <col:15, col:18> 'i32'
   | `-BuiltinType {{address}} <col:15, col:18> 'i32'
   `-CompoundStmt {{address}} <col:19, col:39>
     `-ReturnStmt {{address}} <col:21, col:37>
-      `-ImplicitResultInitializationExpr {{address}} <col:28, col:36> 'void' ReturnVar {{address:target_return}} 'i32'
+      `-ImplicitResultInitializationExpr {{address}} <col:28, col:36> 'void' non-object ReturnVar {{address:target_return}} 'i32'
         `-CallExpr {{address}} <col:28, col:36> 'i32' pure-rvalue
-          `-DeclRefExpr {{address}} <col:28, col:34> 'func () i32' Function {{address:target}} 'target' 'func () i32')");
+          `-DeclRefExpr {{address}} <col:28, col:34> 'func () i32' non-object 'target' Function {{address:target}} 'target' 'func () i32')");
 }
 
 TEST_F(SemaTest, AcceptsFieldAccessAndReceiverFormCalls) {
@@ -2885,29 +2926,29 @@ func Use(value i32, pointer *i32) {
   |   `-BuiltinType {{address}} <col:30, col:33> 'i32'
   `-CompoundStmt {{address}} <col:35, line:7:2>
     |-ExprStmt {{address}} <line:3:3, col:16>
-    | `-ReceiverCallExpr {{address}} <col:3, col:15> 'void' .
+    | `-ReceiverCallExpr {{address}} <col:3, col:15> 'void' non-object .
     |   |-ImplicitCastExpr {{address}} <col:3, col:8> 'i32' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:3, col:8> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
-    |   `-DeclRefExpr {{address}} <col:9, col:13> 'func (i32) void' Function {{address:take}} 'Take' 'func (i32) void'
+    |   | `-DeclRefExpr {{address}} <col:3, col:8> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
+    |   `-DeclRefExpr {{address}} <col:9, col:13> 'func (i32) void' non-object 'Take' Function {{address:take}} 'Take' 'func (i32) void'
     |-ExprStmt {{address}} <line:4:3, col:19>
-    | `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' ->
+    | `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' non-object ->
     |   |-ImplicitCastExpr {{address}} <col:3, col:10> 'i32' pure-rvalue <LValueToRValue>
     |   | `-UnaryOperator {{address}} <col:3, col:10> 'i32' lvalue '*'
     |   |   `-ImplicitCastExpr {{address}} <col:3, col:10> '*i32' pure-rvalue <LValueToRValue>
-    |   |     `-DeclRefExpr {{address}} <col:3, col:10> '*i32' lvalue ParmVar {{address:pointer}} 'pointer' '*i32'
-    |   `-DeclRefExpr {{address}} <col:12, col:16> 'func (i32) void' Function {{address:take}} 'Take' 'func (i32) void'
+    |   |     `-DeclRefExpr {{address}} <col:3, col:10> '*i32' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*i32'
+    |   `-DeclRefExpr {{address}} <col:12, col:16> 'func (i32) void' non-object 'Take' Function {{address:take}} 'Take' 'func (i32) void'
     |-ExprStmt {{address}} <line:5:3, col:15>
-    | `-CallExpr {{address}} <col:3, col:14> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (i32) void' Function {{address:take}} 'Take' 'func (i32) void'
+    | `-CallExpr {{address}} <col:3, col:14> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (i32) void' non-object 'Take' Function {{address:take}} 'Take' 'func (i32) void'
     |   `-ImplicitCastExpr {{address}} <col:8, col:13> 'i32' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+    |     `-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
     `-ExprStmt {{address}} <line:6:3, col:18>
-      `-CallExpr {{address}} <col:3, col:17> 'void'
-        |-DeclRefExpr {{address}} <col:3, col:7> 'func (i32) void' Function {{address:take}} 'Take' 'func (i32) void'
+      `-CallExpr {{address}} <col:3, col:17> 'void' non-object
+        |-DeclRefExpr {{address}} <col:3, col:7> 'func (i32) void' non-object 'Take' Function {{address:take}} 'Take' 'func (i32) void'
         `-ImplicitCastExpr {{address}} <col:8, col:16> 'i32' pure-rvalue <LValueToRValue>
           `-UnaryOperator {{address}} <col:8, col:16> 'i32' lvalue '*'
             `-ImplicitCastExpr {{address}} <col:9, col:16> '*i32' pure-rvalue <LValueToRValue>
-              `-DeclRefExpr {{address}} <col:9, col:16> '*i32' lvalue ParmVar {{address:pointer}} 'pointer' '*i32')");
+              `-DeclRefExpr {{address}} <col:9, col:16> '*i32' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*i32')");
 }
 
 TEST_F(SemaTest, CopiesMovesAndSlicesValueReceivers) {
@@ -2968,10 +3009,10 @@ func Use(pointer *Value, number i32) {
   ExpectError(5, 2, "cannot initialize receiver of function 'Take': no copy constructor is available for 'Value'", 7);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:value}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address}} <line:2:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
+|-ConstructorDecl {{address}} <line:2:1, col:16> Value target Struct {{address:value}} 'Value' 'ctor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:value}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:take}} <line:4:1, col:40> Take 'func (Value, u8) void'
 | |-ParmVarDecl {{address}} <col:11, col:25> receiver 'Value'
@@ -2987,12 +3028,12 @@ func Use(pointer *Value, number i32) {
   | `-BuiltinType {{address}} <col:33, col:36> 'i32'
   `-CompoundStmt {{address}} <col:38, line:7:2> contains-errors
     `-ExprStmt {{address}} <line:6:3, col:25> contains-errors
-      `-ReceiverCallExpr {{address}} <col:3, col:24> -> contains-errors
+      `-ReceiverCallExpr {{address}} <col:3, col:24> '<error>' -> contains-errors
         |-UnaryOperator {{address}} <col:3, col:10> 'Value' lvalue '*'
         | `-ImplicitCastExpr {{address}} <col:3, col:10> '*Value' pure-rvalue <LValueToRValue>
-        |   `-DeclRefExpr {{address}} <col:3, col:10> '*Value' lvalue ParmVar {{address:pointer}} 'pointer' '*Value'
-        |-DeclRefExpr {{address}} <col:12, col:16> 'func (Value, u8) void' Function {{address:take}} 'Take' 'func (Value, u8) void'
-        `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue ParmVar {{address:number}} 'number' 'i32'
+        |   `-DeclRefExpr {{address}} <col:3, col:10> '*Value' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*Value'
+        |-DeclRefExpr {{address}} <col:12, col:16> 'func (Value, u8) void' non-object 'Take' Function {{address:take}} 'Take' 'func (Value, u8) void'
+        `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue 'number' ParmVar {{address:number}} 'number' 'i32'
 )");
 }
 
@@ -3107,10 +3148,10 @@ func Use(pointer *Derived, number i32, object &mut Value) { pointer->Consume(num
 |-StructDecl {{address:derived}} <line:2:1, col:33> Derived trivial : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
 |-StructDecl {{address:value}} <line:3:1, col:16> Value
-|-ConstructorDecl {{address:value_constructor}} <line:4:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
+|-ConstructorDecl {{address:value_constructor}} <line:4:1, col:16> Value target Struct {{address:value}} 'Value' 'ctor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:value_destructor}} <line:5:1, col:16> Value target Struct {{address:value}} 'Value' 'func () void'
+|-DestructorDecl {{address:value_destructor}} <line:5:1, col:16> Value target Struct {{address:value}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:consume}} <line:6:1, col:62> Consume 'func (&copy Base, u8, Value) void'
 | |-ParmVarDecl {{address:consume_receiver}} <col:14, col:33> receiver '&copy Base'
@@ -3132,13 +3173,13 @@ func Use(pointer *Derived, number i32, object &mut Value) { pointer->Consume(num
   |   `-NamedType {{address}} <col:52, col:57> 'Value'
   `-CompoundStmt {{address}} <col:59, col:96> contains-errors
     `-ExprStmt {{address}} <col:61, col:94> contains-errors
-      `-ReceiverCallExpr {{address}} <col:61, col:93> -> contains-errors
+      `-ReceiverCallExpr {{address}} <col:61, col:93> '<error>' -> contains-errors
         |-UnaryOperator {{address}} <col:61, col:68> 'Derived' lvalue '*'
         | `-ImplicitCastExpr {{address}} <col:61, col:68> '*Derived' pure-rvalue <LValueToRValue>
-        |   `-DeclRefExpr {{address}} <col:61, col:68> '*Derived' lvalue ParmVar {{address:use_pointer}} 'pointer' '*Derived'
-        |-DeclRefExpr {{address}} <col:70, col:77> 'func (&copy Base, u8, Value) void' Function {{address:consume}} 'Consume' 'func (&copy Base, u8, Value) void'
-        |-DeclRefExpr {{address}} <col:78, col:84> 'i32' lvalue ParmVar {{address:use_number}} 'number' 'i32'
-        `-DeclRefExpr {{address}} <col:86, col:92> 'Value' lvalue ParmVar {{address:use_object}} 'object' '&mut Value'
+        |   `-DeclRefExpr {{address}} <col:61, col:68> '*Derived' lvalue 'pointer' ParmVar {{address:use_pointer}} 'pointer' '*Derived'
+        |-DeclRefExpr {{address}} <col:70, col:77> 'func (&copy Base, u8, Value) void' non-object 'Consume' Function {{address:consume}} 'Consume' 'func (&copy Base, u8, Value) void'
+        |-DeclRefExpr {{address}} <col:78, col:84> 'i32' lvalue 'number' ParmVar {{address:use_number}} 'number' 'i32'
+        `-DeclRefExpr {{address}} <col:86, col:92> 'Value' lvalue 'object' ParmVar {{address:use_object}} 'object' '&mut Value'
 )");
 }
 
@@ -3201,16 +3242,16 @@ func Use() {
 `-FunctionDecl {{address}} <line:4:1, line:9:2> Use 'func () void' contains-errors
   `-CompoundStmt {{address}} <line:4:12, line:9:2> contains-errors
     |-ExprStmt {{address}} <line:5:3, col:10> contains-errors
-    | `-DeclRefExpr {{address}} <col:3, col:9> '<function-overload-set>' 'Single' contains-errors
+    | `-DeclRefExpr {{address}} <col:3, col:9> '<function-overload-set>' non-object 'Single' overload-set contains-errors
     |-ExprStmt {{address}} <line:6:3, col:8> contains-errors
-    | `-DeclRefExpr {{address}} <col:3, col:7> '<function-overload-set>' 'Over' contains-errors
+    | `-DeclRefExpr {{address}} <col:3, col:7> '<function-overload-set>' non-object 'Over' overload-set contains-errors
     |-ExprStmt {{address}} <line:7:3, col:12> contains-errors
-    | `-ParenExpr {{address}} <col:3, col:11> '<function-overload-set>' contains-errors
-    |   `-DeclRefExpr {{address}} <col:4, col:10> '<function-overload-set>' 'Single'
+    | `-ParenExpr {{address}} <col:3, col:11> '<function-overload-set>' non-object contains-errors
+    |   `-DeclRefExpr {{address}} <col:4, col:10> '<function-overload-set>' non-object 'Single' overload-set
     `-ExprStmt {{address}} <line:8:3, col:12> contains-errors
-      `-ParenExpr {{address}} <col:3, col:11> '<function-overload-set>' contains-errors
-        `-ParenExpr {{address}} <col:4, col:10> '<function-overload-set>'
-          `-DeclRefExpr {{address}} <col:5, col:9> '<function-overload-set>' 'Over')");
+      `-ParenExpr {{address}} <col:3, col:11> '<function-overload-set>' non-object contains-errors
+        `-ParenExpr {{address}} <col:4, col:10> '<function-overload-set>' non-object
+          `-DeclRefExpr {{address}} <col:5, col:9> '<function-overload-set>' non-object 'Over' overload-set)");
 }
 
 TEST_F(SemaTest, RecoversUnconsumedFunctionNamesUsingOnlyDependentErrors) {
@@ -3287,10 +3328,10 @@ callback(first, second, move second);
 | | `-ReferenceType {{address}} <col:47, col:55> '&mut'
 | |   `-BuiltinType {{address}} <col:52, col:55> 'i32'
 | `-CompoundStmt {{address}} <col:56, col:70>
-|   `-ImplicitResultInitializationExpr {{address}} <col:58, col:68> 'void' ReturnVar {{address:mut_return}} '&mut i32'
+|   `-ImplicitResultInitializationExpr {{address}} <col:58, col:68> 'void' non-object ReturnVar {{address:mut_return}} '&mut i32'
 |     `-CallExpr {{address}} <col:58, col:68> 'i32' lvalue
 |       `-ImplicitCastExpr {{address}} <col:58, col:66> '*func () &mut i32' pure-rvalue <LValueToRValue>
-|         `-DeclRefExpr {{address}} <col:58, col:66> '*func () &mut i32' lvalue ParmVar {{address:mut_callback}} 'callback' '*func () &mut i32'
+|         `-DeclRefExpr {{address}} <col:58, col:66> '*func () &mut i32' lvalue 'callback' ParmVar {{address:mut_callback}} 'callback' '*func () &mut i32'
 |-FunctionDecl {{address}} <line:2:1, col:73> indirect_copy 'func (*func () &copy i32) &copy i32'
 | |-ParmVarDecl {{address:copy_callback}} <col:20, col:47> callback '*func () &copy i32'
 | | `-PointerType {{address}} <col:29, col:47>
@@ -3301,10 +3342,10 @@ callback(first, second, move second);
 | | `-ReferenceType {{address}} <col:49, col:58> '&copy'
 | |   `-BuiltinType {{address}} <col:55, col:58> 'i32'
 | `-CompoundStmt {{address}} <col:59, col:73>
-|   `-ImplicitResultInitializationExpr {{address}} <col:61, col:71> 'void' ReturnVar {{address:copy_return}} '&copy i32'
+|   `-ImplicitResultInitializationExpr {{address}} <col:61, col:71> 'void' non-object ReturnVar {{address:copy_return}} '&copy i32'
 |     `-CallExpr {{address}} <col:61, col:71> 'const i32' lvalue
 |       `-ImplicitCastExpr {{address}} <col:61, col:69> '*func () &copy i32' pure-rvalue <LValueToRValue>
-|         `-DeclRefExpr {{address}} <col:61, col:69> '*func () &copy i32' lvalue ParmVar {{address:copy_callback}} 'callback' '*func () &copy i32'
+|         `-DeclRefExpr {{address}} <col:61, col:69> '*func () &copy i32' lvalue 'callback' ParmVar {{address:copy_callback}} 'callback' '*func () &copy i32'
 |-FunctionDecl {{address}} <line:3:1, col:73> indirect_move 'func (*func () &move i32) &move i32'
 | |-ParmVarDecl {{address:move_callback}} <col:20, col:47> callback '*func () &move i32'
 | | `-PointerType {{address}} <col:29, col:47>
@@ -3315,10 +3356,10 @@ callback(first, second, move second);
 | | `-ReferenceType {{address}} <col:49, col:58> '&move'
 | |   `-BuiltinType {{address}} <col:55, col:58> 'i32'
 | `-CompoundStmt {{address}} <col:59, col:73>
-|   `-ImplicitResultInitializationExpr {{address}} <col:61, col:71> 'void' ReturnVar {{address:move_return}} '&move i32'
+|   `-ImplicitResultInitializationExpr {{address}} <col:61, col:71> 'void' non-object ReturnVar {{address:move_return}} '&move i32'
 |     `-CallExpr {{address}} <col:61, col:71> 'i32' move-lvalue
 |       `-ImplicitCastExpr {{address}} <col:61, col:69> '*func () &move i32' pure-rvalue <LValueToRValue>
-|         `-DeclRefExpr {{address}} <col:61, col:69> '*func () &move i32' lvalue ParmVar {{address:move_callback}} 'callback' '*func () &move i32'
+|         `-DeclRefExpr {{address}} <col:61, col:69> '*func () &move i32' lvalue 'callback' ParmVar {{address:move_callback}} 'callback' '*func () &move i32'
 |-FunctionDecl {{address}} <line:4:1, col:62> indirect_value 'func (*func () i32) i32'
 | |-ParmVarDecl {{address:value_callback}} <col:21, col:42> callback '*func () i32'
 | | `-PointerType {{address}} <col:30, col:42>
@@ -3327,10 +3368,10 @@ callback(first, second, move second);
 | |-ReturnVarDecl {{address:value_return}} <col:44, col:47> 'i32'
 | | `-BuiltinType {{address}} <col:44, col:47> 'i32'
 | `-CompoundStmt {{address}} <col:48, col:62>
-|   `-ImplicitResultInitializationExpr {{address}} <col:50, col:60> 'void' ReturnVar {{address:value_return}} 'i32'
+|   `-ImplicitResultInitializationExpr {{address}} <col:50, col:60> 'void' non-object ReturnVar {{address:value_return}} 'i32'
 |     `-CallExpr {{address}} <col:50, col:60> 'i32' pure-rvalue
 |       `-ImplicitCastExpr {{address}} <col:50, col:58> '*func () i32' pure-rvalue <LValueToRValue>
-|         `-DeclRefExpr {{address}} <col:50, col:58> '*func () i32' lvalue ParmVar {{address:value_callback}} 'callback' '*func () i32'
+|         `-DeclRefExpr {{address}} <col:50, col:58> '*func () i32' lvalue 'callback' ParmVar {{address:value_callback}} 'callback' '*func () i32'
 |-FunctionDecl {{address}} <line:5:1, col:72> indirect_function 'func (*func () *func () void) void'
 | |-ParmVarDecl {{address:function_callback}} <col:24, col:55> callback '*func () *func () void'
 | | `-PointerType {{address}} <col:33, col:55>
@@ -3342,7 +3383,7 @@ callback(first, second, move second);
 |   `-ExprStmt {{address}} <col:59, col:70>
 |     `-CallExpr {{address}} <col:59, col:69> '*func () void' pure-rvalue
 |       `-ImplicitCastExpr {{address}} <col:59, col:67> '*func () *func () void' pure-rvalue <LValueToRValue>
-|         `-DeclRefExpr {{address}} <col:59, col:67> '*func () *func () void' lvalue ParmVar {{address:function_callback}} 'callback' '*func () *func () void'
+|         `-DeclRefExpr {{address}} <col:59, col:67> '*func () *func () void' lvalue 'callback' ParmVar {{address:function_callback}} 'callback' '*func () *func () void'
 `-FunctionDecl {{address}} <line:6:1, line:9:2> indirect_void 'func (*func (&mut i32, &copy i32, &move i32) void, i32, i32) void'
   |-ParmVarDecl {{address:void_callback}} <line:6:20, col:72> callback '*func (&mut i32, &copy i32, &move i32) void'
   | `-PointerType {{address}} <col:29, col:72>
@@ -3360,14 +3401,14 @@ callback(first, second, move second);
   | `-BuiltinType {{address}} <col:38, col:41> 'i32'
   `-CompoundStmt {{address}} <col:43, line:9:2>
     `-ExprStmt {{address}} <line:8:1, col:38>
-      `-CallExpr {{address}} <col:1, col:37> 'void'
+      `-CallExpr {{address}} <col:1, col:37> 'void' non-object
         |-ImplicitCastExpr {{address}} <col:1, col:9> '*func (&mut i32, &copy i32, &move i32) void' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:1, col:9> '*func (&mut i32, &copy i32, &move i32) void' lvalue ParmVar {{address:void_callback}} 'callback' '*func (&mut i32, &copy i32, &move i32) void'
-        |-DeclRefExpr {{address}} <col:10, col:15> 'i32' lvalue ParmVar {{address:first}} 'first' 'i32'
+        | `-DeclRefExpr {{address}} <col:1, col:9> '*func (&mut i32, &copy i32, &move i32) void' lvalue 'callback' ParmVar {{address:void_callback}} 'callback' '*func (&mut i32, &copy i32, &move i32) void'
+        |-DeclRefExpr {{address}} <col:10, col:15> 'i32' lvalue 'first' ParmVar {{address:first}} 'first' 'i32'
         |-ImplicitCastExpr {{address}} <col:17, col:23> 'const i32' lvalue <NoOp>
-        | `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue ParmVar {{address:second}} 'second' 'i32'
+        | `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue 'second' ParmVar {{address:second}} 'second' 'i32'
         `-UnaryOperator {{address}} <col:25, col:36> 'i32' move-lvalue 'move'
-          `-DeclRefExpr {{address}} <col:30, col:36> 'i32' lvalue ParmVar {{address:second}} 'second' 'i32')");
+          `-DeclRefExpr {{address}} <col:30, col:36> 'i32' lvalue 'second' ParmVar {{address:second}} 'second' 'i32')");
 }
 
 TEST_F(SemaTest, DiagnosesIndirectCallSignatureErrorsWithoutCandidateNotes) {
@@ -3401,9 +3442,9 @@ callback(small, true);
   | `-BuiltinType {{address}} <col:52, col:54> 'i8'
   `-CompoundStmt {{address}} <col:56, line:3:2> contains-errors
     `-ExprStmt {{address}} <line:2:1, col:23> contains-errors
-      `-CallExpr {{address}} <col:1, col:22> contains-errors
-        |-DeclRefExpr {{address}} <col:1, col:9> '*func (i16, i32) void' lvalue ParmVar {{address:callback}} 'callback' '*func (i16, i32) void'
-        |-DeclRefExpr {{address}} <col:10, col:15> 'i8' lvalue ParmVar {{address:small}} 'small' 'i8'
+      `-CallExpr {{address}} <col:1, col:22> '<error>' contains-errors
+        |-DeclRefExpr {{address}} <col:1, col:9> '*func (i16, i32) void' lvalue 'callback' ParmVar {{address:callback}} 'callback' '*func (i16, i32) void'
+        |-DeclRefExpr {{address}} <col:10, col:15> 'i8' lvalue 'small' ParmVar {{address:small}} 'small' 'i8'
         `-BoolLiteral {{address}} <col:17, col:21> 'bool' pure-rvalue true contains-errors)");
 }
 
@@ -3425,9 +3466,9 @@ callback();
     |       `-FunctionType {{address}} <col:15, col:27>
     |         `-BuiltinType {{address}} <col:23, col:27> 'void'
     `-ExprStmt {{address}} <line:3:1, col:12> contains-errors
-      `-CallExpr {{address}} <col:1, col:11> 'void' contains-errors
+      `-CallExpr {{address}} <col:1, col:11> 'void' non-object contains-errors
         `-ImplicitCastExpr {{address}} <col:1, col:9> '*func () void' pure-rvalue <LValueToRValue> contains-errors
-          `-DeclRefExpr {{address}} <col:1, col:9> '*func () void' lvalue Var {{address:callback}} 'callback' '*func () void' contains-errors)");
+          `-DeclRefExpr {{address}} <col:1, col:9> '*func () void' lvalue 'callback' Var {{address:callback}} 'callback' '*func () void' contains-errors)");
 }
 
 TEST_F(SemaTest, ReportsIndirectCallConversionRisks) {
@@ -3492,7 +3533,7 @@ callback;
     |     `-FunctionType {{address}} <col:14, col:26> contains-errors
     |       `-BuiltinType {{address}} <col:22, col:26> 'void'
     `-ExprStmt {{address}} <line:3:1, col:10> contains-errors
-      `-DeclRefExpr {{address}} <col:1, col:9> Var {{address:callback}} 'callback' 'func () void' contains-errors)");
+      `-DeclRefExpr {{address}} <col:1, col:9> '<error>' 'callback' Var {{address:callback}} 'callback' 'func () void' contains-errors)");
 }
 
 TEST_F(SemaTest, RejectsBareFunctionVariablesBeforeConvertingTheirInitializers) {
@@ -3536,8 +3577,8 @@ func Use() { var callback &mut *func () void := &F; })");
         |   `-PointerType {{address}} <col:32, col:45>
         |     `-FunctionType {{address}} <col:33, col:45>
         |       `-BuiltinType {{address}} <col:41, col:45> 'void'
-        `-UnaryOperator {{address}} <col:49, col:51> '<address-of-function-overload-set>' '&' contains-errors
-          `-DeclRefExpr {{address}} <col:50, col:51> '<function-overload-set>' 'F')");
+        `-UnaryOperator {{address}} <col:49, col:51> '<address-of-function-overload-set>' non-object '&' contains-errors
+          `-DeclRefExpr {{address}} <col:50, col:51> '<function-overload-set>' non-object 'F' overload-set)");
 }
 
 TEST_F(SemaTest, FormsFunctionAddressReferenceEndpoints) {
@@ -3568,20 +3609,20 @@ func Use() {
 `-FunctionDecl {{address:use}} <line:4:1, line:7:2> Use 'func () void'
   `-CompoundStmt {{address}} <line:4:12, line:7:2>
     |-ExprStmt {{address}} <line:5:3, col:16>
-    | `-CallExpr {{address}} <col:3, col:15> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:11> 'func (&move *func () void) void' Function {{address:take_move}} 'TakeMove' 'func (&move *func () void) void'
+    | `-CallExpr {{address}} <col:3, col:15> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:3, col:11> 'func (&move *func () void) void' non-object 'TakeMove' Function {{address:take_move}} 'TakeMove' 'func (&move *func () void) void'
     |   `-MaterializeTemporaryExpr {{address}} <col:12, col:14> '*func () void' move-lvalue
     |     `-ImplicitOverloadSetSelectionExpr {{address}} <col:12, col:14> '*func () void' pure-rvalue Function {{address:f}} 'F' 'func () void'
-    |       `-UnaryOperator {{address}} <col:12, col:14> '<address-of-function-overload-set>' '&'
-    |         `-DeclRefExpr {{address}} <col:13, col:14> '<function-overload-set>' 'F'
+    |       `-UnaryOperator {{address}} <col:12, col:14> '<address-of-function-overload-set>' non-object '&'
+    |         `-DeclRefExpr {{address}} <col:13, col:14> '<function-overload-set>' non-object 'F' overload-set
     `-ExprStmt {{address}} <line:6:3, col:16>
-      `-CallExpr {{address}} <col:3, col:15> 'void'
-        |-DeclRefExpr {{address}} <col:3, col:11> 'func (&copy *func () void) void' Function {{address:take_copy}} 'TakeCopy' 'func (&copy *func () void) void'
+      `-CallExpr {{address}} <col:3, col:15> 'void' non-object
+        |-DeclRefExpr {{address}} <col:3, col:11> 'func (&copy *func () void) void' non-object 'TakeCopy' Function {{address:take_copy}} 'TakeCopy' 'func (&copy *func () void) void'
         `-ImplicitCastExpr {{address}} <col:12, col:14> 'const *func () void' move-lvalue <NoOp>
           `-MaterializeTemporaryExpr {{address}} <col:12, col:14> '*func () void' move-lvalue
             `-ImplicitOverloadSetSelectionExpr {{address}} <col:12, col:14> '*func () void' pure-rvalue Function {{address:f}} 'F' 'func () void'
-              `-UnaryOperator {{address}} <col:12, col:14> '<address-of-function-overload-set>' '&'
-                `-DeclRefExpr {{address}} <col:13, col:14> '<function-overload-set>' 'F')");
+              `-UnaryOperator {{address}} <col:12, col:14> '<address-of-function-overload-set>' non-object '&'
+                `-DeclRefExpr {{address}} <col:13, col:14> '<function-overload-set>' non-object 'F' overload-set)");
 }
 
 // Overload selection and candidate diagnostics.
@@ -3632,36 +3673,36 @@ func caller(small i8, regular i32) { range(small); width(regular); })");
 | |-ReturnVarDecl {{address:unsigned_range_result}} <col:23, col:26> 'u16'
 | | `-BuiltinType {{address}} <col:23, col:26> 'u16'
 | `-CompoundStmt {{address}} <col:27, col:36>
-|   `-ImplicitResultInitializationExpr {{address}} <col:29, col:34> 'void' ReturnVar {{address:unsigned_range_result}} 'u16'
+|   `-ImplicitResultInitializationExpr {{address}} <col:29, col:34> 'void' non-object ReturnVar {{address:unsigned_range_result}} 'u16'
 |     `-ImplicitCastExpr {{address}} <col:29, col:34> 'u16' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:29, col:34> 'u16' lvalue ParmVar {{address:unsigned_range_value}} 'value' 'u16'
+|       `-DeclRefExpr {{address}} <col:29, col:34> 'u16' lvalue 'value' ParmVar {{address:unsigned_range_value}} 'value' 'u16'
 |-FunctionDecl {{address:signed_range}} <line:2:1, col:36> range 'func (i16) i16'
 | |-ParmVarDecl {{address:signed_range_value}} <col:12, col:21> value 'i16'
 | | `-BuiltinType {{address}} <col:18, col:21> 'i16'
 | |-ReturnVarDecl {{address:signed_range_result}} <col:23, col:26> 'i16'
 | | `-BuiltinType {{address}} <col:23, col:26> 'i16'
 | `-CompoundStmt {{address}} <col:27, col:36>
-|   `-ImplicitResultInitializationExpr {{address}} <col:29, col:34> 'void' ReturnVar {{address:signed_range_result}} 'i16'
+|   `-ImplicitResultInitializationExpr {{address}} <col:29, col:34> 'void' non-object ReturnVar {{address:signed_range_result}} 'i16'
 |     `-ImplicitCastExpr {{address}} <col:29, col:34> 'i16' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:29, col:34> 'i16' lvalue ParmVar {{address:signed_range_value}} 'value' 'i16'
+|       `-DeclRefExpr {{address}} <col:29, col:34> 'i16' lvalue 'value' ParmVar {{address:signed_range_value}} 'value' 'i16'
 |-FunctionDecl {{address}} <line:3:1, col:36> width 'func (f32) f32'
 | |-ParmVarDecl {{address:floating_width_value}} <col:12, col:21> value 'f32'
 | | `-BuiltinType {{address}} <col:18, col:21> 'f32'
 | |-ReturnVarDecl {{address:floating_width_result}} <col:23, col:26> 'f32'
 | | `-BuiltinType {{address}} <col:23, col:26> 'f32'
 | `-CompoundStmt {{address}} <col:27, col:36>
-|   `-ImplicitResultInitializationExpr {{address}} <col:29, col:34> 'void' ReturnVar {{address:floating_width_result}} 'f32'
+|   `-ImplicitResultInitializationExpr {{address}} <col:29, col:34> 'void' non-object ReturnVar {{address:floating_width_result}} 'f32'
 |     `-ImplicitCastExpr {{address}} <col:29, col:34> 'f32' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:29, col:34> 'f32' lvalue ParmVar {{address:floating_width_value}} 'value' 'f32'
+|       `-DeclRefExpr {{address}} <col:29, col:34> 'f32' lvalue 'value' ParmVar {{address:floating_width_value}} 'value' 'f32'
 |-FunctionDecl {{address:integer_width}} <line:4:1, col:36> width 'func (i64) i64'
 | |-ParmVarDecl {{address:integer_width_value}} <col:12, col:21> value 'i64'
 | | `-BuiltinType {{address}} <col:18, col:21> 'i64'
 | |-ReturnVarDecl {{address:integer_width_result}} <col:23, col:26> 'i64'
 | | `-BuiltinType {{address}} <col:23, col:26> 'i64'
 | `-CompoundStmt {{address}} <col:27, col:36>
-|   `-ImplicitResultInitializationExpr {{address}} <col:29, col:34> 'void' ReturnVar {{address:integer_width_result}} 'i64'
+|   `-ImplicitResultInitializationExpr {{address}} <col:29, col:34> 'void' non-object ReturnVar {{address:integer_width_result}} 'i64'
 |     `-ImplicitCastExpr {{address}} <col:29, col:34> 'i64' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:29, col:34> 'i64' lvalue ParmVar {{address:integer_width_value}} 'value' 'i64'
+|       `-DeclRefExpr {{address}} <col:29, col:34> 'i64' lvalue 'value' ParmVar {{address:integer_width_value}} 'value' 'i64'
 `-FunctionDecl {{address}} <line:5:1, col:69> caller 'func (i8, i32) void'
   |-ParmVarDecl {{address:small}} <col:13, col:21> small 'i8'
   | `-BuiltinType {{address}} <col:19, col:21> 'i8'
@@ -3670,16 +3711,16 @@ func caller(small i8, regular i32) { range(small); width(regular); })");
   `-CompoundStmt {{address}} <col:36, col:69>
     |-ExprStmt {{address}} <col:38, col:51>
     | `-CallExpr {{address}} <col:38, col:50> 'i16' pure-rvalue
-    |   |-DeclRefExpr {{address}} <col:38, col:43> 'func (i16) i16' Function {{address:signed_range}} 'range' 'func (i16) i16'
+    |   |-DeclRefExpr {{address}} <col:38, col:43> 'func (i16) i16' non-object 'range' Function {{address:signed_range}} 'range' 'func (i16) i16'
     |   `-ImplicitCastExpr {{address}} <col:44, col:49> 'i16' pure-rvalue <IntegerToInteger>
     |     `-ImplicitCastExpr {{address}} <col:44, col:49> 'i8' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:44, col:49> 'i8' lvalue ParmVar {{address:small}} 'small' 'i8'
+    |       `-DeclRefExpr {{address}} <col:44, col:49> 'i8' lvalue 'small' ParmVar {{address:small}} 'small' 'i8'
     `-ExprStmt {{address}} <col:52, col:67>
       `-CallExpr {{address}} <col:52, col:66> 'i64' pure-rvalue
-        |-DeclRefExpr {{address}} <col:52, col:57> 'func (i64) i64' Function {{address:integer_width}} 'width' 'func (i64) i64'
+        |-DeclRefExpr {{address}} <col:52, col:57> 'func (i64) i64' non-object 'width' Function {{address:integer_width}} 'width' 'func (i64) i64'
         `-ImplicitCastExpr {{address}} <col:58, col:65> 'i64' pure-rvalue <IntegerToInteger>
           `-ImplicitCastExpr {{address}} <col:58, col:65> 'i32' pure-rvalue <LValueToRValue>
-            `-DeclRefExpr {{address}} <col:58, col:65> 'i32' lvalue ParmVar {{address:regular}} 'regular' 'i32')");
+            `-DeclRefExpr {{address}} <col:58, col:65> 'i32' lvalue 'regular' ParmVar {{address:regular}} 'regular' 'i32')");
 }
 
 TEST_F(SemaTest, UsesFixedLiteralTypeForOverloadResolution) {
@@ -3694,25 +3735,25 @@ func caller() { select(1); })");
 | |-ReturnVarDecl {{address:selected_result}} <col:24, col:27> 'i32'
 | | `-BuiltinType {{address}} <col:24, col:27> 'i32'
 | `-CompoundStmt {{address}} <col:28, col:37>
-|   `-ImplicitResultInitializationExpr {{address}} <col:30, col:35> 'void' ReturnVar {{address:selected_result}} 'i32'
+|   `-ImplicitResultInitializationExpr {{address}} <col:30, col:35> 'void' non-object ReturnVar {{address:selected_result}} 'i32'
 |     `-ImplicitCastExpr {{address}} <col:30, col:35> 'i32' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:30, col:35> 'i32' lvalue ParmVar {{address:selected_value}} 'value' 'i32'
+|       `-DeclRefExpr {{address}} <col:30, col:35> 'i32' lvalue 'value' ParmVar {{address:selected_value}} 'value' 'i32'
 |-FunctionDecl {{address}} <line:2:1, col:37> select 'func (i64) i64'
 | |-ParmVarDecl {{address:wide_value}} <col:13, col:22> value 'i64'
 | | `-BuiltinType {{address}} <col:19, col:22> 'i64'
 | |-ReturnVarDecl {{address:wide_result}} <col:24, col:27> 'i64'
 | | `-BuiltinType {{address}} <col:24, col:27> 'i64'
 | `-CompoundStmt {{address}} <col:28, col:37>
-|   `-ImplicitResultInitializationExpr {{address}} <col:30, col:35> 'void' ReturnVar {{address:wide_result}} 'i64'
+|   `-ImplicitResultInitializationExpr {{address}} <col:30, col:35> 'void' non-object ReturnVar {{address:wide_result}} 'i64'
 |     `-ImplicitCastExpr {{address}} <col:30, col:35> 'i64' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:30, col:35> 'i64' lvalue ParmVar {{address:wide_value}} 'value' 'i64'
+|       `-DeclRefExpr {{address}} <col:30, col:35> 'i64' lvalue 'value' ParmVar {{address:wide_value}} 'value' 'i64'
 `-FunctionDecl {{address}} <line:3:1, col:29> caller 'func () void'
   `-CompoundStmt {{address}} <col:15, col:29>
     `-ExprStmt {{address}} <col:17, col:27>
       `-CallExpr {{address}} <col:17, col:26> 'i32' pure-rvalue
-        |-DeclRefExpr {{address}} <col:17, col:23> 'func (i32) i32' Function {{address:selected}} 'select' 'func (i32) i32'
+        |-DeclRefExpr {{address}} <col:17, col:23> 'func (i32) i32' non-object 'select' Function {{address:selected}} 'select' 'func (i32) i32'
         `-ImplicitCastExpr {{address}} <col:24, col:25> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' 1)");
+          `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, ReportsCrossParameterAmbiguityWithoutUsingResultContext) {
@@ -3735,9 +3776,9 @@ func caller(a i32, b i32) { var result i32 := choose(a, b); })");
 | |-ReturnVarDecl {{address:first_result}} <col:27, col:30> 'i64'
 | | `-BuiltinType {{address}} <col:27, col:30> 'i64'
 | `-CompoundStmt {{address}} <col:31, col:36>
-|   `-ImplicitResultInitializationExpr {{address}} <col:33, col:34> 'void' ReturnVar {{address:first_result}} 'i64'
+|   `-ImplicitResultInitializationExpr {{address}} <col:33, col:34> 'void' non-object ReturnVar {{address:first_result}} 'i64'
 |     `-ImplicitCastExpr {{address}} <col:33, col:34> 'i64' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:33, col:34> 'i64' lvalue ParmVar {{address:first_b}} 'b' 'i64'
+|       `-DeclRefExpr {{address}} <col:33, col:34> 'i64' lvalue 'b' ParmVar {{address:first_b}} 'b' 'i64'
 |-FunctionDecl {{address}} <line:2:1, col:36> choose 'func (i64, i32) i32'
 | |-ParmVarDecl {{address}} <col:13, col:18> a 'i64'
 | | `-BuiltinType {{address}} <col:15, col:18> 'i64'
@@ -3746,9 +3787,9 @@ func caller(a i32, b i32) { var result i32 := choose(a, b); })");
 | |-ReturnVarDecl {{address:second_result}} <col:27, col:30> 'i32'
 | | `-BuiltinType {{address}} <col:27, col:30> 'i32'
 | `-CompoundStmt {{address}} <col:31, col:36>
-|   `-ImplicitResultInitializationExpr {{address}} <col:33, col:34> 'void' ReturnVar {{address:second_result}} 'i32'
+|   `-ImplicitResultInitializationExpr {{address}} <col:33, col:34> 'void' non-object ReturnVar {{address:second_result}} 'i32'
 |     `-ImplicitCastExpr {{address}} <col:33, col:34> 'i32' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:33, col:34> 'i32' lvalue ParmVar {{address:second_b}} 'b' 'i32'
+|       `-DeclRefExpr {{address}} <col:33, col:34> 'i32' lvalue 'b' ParmVar {{address:second_b}} 'b' 'i32'
 |-FunctionDecl {{address}} <line:3:1, col:36> choose 'func (i64, i64) i64'
 | |-ParmVarDecl {{address}} <col:13, col:18> a 'i64'
 | | `-BuiltinType {{address}} <col:15, col:18> 'i64'
@@ -3757,9 +3798,9 @@ func caller(a i32, b i32) { var result i32 := choose(a, b); })");
 | |-ReturnVarDecl {{address:third_result}} <col:27, col:30> 'i64'
 | | `-BuiltinType {{address}} <col:27, col:30> 'i64'
 | `-CompoundStmt {{address}} <col:31, col:36>
-|   `-ImplicitResultInitializationExpr {{address}} <col:33, col:34> 'void' ReturnVar {{address:third_result}} 'i64'
+|   `-ImplicitResultInitializationExpr {{address}} <col:33, col:34> 'void' non-object ReturnVar {{address:third_result}} 'i64'
 |     `-ImplicitCastExpr {{address}} <col:33, col:34> 'i64' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:33, col:34> 'i64' lvalue ParmVar {{address:third_b}} 'b' 'i64'
+|       `-DeclRefExpr {{address}} <col:33, col:34> 'i64' lvalue 'b' ParmVar {{address:third_b}} 'b' 'i64'
 `-FunctionDecl {{address}} <line:4:1, col:62> caller 'func (i32, i32) void' contains-errors
   |-ParmVarDecl {{address:a}} <col:13, col:18> a 'i32'
   | `-BuiltinType {{address}} <col:15, col:18> 'i32'
@@ -3770,10 +3811,10 @@ func caller(a i32, b i32) { var result i32 := choose(a, b); })");
       `-VarGroupDecl {{address}} <col:29, col:60> contains-errors
         |-VarDecl {{address}} <col:33, col:43> result 'i32'
         | `-BuiltinType {{address}} <col:40, col:43> 'i32'
-        `-CallExpr {{address}} <col:47, col:59> contains-errors
-          |-DeclRefExpr {{address}} <col:47, col:53> '<function-overload-set>' 'choose' contains-errors
-          |-DeclRefExpr {{address}} <col:54, col:55> 'i32' lvalue ParmVar {{address:a}} 'a' 'i32'
-          `-DeclRefExpr {{address}} <col:57, col:58> 'i32' lvalue ParmVar {{address:b}} 'b' 'i32')");
+        `-CallExpr {{address}} <col:47, col:59> '<error>' contains-errors
+          |-DeclRefExpr {{address}} <col:47, col:53> '<function-overload-set>' non-object 'choose' overload-set contains-errors
+          |-DeclRefExpr {{address}} <col:54, col:55> 'i32' lvalue 'a' ParmVar {{address:a}} 'a' 'i32'
+          `-DeclRefExpr {{address}} <col:57, col:58> 'i32' lvalue 'b' ParmVar {{address:b}} 'b' 'i32')");
 }
 
 TEST_F(SemaTest, ReportsAmbiguityForEqualValuePreservingRanks) {
@@ -3919,10 +3960,10 @@ func target(value i32) {})");
   ExpectError(5, 7, "use of undeclared identifier 'missing_arg'", 11);
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
-|-FunctionDecl {{address}} <test.cw:1:1, col:34> broken contains-errors
+|-FunctionDecl {{address}} <test.cw:1:1, col:34> broken '<error>' contains-errors
 | |-ParmVarDecl {{address}} <col:13, col:22> value 'i32'
 | | `-BuiltinType {{address}} <col:19, col:22> 'i32'
-| |-ReturnVarDecl {{address}} <col:24, col:31> contains-errors
+| |-ReturnVarDecl {{address}} <col:24, col:31> '<error>' contains-errors
 | | `-NamedType {{address}} <col:24, col:31> 'Missing' contains-errors
 | `-CompoundStmt {{address}} <col:32, col:34>
 |-FunctionDecl {{address:usable}} <line:2:1, col:41> usable 'func (i32) void' contains-errors
@@ -3930,29 +3971,29 @@ func target(value i32) {})");
 | | `-BuiltinType {{address}} <col:19, col:22> 'i32'
 | `-CompoundStmt {{address}} <col:24, col:41> contains-errors
 |   `-ExprStmt {{address}} <col:26, col:39> contains-errors
-|     `-DeclRefExpr {{address}} <col:26, col:38> 'missing_body' contains-errors
+|     `-DeclRefExpr {{address}} <col:26, col:38> '<error>' 'missing_body' <error> contains-errors
 |-FunctionDecl {{address}} <line:3:1, line:8:2> caller 'func (i32) void' contains-errors
 | |-ParmVarDecl {{address:value}} <line:3:13, col:22> value 'i32'
 | | `-BuiltinType {{address}} <col:19, col:22> 'i32'
 | `-CompoundStmt {{address}} <col:24, line:8:2> contains-errors
 |   |-ExprStmt {{address}} <line:4:1, col:15> contains-errors
-|   | `-CallExpr {{address}} <col:1, col:14> contains-errors
-|   |   |-DeclRefExpr {{address}} <col:1, col:7> '<function-overload-set>' 'broken' contains-errors
-|   |   `-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+|   | `-CallExpr {{address}} <col:1, col:14> '<error>' contains-errors
+|   |   |-DeclRefExpr {{address}} <col:1, col:7> '<function-overload-set>' non-object 'broken' overload-set contains-errors
+|   |   `-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
 |   |-ExprStmt {{address}} <line:5:1, col:15>
-|   | `-CallExpr {{address}} <col:1, col:14> 'void'
-|   |   |-DeclRefExpr {{address}} <col:1, col:7> 'func (i32) void' Function {{address:usable}} 'usable' 'func (i32) void'
+|   | `-CallExpr {{address}} <col:1, col:14> 'void' non-object
+|   |   |-DeclRefExpr {{address}} <col:1, col:7> 'func (i32) void' non-object 'usable' Function {{address:usable}} 'usable' 'func (i32) void'
 |   |   `-ImplicitCastExpr {{address}} <col:8, col:13> 'i32' pure-rvalue <LValueToRValue>
-|   |     `-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+|   |     `-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
 |   |-ExprStmt {{address}} <line:6:1, col:21> contains-errors
-|   | `-CallExpr {{address}} <col:1, col:20> contains-errors
-|   |   |-DeclRefExpr {{address}} <col:1, col:7> '<function-overload-set>' 'target'
-|   |   `-DeclRefExpr {{address}} <col:8, col:19> 'missing_arg' contains-errors
+|   | `-CallExpr {{address}} <col:1, col:20> '<error>' contains-errors
+|   |   |-DeclRefExpr {{address}} <col:1, col:7> '<function-overload-set>' non-object 'target' overload-set
+|   |   `-DeclRefExpr {{address}} <col:8, col:19> '<error>' 'missing_arg' <error> contains-errors
 |   `-ExprStmt {{address}} <line:7:1, col:15>
-|     `-CallExpr {{address}} <col:1, col:14> 'void'
-|       |-DeclRefExpr {{address}} <col:1, col:7> 'func (i32) void' Function {{address:target}} 'target' 'func (i32) void'
+|     `-CallExpr {{address}} <col:1, col:14> 'void' non-object
+|       |-DeclRefExpr {{address}} <col:1, col:7> 'func (i32) void' non-object 'target' Function {{address:target}} 'target' 'func (i32) void'
 |       `-ImplicitCastExpr {{address}} <col:8, col:13> 'i32' pure-rvalue <LValueToRValue>
-|         `-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+|         `-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
 `-FunctionDecl {{address:target}} <line:9:1, col:26> target 'func (i32) void'
   |-ParmVarDecl {{address}} <col:13, col:22> value 'i32'
   | `-BuiltinType {{address}} <col:19, col:22> 'i32'
@@ -4102,10 +4143,10 @@ func Use(number i32, object &mut Value) { Consume(number, object); })");
               "cannot initialize parameter 2 of function 'Consume': no copy constructor is available for 'Value'", 6);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'ctor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:consume}} <line:4:1, col:41> Consume 'func (u8, Value) void'
 | |-ParmVarDecl {{address}} <col:14, col:23> number 'u8'
@@ -4121,10 +4162,10 @@ func Use(number i32, object &mut Value) { Consume(number, object); })");
   |   `-NamedType {{address}} <col:34, col:39> 'Value'
   `-CompoundStmt {{address}} <col:41, col:69> contains-errors
     `-ExprStmt {{address}} <col:43, col:67> contains-errors
-      `-CallExpr {{address}} <col:43, col:66> contains-errors
-        |-DeclRefExpr {{address}} <col:43, col:50> 'func (u8, Value) void' Function {{address:consume}} 'Consume' 'func (u8, Value) void'
-        |-DeclRefExpr {{address}} <col:51, col:57> 'i32' lvalue ParmVar {{address:number}} 'number' 'i32'
-        `-DeclRefExpr {{address}} <col:59, col:65> 'Value' lvalue ParmVar {{address:object}} 'object' '&mut Value'
+      `-CallExpr {{address}} <col:43, col:66> '<error>' contains-errors
+        |-DeclRefExpr {{address}} <col:43, col:50> 'func (u8, Value) void' non-object 'Consume' Function {{address:consume}} 'Consume' 'func (u8, Value) void'
+        |-DeclRefExpr {{address}} <col:51, col:57> 'i32' lvalue 'number' ParmVar {{address:number}} 'number' 'i32'
+        `-DeclRefExpr {{address}} <col:59, col:65> 'Value' lvalue 'object' ParmVar {{address:object}} 'object' '&mut Value'
 )");
 }
 
@@ -4138,18 +4179,18 @@ func Use() { Take(Make()); })");
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'ctor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:make}} <line:4:1, col:38> Make 'func () Value'
 | |-ReturnVarDecl {{address:make_result}} <col:13, col:18> 'Value'
 | | `-NamedType {{address}} <col:13, col:18> 'Value'
 | `-CompoundStmt {{address}} <col:19, col:38>
 |   `-ReturnStmt {{address}} <col:21, col:36>
-|     `-ImplicitResultInitializationExpr {{address}} <col:28, col:35> 'void' ReturnVar {{address:make_result}} 'Value'
-|       `-ConstructionExpr {{address}} <col:28, col:35> 'Value' pure-rvalue complete-object target <col:28, col:33> 'Value' Constructor {{address:constructor}} 'Value' 'func () void'
+|     `-ImplicitResultInitializationExpr {{address}} <col:28, col:35> 'void' non-object ReturnVar {{address:make_result}} 'Value'
+|       `-ConstructionExpr {{address}} <col:28, col:35> 'Value' pure-rvalue complete-object target <col:28, col:33> 'Value' Constructor {{address:constructor}} 'Value' 'ctor Value()'
 |-FunctionDecl {{address:take}} <line:5:1, col:26> Take 'func (Value) void'
 | |-ParmVarDecl {{address}} <col:11, col:22> value 'Value'
 | | `-NamedType {{address}} <col:17, col:22> 'Value'
@@ -4157,10 +4198,10 @@ func Use() { Take(Make()); })");
 `-FunctionDecl {{address}} <line:6:1, col:29> Use 'func () void'
   `-CompoundStmt {{address}} <col:12, col:29>
     `-ExprStmt {{address}} <col:14, col:27>
-      `-CallExpr {{address}} <col:14, col:26> 'void'
-        |-DeclRefExpr {{address}} <col:14, col:18> 'func (Value) void' Function {{address:take}} 'Take' 'func (Value) void'
+      `-CallExpr {{address}} <col:14, col:26> 'void' non-object
+        |-DeclRefExpr {{address}} <col:14, col:18> 'func (Value) void' non-object 'Take' Function {{address:take}} 'Take' 'func (Value) void'
         `-CallExpr {{address}} <col:19, col:25> 'Value' pure-rvalue
-          `-DeclRefExpr {{address}} <col:19, col:23> 'func () Value' Function {{address:make}} 'Make' 'func () Value'
+          `-DeclRefExpr {{address}} <col:19, col:23> 'func () Value' non-object 'Make' Function {{address:make}} 'Make' 'func () Value'
 )");
 }
 
@@ -4270,58 +4311,58 @@ func Use(source &mut Derived, callback *func (Base) Base) Base {
 |-StructDecl {{address:base}} <test.cw:1:1, col:28> Base
 | `-FieldDecl {{address:base_number}} <col:15, col:26> number 'i32'
 |   `-BuiltinType {{address}} <col:22, col:25> 'i32'
-|-ConstructorDecl {{address:base_value_constructor}} <line:2:1, col:49> Base target Struct {{address:base}} 'Base' 'func (i32) void'
+|-ConstructorDecl {{address:base_value_constructor}} <line:2:1, col:49> Base target Struct {{address:base}} 'Base' 'ctor Base(i32)'
 | |-ParmVarDecl {{address:base_value_constructor_number}} <col:11, col:21> number 'i32'
 | | `-BuiltinType {{address}} <col:18, col:21> 'i32'
 | `-CompoundStmt {{address}} <col:23, col:49>
 |   |-ExprStmt {{address}} <col:25, col:47>
-|   | `-InitializationExpr {{address}} <col:25, col:46> 'void'
+|   | `-InitializationExpr {{address}} <col:25, col:46> 'void' non-object
 |   |   |-MemberExpr {{address}} <col:25, col:36> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
 |   |   | `-ThisExpr {{address}} <col:25, col:29> 'Base' lvalue this
 |   |   `-ImplicitCastExpr {{address}} <col:40, col:46> 'i32' pure-rvalue <LValueToRValue>
-|   |     `-DeclRefExpr {{address}} <col:40, col:46> 'i32' lvalue ParmVar {{address:base_value_constructor_number}} 'number' 'i32'
+|   |     `-DeclRefExpr {{address}} <col:40, col:46> 'i32' lvalue 'number' ParmVar {{address:base_value_constructor_number}} 'number' 'i32'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:63> Base target Struct {{address:base}} 'Base' 'func (&copy Base) void'
+|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:63> Base target Struct {{address:base}} 'Base' 'ctor Base(&copy Base)'
 | |-ParmVarDecl {{address:base_copy_constructor_source}} <col:11, col:28> source '&copy Base'
 | | `-ReferenceType {{address}} <col:18, col:28> '&copy'
 | |   `-NamedType {{address}} <col:24, col:28> 'Base'
 | `-CompoundStmt {{address}} <col:30, col:63>
 |   |-ExprStmt {{address}} <col:32, col:61>
-|   | `-InitializationExpr {{address}} <col:32, col:60> 'void'
+|   | `-InitializationExpr {{address}} <col:32, col:60> 'void' non-object
 |   |   |-MemberExpr {{address}} <col:32, col:43> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
 |   |   | `-ThisExpr {{address}} <col:32, col:36> 'Base' lvalue this
 |   |   `-ImplicitCastExpr {{address}} <col:47, col:60> 'i32' pure-rvalue <LValueToRValue>
 |   |     `-MemberExpr {{address}} <col:47, col:60> 'const i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
-|   |       `-DeclRefExpr {{address}} <col:47, col:53> 'const Base' lvalue ParmVar {{address:base_copy_constructor_source}} 'source' '&copy Base'
+|   |       `-DeclRefExpr {{address}} <col:47, col:53> 'const Base' lvalue 'source' ParmVar {{address:base_copy_constructor_source}} 'source' '&copy Base'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-ConstructorDecl {{address:base_move_constructor}} <line:4:1, col:63> Base target Struct {{address:base}} 'Base' 'func (&move Base) void'
+|-ConstructorDecl {{address:base_move_constructor}} <line:4:1, col:63> Base target Struct {{address:base}} 'Base' 'ctor Base(&move Base)'
 | |-ParmVarDecl {{address:base_move_constructor_source}} <col:11, col:28> source '&move Base'
 | | `-ReferenceType {{address}} <col:18, col:28> '&move'
 | |   `-NamedType {{address}} <col:24, col:28> 'Base'
 | `-CompoundStmt {{address}} <col:30, col:63>
 |   |-ExprStmt {{address}} <col:32, col:61>
-|   | `-InitializationExpr {{address}} <col:32, col:60> 'void'
+|   | `-InitializationExpr {{address}} <col:32, col:60> 'void' non-object
 |   |   |-MemberExpr {{address}} <col:32, col:43> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
 |   |   | `-ThisExpr {{address}} <col:32, col:36> 'Base' lvalue this
 |   |   `-ImplicitCastExpr {{address}} <col:47, col:60> 'i32' pure-rvalue <LValueToRValue>
 |   |     `-MemberExpr {{address}} <col:47, col:60> 'i32' lvalue .number Field {{address:base_number}} 'number' 'i32'
-|   |       `-DeclRefExpr {{address}} <col:47, col:53> 'Base' lvalue ParmVar {{address:base_move_constructor_source}} 'source' '&move Base'
+|   |       `-DeclRefExpr {{address}} <col:47, col:53> 'Base' lvalue 'source' ParmVar {{address:base_move_constructor_source}} 'source' '&move Base'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:base_destructor}} <line:5:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-DestructorDecl {{address:base_destructor}} <line:5:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:6:1, col:25> Derived : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
-|-ConstructorDecl {{address:derived_constructor}} <line:7:1, col:41> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-ConstructorDecl {{address:derived_constructor}} <line:7:1, col:41> Derived target Struct {{address:derived}} 'Derived' 'ctor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:41>
 |   |-ExprStmt {{address}} <col:18, col:39>
-|   | `-InitializationExpr {{address}} <col:18, col:38> 'void'
+|   | `-InitializationExpr {{address}} <col:18, col:38> 'void' non-object
 |   |   |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
 |   |   | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
-|   |   `-ConstructionExpr {{address}} <col:31, col:38> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_value_constructor}} 'Base' 'func (i32) void'
+|   |   `-ConstructionExpr {{address}} <col:31, col:38> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_value_constructor}} 'Base' 'ctor Base(i32)'
 |   |     `-ImplicitCastExpr {{address}} <col:36, col:37> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-|   |       `-IntegerLiteral {{address}} <col:36, col:37> 'comptime_int' 1
+|   |       `-IntegerLiteral {{address}} <col:36, col:37> 'comptime_int' non-object 1
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:derived_destructor}} <line:8:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-DestructorDecl {{address:derived_destructor}} <line:8:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'dtor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:18>
 `-FunctionDecl {{address:use}} <line:9:1, line:15:2> Use 'func (&mut Derived, *func (Base) Base) Base'
   |-ParmVarDecl {{address:use_source}} <line:9:10, col:29> source '&mut Derived'
@@ -4339,39 +4380,39 @@ func Use(source &mut Derived, callback *func (Base) Base) Base {
     | `-VarGroupDecl {{address}} <col:3, col:29>
     |   |-VarDecl {{address}} <col:7, col:18> copied 'Base'
     |   | `-NamedType {{address}} <col:14, col:18> 'Base'
-    |   `-ConstructionExpr {{address}} <col:22, col:28> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'func (&copy Base) void'
+    |   `-ConstructionExpr {{address}} <col:22, col:28> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'ctor Base(&copy Base)'
     |     `-ImplicitCastExpr {{address}} <col:22, col:28> 'const Base' lvalue <NoOp>
     |       `-ImplicitCastExpr {{address}} <col:22, col:28> 'Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
-    |         `-DeclRefExpr {{address}} <col:22, col:28> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
+    |         `-DeclRefExpr {{address}} <col:22, col:28> 'Derived' lvalue 'source' ParmVar {{address:use_source}} 'source' '&mut Derived'
     |-DeclStmt {{address}} <line:11:3, col:33>
     | `-VarGroupDecl {{address}} <col:3, col:33>
     |   |-VarDecl {{address}} <col:7, col:17> moved 'Base'
     |   | `-NamedType {{address}} <col:13, col:17> 'Base'
-    |   `-ConstructionExpr {{address}} <col:21, col:32> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (&move Base) void'
+    |   `-ConstructionExpr {{address}} <col:21, col:32> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'ctor Base(&move Base)'
     |     `-ImplicitCastExpr {{address}} <col:21, col:32> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |       `-UnaryOperator {{address}} <col:21, col:32> 'Derived' move-lvalue 'move'
-    |         `-DeclRefExpr {{address}} <col:26, col:32> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
+    |         `-DeclRefExpr {{address}} <col:26, col:32> 'Derived' lvalue 'source' ParmVar {{address:use_source}} 'source' '&mut Derived'
     |-DeclStmt {{address}} <line:12:3, col:35>
     | `-VarGroupDecl {{address}} <col:3, col:35>
     |   |-VarDecl {{address}} <col:7, col:21> temporary 'Base'
     |   | `-NamedType {{address}} <col:17, col:21> 'Base'
-    |   `-ConstructionExpr {{address}} <col:25, col:34> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (&move Base) void'
+    |   `-ConstructionExpr {{address}} <col:25, col:34> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'ctor Base(&move Base)'
     |     `-ImplicitCastExpr {{address}} <col:25, col:34> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |       `-MaterializeTemporaryExpr {{address}} <col:25, col:34> 'Derived' move-lvalue
-    |         `-ConstructionExpr {{address}} <col:25, col:34> 'Derived' pure-rvalue complete-object target <col:25, col:32> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'func () void'
+    |         `-ConstructionExpr {{address}} <col:25, col:34> 'Derived' pure-rvalue complete-object target <col:25, col:32> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'ctor Derived()'
     |-ExprStmt {{address}} <line:13:3, col:20>
     | `-CallExpr {{address}} <col:3, col:19> 'Base' pure-rvalue
     |   |-ImplicitCastExpr {{address}} <col:3, col:11> '*func (Base) Base' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:3, col:11> '*func (Base) Base' lvalue ParmVar {{address:use_callback}} 'callback' '*func (Base) Base'
-    |   `-ConstructionExpr {{address}} <col:12, col:18> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'func (&copy Base) void'
+    |   | `-DeclRefExpr {{address}} <col:3, col:11> '*func (Base) Base' lvalue 'callback' ParmVar {{address:use_callback}} 'callback' '*func (Base) Base'
+    |   `-ConstructionExpr {{address}} <col:12, col:18> 'Base' pure-rvalue complete-object Constructor {{address:base_copy_constructor}} 'Base' 'ctor Base(&copy Base)'
     |     `-ImplicitCastExpr {{address}} <col:12, col:18> 'const Base' lvalue <NoOp>
     |       `-ImplicitCastExpr {{address}} <col:12, col:18> 'Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
-    |         `-DeclRefExpr {{address}} <col:12, col:18> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
-    `-ImplicitResultInitializationExpr {{address}} <line:14:3, col:12> 'void' ReturnVar {{address:use_result}} 'Base'
-      `-ConstructionExpr {{address}} <col:3, col:12> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'func (&move Base) void'
+    |         `-DeclRefExpr {{address}} <col:12, col:18> 'Derived' lvalue 'source' ParmVar {{address:use_source}} 'source' '&mut Derived'
+    `-ImplicitResultInitializationExpr {{address}} <line:14:3, col:12> 'void' non-object ReturnVar {{address:use_result}} 'Base'
+      `-ConstructionExpr {{address}} <col:3, col:12> 'Base' pure-rvalue complete-object Constructor {{address:base_move_constructor}} 'Base' 'ctor Base(&move Base)'
         `-ImplicitCastExpr {{address}} <col:3, col:12> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
           `-MaterializeTemporaryExpr {{address}} <col:3, col:12> 'Derived' move-lvalue
-            `-ConstructionExpr {{address}} <col:3, col:12> 'Derived' pure-rvalue complete-object target <col:3, col:10> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'func () void'
+            `-ConstructionExpr {{address}} <col:3, col:12> 'Derived' pure-rvalue complete-object target <col:3, col:10> 'Derived' Constructor {{address:derived_constructor}} 'Derived' 'ctor Derived()'
 )");
 }
 
@@ -4398,9 +4439,9 @@ func Use(source &mut Derived, readonly &copy Derived) {
 | |-ReturnVarDecl {{address:make_result}} <col:33, col:40> 'Derived'
 | | `-NamedType {{address}} <col:33, col:40> 'Derived'
 | `-CompoundStmt {{address}} <col:41, col:51>
-|   `-ImplicitResultInitializationExpr {{address}} <col:43, col:49> 'void' ReturnVar {{address:make_result}} 'Derived'
+|   `-ImplicitResultInitializationExpr {{address}} <col:43, col:49> 'void' non-object ReturnVar {{address:make_result}} 'Derived'
 |     `-ImplicitCastExpr {{address}} <col:43, col:49> 'Derived' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:43, col:49> 'const Derived' lvalue ParmVar {{address:make_source}} 'source' '&copy Derived'
+|       `-DeclRefExpr {{address}} <col:43, col:49> 'const Derived' lvalue 'source' ParmVar {{address:make_source}} 'source' '&copy Derived'
 `-FunctionDecl {{address:use}} <line:4:1, line:9:2> Use 'func (&mut Derived, &copy Derived) void'
   |-ParmVarDecl {{address:use_source}} <line:4:10, col:29> source '&mut Derived'
   | `-ReferenceType {{address}} <col:17, col:29> '&mut'
@@ -4415,14 +4456,14 @@ func Use(source &mut Derived, readonly &copy Derived) {
     |   | `-NamedType {{address}} <col:14, col:18> 'Base'
     |   `-ImplicitCastExpr {{address}} <col:22, col:28> 'Base' pure-rvalue <LValueToRValue>
     |     `-ImplicitCastExpr {{address}} <col:22, col:28> 'Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
-    |       `-DeclRefExpr {{address}} <col:22, col:28> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
+    |       `-DeclRefExpr {{address}} <col:22, col:28> 'Derived' lvalue 'source' ParmVar {{address:use_source}} 'source' '&mut Derived'
     |-DeclStmt {{address}} <line:6:3, col:30>
     | `-VarGroupDecl {{address}} <col:3, col:30>
     |   |-VarDecl {{address}} <col:7, col:17> fixed 'Base'
     |   | `-NamedType {{address}} <col:13, col:17> 'Base'
     |   `-ImplicitCastExpr {{address}} <col:21, col:29> 'Base' pure-rvalue <LValueToRValue>
     |     `-ImplicitCastExpr {{address}} <col:21, col:29> 'const Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
-    |       `-DeclRefExpr {{address}} <col:21, col:29> 'const Derived' lvalue ParmVar {{address:use_readonly}} 'readonly' '&copy Derived'
+    |       `-DeclRefExpr {{address}} <col:21, col:29> 'const Derived' lvalue 'readonly' ParmVar {{address:use_readonly}} 'readonly' '&copy Derived'
     |-DeclStmt {{address}} <line:7:3, col:33>
     | `-VarGroupDecl {{address}} <col:3, col:33>
     |   |-VarDecl {{address}} <col:7, col:17> moved 'Base'
@@ -4430,7 +4471,7 @@ func Use(source &mut Derived, readonly &copy Derived) {
     |   `-ImplicitCastExpr {{address}} <col:21, col:32> 'Base' pure-rvalue <LValueToRValue>
     |     `-ImplicitCastExpr {{address}} <col:21, col:32> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
     |       `-UnaryOperator {{address}} <col:21, col:32> 'Derived' move-lvalue 'move'
-    |         `-DeclRefExpr {{address}} <col:26, col:32> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
+    |         `-DeclRefExpr {{address}} <col:26, col:32> 'Derived' lvalue 'source' ParmVar {{address:use_source}} 'source' '&mut Derived'
     `-DeclStmt {{address}} <line:8:3, col:38>
       `-VarGroupDecl {{address}} <col:3, col:38>
         |-VarDecl {{address}} <col:7, col:21> temporary 'Base'
@@ -4439,9 +4480,9 @@ func Use(source &mut Derived, readonly &copy Derived) {
           `-ImplicitCastExpr {{address}} <col:25, col:37> 'Base' move-lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
             `-MaterializeTemporaryExpr {{address}} <col:25, col:37> 'Derived' move-lvalue
               `-CallExpr {{address}} <col:25, col:37> 'Derived' pure-rvalue
-                |-DeclRefExpr {{address}} <col:25, col:29> 'func (&copy Derived) Derived' Function {{address:make}} 'Make' 'func (&copy Derived) Derived'
+                |-DeclRefExpr {{address}} <col:25, col:29> 'func (&copy Derived) Derived' non-object 'Make' Function {{address:make}} 'Make' 'func (&copy Derived) Derived'
                 `-ImplicitCastExpr {{address}} <col:30, col:36> 'const Derived' lvalue <NoOp>
-                  `-DeclRefExpr {{address}} <col:30, col:36> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived')");
+                  `-DeclRefExpr {{address}} <col:30, col:36> 'Derived' lvalue 'source' ParmVar {{address:use_source}} 'source' '&mut Derived')");
 }
 
 TEST_F(SemaTest, PreservesAllArgumentsWhenSelectedBaseValueFormationFails) {
@@ -4461,22 +4502,22 @@ func Use(source &mut Derived, number i32) { Select(&F, number, source, number); 
               "cannot initialize parameter 3 of function 'Select': no copy constructor is available for 'Base'", 6);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:base}} <test.cw:1:1, col:15> Base
-|-ConstructorDecl {{address:base_constructor}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-ConstructorDecl {{address:base_constructor}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'ctor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:base_destructor}} <line:3:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-DestructorDecl {{address:base_destructor}} <line:3:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:4:1, col:25> Derived : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
-|-ConstructorDecl {{address:derived_constructor}} <line:5:1, col:40> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-ConstructorDecl {{address:derived_constructor}} <line:5:1, col:40> Derived target Struct {{address:derived}} 'Derived' 'ctor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:40>
 |   |-ExprStmt {{address}} <col:18, col:38>
-|   | `-InitializationExpr {{address}} <col:18, col:37> 'void'
+|   | `-InitializationExpr {{address}} <col:18, col:37> 'void' non-object
 |   |   |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
 |   |   | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
-|   |   `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'func () void'
+|   |   `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'ctor Base()'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:derived_destructor}} <line:6:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-DestructorDecl {{address:derived_destructor}} <line:6:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'dtor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:18>
 |-FunctionDecl {{address:f}} <line:7:1, col:12> F 'func () void'
 | `-CompoundStmt {{address}} <col:10, col:12>
@@ -4513,13 +4554,13 @@ func Use(source &mut Derived, number i32) { Select(&F, number, source, number); 
   | `-BuiltinType {{address}} <col:38, col:41> 'i32'
   `-CompoundStmt {{address}} <col:43, col:82> contains-errors
     `-ExprStmt {{address}} <col:45, col:80> contains-errors
-      `-CallExpr {{address}} <col:45, col:79> contains-errors
-        |-DeclRefExpr {{address}} <col:45, col:51> 'func (*func () void, u8, Base, i32) void' Function {{address:selected}} 'Select' 'func (*func () void, u8, Base, i32) void'
-        |-UnaryOperator {{address}} <col:52, col:54> '<address-of-function-overload-set>' '&'
-        | `-DeclRefExpr {{address}} <col:53, col:54> '<function-overload-set>' 'F'
-        |-DeclRefExpr {{address}} <col:56, col:62> 'i32' lvalue ParmVar {{address:use_number}} 'number' 'i32'
-        |-DeclRefExpr {{address}} <col:64, col:70> 'Derived' lvalue ParmVar {{address:use_source}} 'source' '&mut Derived'
-        `-DeclRefExpr {{address}} <col:72, col:78> 'i32' lvalue ParmVar {{address:use_number}} 'number' 'i32'
+      `-CallExpr {{address}} <col:45, col:79> '<error>' contains-errors
+        |-DeclRefExpr {{address}} <col:45, col:51> 'func (*func () void, u8, Base, i32) void' non-object 'Select' Function {{address:selected}} 'Select' 'func (*func () void, u8, Base, i32) void'
+        |-UnaryOperator {{address}} <col:52, col:54> '<address-of-function-overload-set>' non-object '&'
+        | `-DeclRefExpr {{address}} <col:53, col:54> '<function-overload-set>' non-object 'F' overload-set
+        |-DeclRefExpr {{address}} <col:56, col:62> 'i32' lvalue 'number' ParmVar {{address:use_number}} 'number' 'i32'
+        |-DeclRefExpr {{address}} <col:64, col:70> 'Derived' lvalue 'source' ParmVar {{address:use_source}} 'source' '&mut Derived'
+        `-DeclRefExpr {{address}} <col:72, col:78> 'i32' lvalue 'number' ParmVar {{address:use_number}} 'number' 'i32'
 )");
 }
 
@@ -4536,45 +4577,45 @@ dtor Holder() {}
 ctor Holder(source &copy Derived) { this.Base := source; })");
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:base}} <test.cw:1:1, col:15> Base
-|-ConstructorDecl {{address:base_constructor}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-ConstructorDecl {{address:base_constructor}} <line:2:1, col:15> Base target Struct {{address:base}} 'Base' 'ctor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:32> Base target Struct {{address:base}} 'Base' 'func (&copy Base) void'
+|-ConstructorDecl {{address:base_copy_constructor}} <line:3:1, col:32> Base target Struct {{address:base}} 'Base' 'ctor Base(&copy Base)'
 | |-ParmVarDecl {{address:base_copy_constructor_source}} <col:11, col:28> source '&copy Base'
 | | `-ReferenceType {{address}} <col:18, col:28> '&copy'
 | |   `-NamedType {{address}} <col:24, col:28> 'Base'
 | `-CompoundStmt {{address}} <col:30, col:32>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:base_destructor}} <line:4:1, col:15> Base target Struct {{address:base}} 'Base' 'func () void'
+|-DestructorDecl {{address:base_destructor}} <line:4:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
 | `-CompoundStmt {{address}} <col:13, col:15>
 |-StructDecl {{address:derived}} <line:5:1, col:25> Derived : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
-|-ConstructorDecl {{address:derived_constructor}} <line:6:1, col:40> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-ConstructorDecl {{address:derived_constructor}} <line:6:1, col:40> Derived target Struct {{address:derived}} 'Derived' 'ctor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:40>
 |   |-ExprStmt {{address}} <col:18, col:38>
-|   | `-InitializationExpr {{address}} <col:18, col:37> 'void'
+|   | `-InitializationExpr {{address}} <col:18, col:37> 'void' non-object
 |   |   |-BaseSubobjectExpr {{address}} <col:18, col:27> 'Base' lvalue .Base Struct {{address:base}} 'Base'
 |   |   | `-ThisExpr {{address}} <col:18, col:22> 'Derived' lvalue this
-|   |   `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'func () void'
+|   |   `-ConstructionExpr {{address}} <col:31, col:37> 'Base' pure-rvalue base-subobject target <col:31, col:35> 'Base' Constructor {{address:base_constructor}} 'Base' 'ctor Base()'
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address:derived_destructor}} <line:7:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'func () void'
+|-DestructorDecl {{address:derived_destructor}} <line:7:1, col:18> Derived target Struct {{address:derived}} 'Derived' 'dtor Derived()'
 | `-CompoundStmt {{address}} <col:16, col:18>
 |-StructDecl {{address:holder}} <line:8:1, col:24> Holder : 'Base'
 | `-BaseType 'Base' Struct {{address:base}} 'Base'
-|-DestructorDecl {{address:holder_destructor}} <line:9:1, col:17> Holder target Struct {{address:holder}} 'Holder' 'func () void'
+|-DestructorDecl {{address:holder_destructor}} <line:9:1, col:17> Holder target Struct {{address:holder}} 'Holder' 'dtor Holder()'
 | `-CompoundStmt {{address}} <col:15, col:17>
-`-ConstructorDecl {{address:holder_constructor}} <line:10:1, col:59> Holder target Struct {{address:holder}} 'Holder' 'func (&copy Derived) void'
+`-ConstructorDecl {{address:holder_constructor}} <line:10:1, col:59> Holder target Struct {{address:holder}} 'Holder' 'ctor Holder(&copy Derived)'
   |-ParmVarDecl {{address:holder_constructor_source}} <col:13, col:33> source '&copy Derived'
   | `-ReferenceType {{address}} <col:20, col:33> '&copy'
   |   `-NamedType {{address}} <col:26, col:33> 'Derived'
   `-CompoundStmt {{address}} <col:35, col:59>
     |-ExprStmt {{address}} <col:37, col:57>
-    | `-InitializationExpr {{address}} <col:37, col:56> 'void'
+    | `-InitializationExpr {{address}} <col:37, col:56> 'void' non-object
     |   |-BaseSubobjectExpr {{address}} <col:37, col:46> 'Base' lvalue .Base Struct {{address:base}} 'Base'
     |   | `-ThisExpr {{address}} <col:37, col:41> 'Holder' lvalue this
-    |   `-ConstructionExpr {{address}} <col:50, col:56> 'Base' pure-rvalue base-subobject Constructor {{address:base_copy_constructor}} 'Base' 'func (&copy Base) void'
+    |   `-ConstructionExpr {{address}} <col:50, col:56> 'Base' pure-rvalue base-subobject Constructor {{address:base_copy_constructor}} 'Base' 'ctor Base(&copy Base)'
     |     `-ImplicitCastExpr {{address}} <col:50, col:56> 'const Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
-    |       `-DeclRefExpr {{address}} <col:50, col:56> 'const Derived' lvalue ParmVar {{address:holder_constructor_source}} 'source' '&copy Derived'
+    |       `-DeclRefExpr {{address}} <col:50, col:56> 'const Derived' lvalue 'source' ParmVar {{address:holder_constructor_source}} 'source' '&copy Derived'
     `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
 )");
 }
@@ -4919,30 +4960,30 @@ func Assign(dst &mut S) { dst = Make(); })");
 | | `-ReferenceType {{address}} <col:32, col:39> '&move'
 | |   `-NamedType {{address}} <col:38, col:39> 'S'
 | `-CompoundStmt {{address}} <col:41, col:43>
-|-ConstructorDecl {{address:constructor}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|-ConstructorDecl {{address:constructor}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:4:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|-DestructorDecl {{address}} <line:4:1, col:12> S target Struct {{address:structure}} 'S' 'dtor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |-FunctionDecl {{address:make}} <line:5:1, col:30> Make 'func () S'
 | |-ReturnVarDecl {{address:make_result}} <col:13, col:14> 'S'
 | | `-NamedType {{address}} <col:13, col:14> 'S'
 | `-CompoundStmt {{address}} <col:15, col:30>
 |   `-ReturnStmt {{address}} <col:17, col:28>
-|     `-ImplicitResultInitializationExpr {{address}} <col:24, col:27> 'void' ReturnVar {{address:make_result}} 'S'
-|       `-ConstructionExpr {{address}} <col:24, col:27> 'S' pure-rvalue complete-object target <col:24, col:25> 'S' Constructor {{address:constructor}} 'S' 'func () void'
+|     `-ImplicitResultInitializationExpr {{address}} <col:24, col:27> 'void' non-object ReturnVar {{address:make_result}} 'S'
+|       `-ConstructionExpr {{address}} <col:24, col:27> 'S' pure-rvalue complete-object target <col:24, col:25> 'S' Constructor {{address:constructor}} 'S' 'ctor S()'
 `-FunctionDecl {{address}} <line:6:1, col:42> Assign 'func (&mut S) void'
   |-ParmVarDecl {{address:assign_destination}} <col:13, col:23> dst '&mut S'
   | `-ReferenceType {{address}} <col:17, col:23> '&mut'
   |   `-NamedType {{address}} <col:22, col:23> 'S'
   `-CompoundStmt {{address}} <col:25, col:42>
     `-ExprStmt {{address}} <col:27, col:40>
-      `-OperatorCallExpr {{address}} <col:27, col:39> 'void'
-        |-DeclRefExpr {{address}} <col:31, col:32> 'func (&mut S, &move S) void' Function {{address:move_assignment}} 'operator=' 'func (&mut S, &move S) void'
-        |-DeclRefExpr {{address}} <col:27, col:30> 'S' lvalue ParmVar {{address:assign_destination}} 'dst' '&mut S'
+      `-OperatorCallExpr {{address}} <col:27, col:39> 'void' non-object
+        |-DeclRefExpr {{address}} <col:31, col:32> 'func (&mut S, &move S) void' non-object Function {{address:move_assignment}} 'operator=' 'func (&mut S, &move S) void'
+        |-DeclRefExpr {{address}} <col:27, col:30> 'S' lvalue 'dst' ParmVar {{address:assign_destination}} 'dst' '&mut S'
         `-MaterializeTemporaryExpr {{address}} <col:33, col:39> 'S' move-lvalue
           `-CallExpr {{address}} <col:33, col:39> 'S' pure-rvalue
-            `-DeclRefExpr {{address}} <col:33, col:37> 'func () S' Function {{address:make}} 'Make' 'func () S'
+            `-DeclRefExpr {{address}} <col:33, col:37> 'func () S' non-object 'Make' Function {{address:make}} 'Make' 'func () S'
 )");
 }
 
@@ -5398,13 +5439,13 @@ TEST_F(SemaTest, PreservesIncrementDecrementTargetsAndResultTypes) {
   |-ReturnVarDecl {{address:result}} <col:23, col:25> 'i8'
   | `-BuiltinType {{address}} <col:23, col:25> 'i8'
   `-CompoundStmt {{address}} <col:26, col:47>
-    `-ImplicitResultInitializationExpr {{address}} <col:28, col:45> 'void' ReturnVar {{address:result}} 'i8'
+    `-ImplicitResultInitializationExpr {{address}} <col:28, col:45> 'void' non-object ReturnVar {{address:result}} 'i8'
       `-BinaryOperator {{address}} <col:28, col:45> 'i8' pure-rvalue '+'
         |-ImplicitCastExpr {{address}} <col:28, col:35> 'i8' pure-rvalue <LValueToRValue>
         | `-UnaryOperator {{address}} <col:28, col:35> 'i8' lvalue '++'
-        |   `-DeclRefExpr {{address}} <col:30, col:35> 'i8' lvalue ParmVar {{address:value}} 'value' '&mut i8'
+        |   `-DeclRefExpr {{address}} <col:30, col:35> 'i8' lvalue 'value' ParmVar {{address:value}} 'value' '&mut i8'
         `-UnaryOperator {{address}} <col:38, col:45> 'i8' pure-rvalue '++' postfix
-          `-DeclRefExpr {{address}} <col:38, col:43> 'i8' lvalue ParmVar {{address:value}} 'value' '&mut i8')");
+          `-DeclRefExpr {{address}} <col:38, col:43> 'i8' lvalue 'value' ParmVar {{address:value}} 'value' '&mut i8')");
 }
 
 TEST_F(SemaTest, AcceptsIncrementDecrementObjectResults) {
@@ -5760,9 +5801,9 @@ TEST_F(SemaTest, PreservesCompoundAssignmentTargetAndComputationTypes) {
   `-CompoundStmt {{address}} <col:26, col:37>
     `-ExprStmt {{address}} <col:28, col:35>
       `-BinaryOperator {{address}} <col:28, col:34> 'i8' lvalue '+='
-        |-DeclRefExpr {{address}} <col:28, col:29> 'i8' lvalue ParmVar {{address:a}} 'a' '&mut i8'
+        |-DeclRefExpr {{address}} <col:28, col:29> 'i8' lvalue 'a' ParmVar {{address:a}} 'a' '&mut i8'
         `-ImplicitCastExpr {{address}} <col:33, col:34> 'i32' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:33, col:34> 'i32' lvalue ParmVar {{address:b}} 'b' 'i32'
+          `-DeclRefExpr {{address}} <col:33, col:34> 'i32' lvalue 'b' ParmVar {{address:b}} 'b' 'i32'
 )");
 }
 
@@ -5778,9 +5819,9 @@ TEST_F(SemaTest, PreservesCompoundShiftOperandTypes) {
   `-CompoundStmt {{address}} <col:26, col:38>
     `-ExprStmt {{address}} <col:28, col:36>
       `-BinaryOperator {{address}} <col:28, col:35> 'u8' lvalue '<<='
-        |-DeclRefExpr {{address}} <col:28, col:29> 'u8' lvalue ParmVar {{address:a}} 'a' '&mut u8'
+        |-DeclRefExpr {{address}} <col:28, col:29> 'u8' lvalue 'a' ParmVar {{address:a}} 'a' '&mut u8'
         `-ImplicitCastExpr {{address}} <col:34, col:35> 'i64' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:34, col:35> 'i64' lvalue ParmVar {{address:b}} 'b' 'i64'
+          `-DeclRefExpr {{address}} <col:34, col:35> 'i64' lvalue 'b' ParmVar {{address:b}} 'b' 'i64'
 )");
 }
 
@@ -5904,9 +5945,9 @@ TEST_F(SemaTest, PreservesShiftOperandTypesAndValueCategory) {
     `-ExprStmt {{address}} <col:29, col:36>
       `-BinaryOperator {{address}} <col:29, col:35> 'u8' pure-rvalue '<<'
         |-ImplicitCastExpr {{address}} <col:29, col:30> 'u8' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:29, col:30> 'const u8' lvalue ParmVar {{address:a}} 'a' '&copy u8'
+        | `-DeclRefExpr {{address}} <col:29, col:30> 'const u8' lvalue 'a' ParmVar {{address:a}} 'a' '&copy u8'
         `-ImplicitCastExpr {{address}} <col:34, col:35> 'i64' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:34, col:35> 'i64' lvalue ParmVar {{address:b}} 'b' 'i64'
+          `-DeclRefExpr {{address}} <col:34, col:35> 'i64' lvalue 'b' ParmVar {{address:b}} 'b' 'i64'
 )");
 }
 
@@ -6191,10 +6232,10 @@ func Check(existing &mut Value) { !existing; })");
   ExpectError(4, 35, "cannot initialize parameter 1 of operator '!': no copy constructor is available for 'Value'", 8);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-ConstructorDecl {{address:constructor}} <line:2:1, col:16> Value target Struct {{address:structure}} 'Value' 'ctor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:operator}} <line:4:1, col:42> operator! 'func (Value) bool'
 | |-ParmVarDecl {{address}} <col:16, col:27> value 'Value'
@@ -6202,7 +6243,7 @@ func Check(existing &mut Value) { !existing; })");
 | |-ReturnVarDecl {{address:result}} <col:29, col:33> 'bool'
 | | `-BuiltinType {{address}} <col:29, col:33> 'bool'
 | `-CompoundStmt {{address}} <col:34, col:42>
-|   `-ImplicitResultInitializationExpr {{address}} <col:36, col:40> 'void' ReturnVar {{address:result}} 'bool'
+|   `-ImplicitResultInitializationExpr {{address}} <col:36, col:40> 'void' non-object ReturnVar {{address:result}} 'bool'
 |     `-BoolLiteral {{address}} <col:36, col:40> 'bool' pure-rvalue true
 `-FunctionDecl {{address}} <line:5:1, col:47> Check 'func (&mut Value) void' contains-errors
   |-ParmVarDecl {{address:existing}} <col:12, col:31> existing '&mut Value'
@@ -6210,9 +6251,9 @@ func Check(existing &mut Value) { !existing; })");
   |   `-NamedType {{address}} <col:26, col:31> 'Value'
   `-CompoundStmt {{address}} <col:33, col:47> contains-errors
     `-ExprStmt {{address}} <col:35, col:45> contains-errors
-      `-OperatorCallExpr {{address}} <col:35, col:44> contains-errors
-        |-DeclRefExpr {{address}} <col:35, col:36> 'func (Value) bool' Function {{address:operator}} 'operator!' 'func (Value) bool'
-        `-DeclRefExpr {{address}} <col:36, col:44> 'Value' lvalue ParmVar {{address:existing}} 'existing' '&mut Value'
+      `-OperatorCallExpr {{address}} <col:35, col:44> '<error>' contains-errors
+        |-DeclRefExpr {{address}} <col:35, col:36> 'func (Value) bool' non-object Function {{address:operator}} 'operator!' 'func (Value) bool'
+        `-DeclRefExpr {{address}} <col:36, col:44> 'Value' lvalue 'existing' ParmVar {{address:existing}} 'existing' '&mut Value'
 )");
 }
 
@@ -6365,19 +6406,19 @@ func return_move(value i32) &move i32 { return move value; })");
 | |   `-BuiltinType {{address}} <col:33, col:36> 'i32'
 | `-CompoundStmt {{address}} <col:37, col:54>
 |   `-ReturnStmt {{address}} <col:39, col:52>
-|     `-ImplicitResultInitializationExpr {{address}} <col:46, col:51> 'void' ReturnVar {{address:return_mut_result}} '&mut i32'
-|       `-DeclRefExpr {{address}} <col:46, col:51> 'i32' lvalue ParmVar {{address:return_mut_parameter}} 'value' 'i32'
+|     `-ImplicitResultInitializationExpr {{address}} <col:46, col:51> 'void' non-object ReturnVar {{address:return_mut_result}} '&mut i32'
+|       `-DeclRefExpr {{address}} <col:46, col:51> 'i32' lvalue 'value' ParmVar {{address:return_mut_parameter}} 'value' 'i32'
 |-FunctionDecl {{address}} <line:2:1, col:43> return_copy 'func () &copy i32'
 | |-ReturnVarDecl {{address:return_copy_result}} <col:20, col:29> '&copy i32'
 | | `-ReferenceType {{address}} <col:20, col:29> '&copy'
 | |   `-BuiltinType {{address}} <col:26, col:29> 'i32'
 | `-CompoundStmt {{address}} <col:30, col:43>
 |   `-ReturnStmt {{address}} <col:32, col:41>
-|     `-ImplicitResultInitializationExpr {{address}} <col:39, col:40> 'void' ReturnVar {{address:return_copy_result}} '&copy i32'
+|     `-ImplicitResultInitializationExpr {{address}} <col:39, col:40> 'void' non-object ReturnVar {{address:return_copy_result}} '&copy i32'
 |       `-ImplicitCastExpr {{address}} <col:39, col:40> 'const i32' move-lvalue <NoOp>
 |         `-MaterializeTemporaryExpr {{address}} <col:39, col:40> 'i32' move-lvalue
 |           `-ImplicitCastExpr {{address}} <col:39, col:40> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-|             `-IntegerLiteral {{address}} <col:39, col:40> 'comptime_int' 1
+|             `-IntegerLiteral {{address}} <col:39, col:40> 'comptime_int' non-object 1
 `-FunctionDecl {{address}} <line:3:1, col:61> return_move 'func (i32) &move i32'
   |-ParmVarDecl {{address:return_move_parameter}} <col:18, col:27> value 'i32'
   | `-BuiltinType {{address}} <col:24, col:27> 'i32'
@@ -6386,9 +6427,9 @@ func return_move(value i32) &move i32 { return move value; })");
   |   `-BuiltinType {{address}} <col:35, col:38> 'i32'
   `-CompoundStmt {{address}} <col:39, col:61>
     `-ReturnStmt {{address}} <col:41, col:59>
-      `-ImplicitResultInitializationExpr {{address}} <col:48, col:58> 'void' ReturnVar {{address:return_move_result}} '&move i32'
+      `-ImplicitResultInitializationExpr {{address}} <col:48, col:58> 'void' non-object ReturnVar {{address:return_move_result}} '&move i32'
         `-UnaryOperator {{address}} <col:48, col:58> 'i32' move-lvalue 'move'
-          `-DeclRefExpr {{address}} <col:53, col:58> 'i32' lvalue ParmVar {{address:return_move_parameter}} 'value' 'i32')");
+          `-DeclRefExpr {{address}} <col:53, col:58> 'i32' lvalue 'value' ParmVar {{address:return_move_parameter}} 'value' 'i32')");
 }
 
 TEST_F(SemaTest, AdaptsReturnExpressionsToCanonicalTypes) {
@@ -6402,10 +6443,10 @@ TEST_F(SemaTest, AdaptsReturnExpressionsToCanonicalTypes) {
   | `-BuiltinType {{address}} <col:19, col:22> 'i32'
   `-CompoundStmt {{address}} <col:23, col:40>
     `-ReturnStmt {{address}} <col:25, col:38>
-      `-ImplicitResultInitializationExpr {{address}} <col:32, col:37> 'void' ReturnVar {{address:return_object}} 'i32'
+      `-ImplicitResultInitializationExpr {{address}} <col:32, col:37> 'void' non-object ReturnVar {{address:return_object}} 'i32'
         `-ImplicitCastExpr {{address}} <col:32, col:37> 'i32' pure-rvalue <IntegerToInteger>
           `-ImplicitCastExpr {{address}} <col:32, col:37> 'i16' pure-rvalue <LValueToRValue>
-            `-DeclRefExpr {{address}} <col:32, col:37> 'i16' lvalue ParmVar {{address:parameter}} 'value' 'i16')");
+            `-DeclRefExpr {{address}} <col:32, col:37> 'i16' lvalue 'value' ParmVar {{address:parameter}} 'value' 'i16')");
 }
 
 TEST_F(SemaTest, MaterializesReturnIntegerBeforeTargetConversion) {
@@ -6417,10 +6458,10 @@ TEST_F(SemaTest, MaterializesReturnIntegerBeforeTargetConversion) {
   | `-BuiltinType {{address}} <col:10, col:13> 'i64'
   `-CompoundStmt {{address}} <col:14, col:27>
     `-ReturnStmt {{address}} <col:16, col:25>
-      `-ImplicitResultInitializationExpr {{address}} <col:23, col:24> 'void' ReturnVar {{address:return_object}} 'i64'
+      `-ImplicitResultInitializationExpr {{address}} <col:23, col:24> 'void' non-object ReturnVar {{address:return_object}} 'i64'
         `-ImplicitCastExpr {{address}} <col:23, col:24> 'i64' pure-rvalue <IntegerToInteger>
           `-ImplicitCastExpr {{address}} <col:23, col:24> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-            `-IntegerLiteral {{address}} <col:23, col:24> 'comptime_int' 1)");
+            `-IntegerLiteral {{address}} <col:23, col:24> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, KeepsCurrentEmptyReturnBehavior) {
@@ -6454,12 +6495,12 @@ TEST_F(SemaTest, RejectsIncompatibleReturnsWithoutPoisoningExpressions) {
   | `-BuiltinType {{address}} <col:10, col:13> 'i32'
   `-CompoundStmt {{address}} <col:14, col:40> contains-errors
     |-ReturnStmt {{address}} <col:16, col:28> contains-errors
-    | `-ImplicitResultInitializationExpr {{address}} <col:23, col:27> 'void' ReturnVar {{address:return_object}} 'i32' contains-errors
+    | `-ImplicitResultInitializationExpr {{address}} <col:23, col:27> 'void' non-object ReturnVar {{address:return_object}} 'i32' contains-errors
     |   `-BoolLiteral {{address}} <col:23, col:27> 'bool' pure-rvalue true
     `-ReturnStmt {{address}} <col:29, col:38>
-      `-ImplicitResultInitializationExpr {{address}} <col:36, col:37> 'void' ReturnVar {{address:return_object}} 'i32'
+      `-ImplicitResultInitializationExpr {{address}} <col:36, col:37> 'void' non-object ReturnVar {{address:return_object}} 'i32'
         `-ImplicitCastExpr {{address}} <col:36, col:37> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          `-IntegerLiteral {{address}} <col:36, col:37> 'comptime_int' 1)");
+          `-IntegerLiteral {{address}} <col:36, col:37> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, ReportsStructuralReturnErrorsAfterAnalyzingExpressions) {
@@ -6481,7 +6522,7 @@ TEST_F(SemaTest, KeepsVoidReturnExpressionUnpoisoned) {
   `-CompoundStmt {{address}} <col:10, col:23> contains-errors
     `-ReturnStmt {{address}} <col:12, col:21> contains-errors
       `-ImplicitCastExpr {{address}} <col:19, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-        `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' 1)");
+        `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, SuppressesReturnTypeDiagnosticsAfterExpressionFailure) {
@@ -6527,9 +6568,9 @@ TEST_F(SemaTest, KeepsVariableBlockReturnExpressionUnpoisoned) {
         `-CompoundStmt {{address}} <col:29, col:47> contains-errors
           |-ReturnStmt {{address}} <col:31, col:43> contains-errors
           | `-BoolLiteral {{address}} <col:38, col:42> 'bool' pure-rvalue true
-          `-ImplicitResultInitializationExpr {{address}} <col:44, col:45> 'void' Var {{address:value}} 'value' 'i32'
+          `-ImplicitResultInitializationExpr {{address}} <col:44, col:45> 'void' non-object Var {{address:value}} 'value' 'i32'
             `-ImplicitCastExpr {{address}} <col:44, col:45> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-              `-IntegerLiteral {{address}} <col:44, col:45> 'comptime_int' 0)");
+              `-IntegerLiteral {{address}} <col:44, col:45> 'comptime_int' non-object 0)");
 }
 
 // Local declarations, lexical scope, and initializers.
@@ -6563,19 +6604,19 @@ TEST_F(SemaTest, BindsForwardGlobalAfterLocalDeclarationPoint) {
 |-FunctionDecl {{address}} <test.cw:1:1, col:35> f 'func () void' contains-errors
 | `-CompoundStmt {{address}} <col:10, col:35> contains-errors
 |   |-ExprStmt {{address}} <col:12, col:14>
-|   | `-DeclRefExpr {{address}} <col:12, col:13> 'i32' lvalue Var {{address:global}} 'g' 'i32'
+|   | `-DeclRefExpr {{address}} <col:12, col:13> 'i32' lvalue 'g' Var {{address:global}} 'g' 'i32'
 |   |-DeclStmt {{address}} <col:15, col:30> contains-errors
 |   | `-VarGroupDecl {{address}} <col:15, col:30> contains-errors
 |   |   |-VarDecl {{address:local}} <col:19, col:24> x 'i32'
 |   |   | `-BuiltinType {{address}} <col:21, col:24> 'i32'
-|   |   `-DeclRefExpr {{address}} <col:28, col:29> 'x' contains-errors
+|   |   `-DeclRefExpr {{address}} <col:28, col:29> '<error>' 'x' <error> contains-errors
 |   `-ExprStmt {{address}} <col:31, col:33>
-|     `-DeclRefExpr {{address}} <col:31, col:32> 'i32' lvalue Var {{address:local}} 'x' 'i32'
+|     `-DeclRefExpr {{address}} <col:31, col:32> 'i32' lvalue 'x' Var {{address:local}} 'x' 'i32'
 `-VarGroupDecl {{address}} <col:36, col:51>
   |-VarDecl {{address:global}} <col:40, col:45> g 'i32'
   | `-BuiltinType {{address}} <col:42, col:45> 'i32'
   `-ImplicitCastExpr {{address}} <col:49, col:50> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    `-IntegerLiteral {{address}} <col:49, col:50> 'comptime_int' 0)");
+    `-IntegerLiteral {{address}} <col:49, col:50> 'comptime_int' non-object 0)");
 }
 
 TEST_F(SemaTest, IntroducesVariableGroupNamesAfterAllInitializers) {
@@ -6592,12 +6633,12 @@ TEST_F(SemaTest, IntroducesVariableGroupNamesAfterAllInitializers) {
     |   | `-BuiltinType {{address}} <col:18, col:21> 'i32'
     |   |-VarDecl {{address:b}} <col:23, col:28> b 'i32'
     |   | `-BuiltinType {{address}} <col:25, col:28> 'i32'
-    |   |-DeclRefExpr {{address}} <col:32, col:33> 'b' contains-errors
-    |   `-DeclRefExpr {{address}} <col:35, col:36> 'a' contains-errors
+    |   |-DeclRefExpr {{address}} <col:32, col:33> '<error>' 'b' <error> contains-errors
+    |   `-DeclRefExpr {{address}} <col:35, col:36> '<error>' 'a' <error> contains-errors
     |-ExprStmt {{address}} <col:38, col:40>
-    | `-DeclRefExpr {{address}} <col:38, col:39> 'i32' lvalue Var {{address:a}} 'a' 'i32'
+    | `-DeclRefExpr {{address}} <col:38, col:39> 'i32' lvalue 'a' Var {{address:a}} 'a' 'i32'
     `-ExprStmt {{address}} <col:41, col:43>
-      `-DeclRefExpr {{address}} <col:41, col:42> 'i32' lvalue Var {{address:b}} 'b' 'i32')");
+      `-DeclRefExpr {{address}} <col:41, col:42> 'i32' lvalue 'b' Var {{address:b}} 'b' 'i32')");
 }
 
 TEST_F(SemaTest, KeepsFirstVariableAfterFunctionScopeRedefinition) {
@@ -6615,7 +6656,7 @@ TEST_F(SemaTest, KeepsFirstVariableAfterFunctionScopeRedefinition) {
     |   `-VarDecl {{address:duplicate}} <col:21, col:26> x 'i32' contains-errors
     |     `-BuiltinType {{address}} <col:23, col:26> 'i32'
     `-ExprStmt {{address}} <col:28, col:30>
-      `-DeclRefExpr {{address}} <col:28, col:29> 'i32' lvalue ParmVar {{address:parameter}} 'x' 'i32')");
+      `-DeclRefExpr {{address}} <col:28, col:29> 'i32' lvalue 'x' ParmVar {{address:parameter}} 'x' 'i32')");
 }
 
 TEST_F(SemaTest, KeepsFirstParameterAcrossParameterAndReturnRedefinitions) {
@@ -6636,7 +6677,7 @@ TEST_F(SemaTest, KeepsFirstParameterAcrossParameterAndReturnRedefinitions) {
   | `-BuiltinType {{address}} <col:28, col:31> 'i32'
   `-CompoundStmt {{address}} <col:32, col:38> contains-errors
     `-ExprStmt {{address}} <col:34, col:36>
-      `-DeclRefExpr {{address}} <col:34, col:35> 'i32' lvalue ParmVar {{address:first}} 'x' 'i32')");
+      `-DeclRefExpr {{address}} <col:34, col:35> 'i32' lvalue 'x' ParmVar {{address:first}} 'x' 'i32')");
 }
 
 TEST_F(SemaTest, BindsNamedReturnVariableThroughoutExpressionTrees) {
@@ -6658,33 +6699,33 @@ TEST_F(SemaTest, BindsNamedReturnVariableThroughoutExpressionTrees) {
     |-ExprStmt {{address}} <col:27, col:30>
     | `-UnaryOperator {{address}} <col:27, col:29> 'i32' pure-rvalue '-'
     |   `-ImplicitCastExpr {{address}} <col:28, col:29> 'i32' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:28, col:29> 'i32' lvalue ParmVar {{address:parameter}} 'a' 'i32'
+    |     `-DeclRefExpr {{address}} <col:28, col:29> 'i32' lvalue 'a' ParmVar {{address:parameter}} 'a' 'i32'
     |-ExprStmt {{address}} <col:31, col:37> contains-errors
     | `-BinaryOperator {{address}} <col:31, col:36> 'i32' pure-rvalue '+' contains-errors
     |   |-ImplicitCastExpr {{address}} <col:31, col:32> 'i32' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:31, col:32> 'i32' lvalue ParmVar {{address:parameter}} 'a' 'i32'
+    |   | `-DeclRefExpr {{address}} <col:31, col:32> 'i32' lvalue 'a' ParmVar {{address:parameter}} 'a' 'i32'
     |   `-ImplicitCastExpr {{address}} <col:35, col:36> 'i32' pure-rvalue <LValueToRValue> contains-errors
-    |     `-DeclRefExpr {{address}} <col:35, col:36> 'i32' lvalue ReturnVar {{address:return}} 'r' 'i32' contains-errors
+    |     `-DeclRefExpr {{address}} <col:35, col:36> 'i32' lvalue 'r' ReturnVar {{address:return}} 'r' 'i32' contains-errors
     |-ExprStmt {{address}} <col:38, col:51> contains-errors
     | `-ConditionalOperator {{address}} <col:38, col:50> 'i32' lvalue contains-errors
     |   |-BoolLiteral {{address}} <col:38, col:42> 'bool' pure-rvalue true
-    |   |-DeclRefExpr {{address}} <col:45, col:46> 'i32' lvalue ReturnVar {{address:return}} 'r' 'i32' contains-errors
-    |   `-DeclRefExpr {{address}} <col:49, col:50> 'i32' lvalue ParmVar {{address:parameter}} 'a' 'i32'
+    |   |-DeclRefExpr {{address}} <col:45, col:46> 'i32' lvalue 'r' ReturnVar {{address:return}} 'r' 'i32' contains-errors
+    |   `-DeclRefExpr {{address}} <col:49, col:50> 'i32' lvalue 'a' ParmVar {{address:parameter}} 'a' 'i32'
     |-ExprStmt {{address}} <col:52, col:54>
-    | `-DeclRefExpr {{address}} <col:52, col:53> 'i32' lvalue ParmVar {{address:parameter}} 'a' 'i32'
+    | `-DeclRefExpr {{address}} <col:52, col:53> 'i32' lvalue 'a' ParmVar {{address:parameter}} 'a' 'i32'
     |-ExprStmt {{address}} <col:55, col:60> contains-errors
-    | `-SubscriptExpr {{address}} <col:55, col:59> contains-errors
-    |   |-DeclRefExpr {{address}} <col:55, col:56> 'i32' lvalue ParmVar {{address:parameter}} 'a' 'i32'
-    |   `-DeclRefExpr {{address}} <col:57, col:58> 'i32' lvalue ReturnVar {{address:return}} 'r' 'i32' contains-errors
+    | `-SubscriptExpr {{address}} <col:55, col:59> '<error>' contains-errors
+    |   |-DeclRefExpr {{address}} <col:55, col:56> 'i32' lvalue 'a' ParmVar {{address:parameter}} 'a' 'i32'
+    |   `-DeclRefExpr {{address}} <col:57, col:58> 'i32' lvalue 'r' ReturnVar {{address:return}} 'r' 'i32' contains-errors
     |-ExprStmt {{address}} <col:61, col:66>
     | `-CallExpr {{address}} <col:61, col:65> 'i32' pure-rvalue
-    |   |-DeclRefExpr {{address}} <col:61, col:62> 'func (i32) i32' Function {{address:function}} 'f' 'func (i32) i32'
+    |   |-DeclRefExpr {{address}} <col:61, col:62> 'func (i32) i32' non-object 'f' Function {{address:function}} 'f' 'func (i32) i32'
     |   `-ImplicitCastExpr {{address}} <col:63, col:64> 'i32' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:63, col:64> 'i32' lvalue ParmVar {{address:parameter}} 'a' 'i32'
+    |     `-DeclRefExpr {{address}} <col:63, col:64> 'i32' lvalue 'a' ParmVar {{address:parameter}} 'a' 'i32'
     `-ReturnStmt {{address}} <col:67, col:76> contains-errors
-      `-ImplicitResultInitializationExpr {{address}} <col:74, col:75> 'void' ReturnVar {{address:return}} 'r' 'i32' contains-errors
+      `-ImplicitResultInitializationExpr {{address}} <col:74, col:75> 'void' non-object ReturnVar {{address:return}} 'r' 'i32' contains-errors
         `-ImplicitCastExpr {{address}} <col:74, col:75> 'i32' pure-rvalue <LValueToRValue> contains-errors
-          `-DeclRefExpr {{address}} <col:74, col:75> 'i32' lvalue ReturnVar {{address:return}} 'r' 'i32' contains-errors)");
+          `-DeclRefExpr {{address}} <col:74, col:75> 'i32' lvalue 'r' ReturnVar {{address:return}} 'r' 'i32' contains-errors)");
 }
 
 TEST_F(SemaTest, PreservesNameLookupErrorsAndFunctionShadowing) {
@@ -6703,12 +6744,12 @@ func caller(target i32) { target(); missing(missing_arg); })");
   | `-BuiltinType {{address}} <col:20, col:23> 'i32'
   `-CompoundStmt {{address}} <col:25, col:60> contains-errors
     |-ExprStmt {{address}} <col:27, col:36> contains-errors
-    | `-CallExpr {{address}} <col:27, col:35> contains-errors
-    |   `-DeclRefExpr {{address}} <col:27, col:33> 'i32' lvalue ParmVar {{address:parameter}} 'target' 'i32'
+    | `-CallExpr {{address}} <col:27, col:35> '<error>' contains-errors
+    |   `-DeclRefExpr {{address}} <col:27, col:33> 'i32' lvalue 'target' ParmVar {{address:parameter}} 'target' 'i32'
     `-ExprStmt {{address}} <col:37, col:58> contains-errors
-      `-CallExpr {{address}} <col:37, col:57> contains-errors
-        |-DeclRefExpr {{address}} <col:37, col:44> 'missing' contains-errors
-        `-DeclRefExpr {{address}} <col:45, col:56> 'missing_arg' contains-errors)");
+      `-CallExpr {{address}} <col:37, col:57> '<error>' contains-errors
+        |-DeclRefExpr {{address}} <col:37, col:44> '<error>' 'missing' <error> contains-errors
+        `-DeclRefExpr {{address}} <col:45, col:56> '<error>' 'missing_arg' <error> contains-errors)");
 }
 
 TEST_F(SemaTest, ManagesIfAndWhileBlockScopes) {
@@ -6723,22 +6764,22 @@ TEST_F(SemaTest, ManagesIfAndWhileBlockScopes) {
   `-CompoundStmt {{address}} <col:16, col:60> contains-errors
     |-IfStmt {{address}} <col:18, col:40> contains-errors
     | |-ImplicitCastExpr {{address}} <col:21, col:22> 'bool' pure-rvalue <LValueToRValue>
-    | | `-DeclRefExpr {{address}} <col:21, col:22> 'bool' lvalue ParmVar {{address:parameter}} 'x' 'bool'
+    | | `-DeclRefExpr {{address}} <col:21, col:22> 'bool' lvalue 'x' ParmVar {{address:parameter}} 'x' 'bool'
     | `-CompoundStmt {{address}} <col:23, col:40> contains-errors
     |   |-DeclStmt {{address}} <col:25, col:35>
     |   | `-VarGroupDecl {{address}} <col:25, col:35>
     |   |   `-VarDecl {{address:local}} <col:29, col:34> y 'i32'
     |   |     `-BuiltinType {{address}} <col:31, col:34> 'i32'
     |   `-ExprStmt {{address}} <col:36, col:38> contains-errors
-    |     `-DeclRefExpr {{address}} <col:36, col:37> 'i32' lvalue Var {{address:local}} 'y' 'i32' contains-errors
+    |     `-DeclRefExpr {{address}} <col:36, col:37> 'i32' lvalue 'y' Var {{address:local}} 'y' 'i32' contains-errors
     |-WhileStmt {{address}} <col:41, col:55>
     | |-ImplicitCastExpr {{address}} <col:47, col:48> 'bool' pure-rvalue <LValueToRValue>
-    | | `-DeclRefExpr {{address}} <col:47, col:48> 'bool' lvalue ParmVar {{address:parameter}} 'x' 'bool'
+    | | `-DeclRefExpr {{address}} <col:47, col:48> 'bool' lvalue 'x' ParmVar {{address:parameter}} 'x' 'bool'
     | `-CompoundStmt {{address}} <col:49, col:55>
     |   `-ExprStmt {{address}} <col:51, col:53>
-    |     `-DeclRefExpr {{address}} <col:51, col:52> 'bool' lvalue ParmVar {{address:parameter}} 'x' 'bool'
+    |     `-DeclRefExpr {{address}} <col:51, col:52> 'bool' lvalue 'x' ParmVar {{address:parameter}} 'x' 'bool'
     `-ExprStmt {{address}} <col:56, col:58> contains-errors
-      `-DeclRefExpr {{address}} <col:56, col:57> 'y' contains-errors)");
+      `-DeclRefExpr {{address}} <col:56, col:57> '<error>' 'y' <error> contains-errors)");
 }
 
 TEST_F(SemaTest, DiagnosesTypeNamesOutsideCalleePositions) {
@@ -6774,17 +6815,17 @@ TEST_F(SemaTest, AllowsVariablesToShadowTypesAndFunctions) {
     |   `-VarDecl {{address:type_shadow}} <col:53, col:58> S 'i32'
     |     `-BuiltinType {{address}} <col:55, col:58> 'i32'
     |-ExprStmt {{address}} <col:60, col:62> contains-errors
-    | `-DeclRefExpr {{address}} <col:60, col:61> 'i32' lvalue Var {{address:type_shadow}} 'S' 'i32' contains-errors
+    | `-DeclRefExpr {{address}} <col:60, col:61> 'i32' lvalue 'S' Var {{address:type_shadow}} 'S' 'i32' contains-errors
     |-CompoundStmt {{address}} <col:63, col:90> contains-errors
     | |-DeclStmt {{address}} <col:65, col:80>
     | | `-VarGroupDecl {{address}} <col:65, col:80>
     | |   `-VarDecl {{address:function_shadow}} <col:69, col:79> target 'i32'
     | |     `-BuiltinType {{address}} <col:76, col:79> 'i32'
     | `-ExprStmt {{address}} <col:81, col:88> contains-errors
-    |   `-DeclRefExpr {{address}} <col:81, col:87> 'i32' lvalue Var {{address:function_shadow}} 'target' 'i32' contains-errors
+    |   `-DeclRefExpr {{address}} <col:81, col:87> 'i32' lvalue 'target' Var {{address:function_shadow}} 'target' 'i32' contains-errors
     `-ExprStmt {{address}} <col:91, col:100>
-      `-CallExpr {{address}} <col:91, col:99> 'void'
-        `-DeclRefExpr {{address}} <col:91, col:97> 'func () void' Function {{address:target}} 'target' 'func () void')");
+      `-CallExpr {{address}} <col:91, col:99> 'void' non-object
+        `-DeclRefExpr {{address}} <col:91, col:97> 'func () void' non-object 'target' Function {{address:target}} 'target' 'func () void')");
 }
 
 TEST_F(SemaTest, InfersLocalTypeWhileLeavingFailedExplicitTypeEmpty) {
@@ -6799,15 +6840,15 @@ TEST_F(SemaTest, InfersLocalTypeWhileLeavingFailedExplicitTypeEmpty) {
     | `-VarGroupDecl {{address}} <col:12, col:30>
     |   |-VarDecl {{address:inferred}} <col:16, col:24> inferred 'i32'
     |   `-ImplicitCastExpr {{address}} <col:28, col:29> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-IntegerLiteral {{address}} <col:28, col:29> 'comptime_int' 1
+    |     `-IntegerLiteral {{address}} <col:28, col:29> 'comptime_int' non-object 1
     |-ExprStmt {{address}} <col:31, col:40>
-    | `-DeclRefExpr {{address}} <col:31, col:39> 'i32' lvalue Var {{address:inferred}} 'inferred' 'i32'
+    | `-DeclRefExpr {{address}} <col:31, col:39> 'i32' lvalue 'inferred' Var {{address:inferred}} 'inferred' 'i32'
     |-DeclStmt {{address}} <col:41, col:60> contains-errors
     | `-VarGroupDecl {{address}} <col:41, col:60> contains-errors
-    |   `-VarDecl {{address:failed}} <col:45, col:59> failed contains-errors
+    |   `-VarDecl {{address:failed}} <col:45, col:59> failed '<error>' contains-errors
     |     `-NamedType {{address}} <col:52, col:59> 'Missing' contains-errors
     `-ExprStmt {{address}} <col:61, col:68> contains-errors
-      `-DeclRefExpr {{address}} <col:61, col:67> Var {{address:failed}} 'failed' contains-errors)");
+      `-DeclRefExpr {{address}} <col:61, col:67> '<error>' 'failed' Var {{address:failed}} 'failed' '<error>' contains-errors)");
 }
 
 TEST_F(SemaTest, InfersEachVariableInAGroupFromItsCorrespondingInitializer) {
@@ -6821,9 +6862,9 @@ TEST_F(SemaTest, InfersEachVariableInAGroupFromItsCorrespondingInitializer) {
         |-VarDecl {{address}} <col:16, col:21> small 'i32'
         |-VarDecl {{address}} <col:23, col:28> large 'i64'
         |-ImplicitCastExpr {{address}} <col:32, col:33> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-        | `-IntegerLiteral {{address}} <col:32, col:33> 'comptime_int' 1
+        | `-IntegerLiteral {{address}} <col:32, col:33> 'comptime_int' non-object 1
         `-ImplicitCastExpr {{address}} <col:35, col:45> 'i64' pure-rvalue <ComptimeIntegerMaterialization>
-          `-IntegerLiteral {{address}} <col:35, col:45> 'comptime_int' 2147483648)");
+          `-IntegerLiteral {{address}} <col:35, col:45> 'comptime_int' non-object 2147483648)");
 }
 
 TEST_F(SemaTest, AppliesValueReadsToNonNumericInitializers) {
@@ -6852,14 +6893,14 @@ var callback_copy *func () void := callback;
     |   |-VarDecl {{address}} <col:5, col:17> value_copy 'S'
     |   | `-NamedType {{address}} <col:16, col:17> 'S'
     |   `-ImplicitCastExpr {{address}} <col:21, col:26> 'S' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:21, col:26> 'S' lvalue ParmVar {{address:value}} 'value' 'S'
+    |     `-DeclRefExpr {{address}} <col:21, col:26> 'S' lvalue 'value' ParmVar {{address:value}} 'value' 'S'
     |-DeclStmt {{address}} <line:4:1, col:32>
     | `-VarGroupDecl {{address}} <col:1, col:32>
     |   |-VarDecl {{address}} <col:5, col:20> pointer_copy '*S'
     |   | `-PointerType {{address}} <col:18, col:20>
     |   |   `-NamedType {{address}} <col:19, col:20> 'S'
     |   `-ImplicitCastExpr {{address}} <col:24, col:31> '*S' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:24, col:31> '*S' lvalue ParmVar {{address:pointer}} 'pointer' '*S'
+    |     `-DeclRefExpr {{address}} <col:24, col:31> '*S' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*S'
     `-DeclStmt {{address}} <line:5:1, col:45>
       `-VarGroupDecl {{address}} <col:1, col:45>
         |-VarDecl {{address}} <col:5, col:32> callback_copy '*func () void'
@@ -6867,7 +6908,7 @@ var callback_copy *func () void := callback;
         |   `-FunctionType {{address}} <col:20, col:32>
         |     `-BuiltinType {{address}} <col:28, col:32> 'void'
         `-ImplicitCastExpr {{address}} <col:36, col:44> '*func () void' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:36, col:44> '*func () void' lvalue ParmVar {{address:callback}} 'callback' '*func () void')");
+          `-DeclRefExpr {{address}} <col:36, col:44> '*func () void' lvalue 'callback' ParmVar {{address:callback}} 'callback' '*func () void')");
 }
 
 TEST_F(SemaTest, RejectsIncompatibleExplicitInitializerTypes) {
@@ -6921,15 +6962,15 @@ good;
     |   |-VarDecl {{address:good}} <col:32, col:41> good 'bool'
     |   | `-BuiltinType {{address}} <col:37, col:41> 'bool'
     |   |-ImplicitCastExpr {{address}} <col:45, col:46> 'i32' pure-rvalue <ComptimeIntegerMaterialization> contains-errors
-    |   | `-IntegerLiteral {{address}} <col:45, col:46> 'comptime_int' 1
-    |   |-DeclRefExpr {{address}} <col:48, col:55> 'missing' contains-errors
+    |   | `-IntegerLiteral {{address}} <col:45, col:46> 'comptime_int' non-object 1
+    |   |-DeclRefExpr {{address}} <col:48, col:55> '<error>' 'missing' <error> contains-errors
     |   `-BoolLiteral {{address}} <col:57, col:61> 'bool' pure-rvalue true
     |-ExprStmt {{address}} <line:3:1, col:5>
-    | `-DeclRefExpr {{address}} <col:1, col:4> 'bool' lvalue Var {{address:bad}} 'bad' 'bool'
+    | `-DeclRefExpr {{address}} <col:1, col:4> 'bool' lvalue 'bad' Var {{address:bad}} 'bad' 'bool'
     |-ExprStmt {{address}} <line:4:1, col:12>
-    | `-DeclRefExpr {{address}} <col:1, col:11> 'bool' lvalue Var {{address:unresolved}} 'unresolved' 'bool'
+    | `-DeclRefExpr {{address}} <col:1, col:11> 'bool' lvalue 'unresolved' Var {{address:unresolved}} 'unresolved' 'bool'
     `-ExprStmt {{address}} <line:5:1, col:6>
-      `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue Var {{address:good}} 'good' 'bool')");
+      `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue 'good' Var {{address:good}} 'good' 'bool')");
 }
 
 TEST_F(SemaTest, RecoversPairedPrefixAfterInitializerCountMismatch) {
@@ -6949,14 +6990,14 @@ var c := 1, 2;
     |   |-VarDecl {{address}} <col:8, col:13> b 'i32'
     |   | `-BuiltinType {{address}} <col:10, col:13> 'i32'
     |   `-ImplicitCastExpr {{address}} <col:17, col:18> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-IntegerLiteral {{address}} <col:17, col:18> 'comptime_int' 1
+    |     `-IntegerLiteral {{address}} <col:17, col:18> 'comptime_int' non-object 1
     `-DeclStmt {{address}} <line:3:1, col:15> contains-errors
       `-VarGroupDecl {{address}} <col:1, col:15> contains-errors
         |-VarDecl {{address}} <col:5, col:6> c 'i32'
         |-ImplicitCastExpr {{address}} <col:10, col:11> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-        | `-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' 1
+        | `-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' non-object 1
         `-ImplicitCastExpr {{address}} <col:13, col:14> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          `-IntegerLiteral {{address}} <col:13, col:14> 'comptime_int' 2)");
+          `-IntegerLiteral {{address}} <col:13, col:14> 'comptime_int' non-object 2)");
 }
 
 TEST_F(SemaTest, ContinuesBindingAfterLocalDeclarationShapeError) {
@@ -6969,9 +7010,9 @@ TEST_F(SemaTest, ContinuesBindingAfterLocalDeclarationShapeError) {
   `-CompoundStmt {{address}} <col:10, col:23> contains-errors
     |-DeclStmt {{address}} <col:12, col:18> contains-errors
     | `-VarGroupDecl {{address}} <col:12, col:18> contains-errors
-    |   `-VarDecl {{address:local}} <col:16, col:17> x contains-errors
+    |   `-VarDecl {{address:local}} <col:16, col:17> x '<error>' contains-errors
     `-ExprStmt {{address}} <col:19, col:21> contains-errors
-      `-DeclRefExpr {{address}} <col:19, col:20> Var {{address:local}} 'x' contains-errors)");
+      `-DeclRefExpr {{address}} <col:19, col:20> '<error>' 'x' Var {{address:local}} 'x' '<error>' contains-errors)");
 }
 
 TEST_F(SemaTest, KeepsLocalExplicitAndInferredTypesIndependent) {
@@ -6986,10 +7027,10 @@ TEST_F(SemaTest, KeepsLocalExplicitAndInferredTypesIndependent) {
         |-VarDecl {{address}} <col:21, col:26> b 'i64'
         | `-BuiltinType {{address}} <col:23, col:26> 'i64'
         |-ImplicitCastExpr {{address}} <col:30, col:31> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-        | `-IntegerLiteral {{address}} <col:30, col:31> 'comptime_int' 1
+        | `-IntegerLiteral {{address}} <col:30, col:31> 'comptime_int' non-object 1
         `-ImplicitCastExpr {{address}} <col:33, col:34> 'i64' pure-rvalue <IntegerToInteger>
           `-ImplicitCastExpr {{address}} <col:33, col:34> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-            `-IntegerLiteral {{address}} <col:33, col:34> 'comptime_int' 2)");
+            `-IntegerLiteral {{address}} <col:33, col:34> 'comptime_int' non-object 2)");
 }
 
 // Numeric conversions, arithmetic, and boolean expressions.
@@ -7011,38 +7052,38 @@ a; b; c; d; e;
     | `-VarGroupDecl {{address}} <col:1, col:21>
     |   |-VarDecl {{address:a}} <col:5, col:6> a 'i32'
     |   `-ImplicitCastExpr {{address}} <col:10, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-IntegerLiteral {{address}} <col:10, col:20> 'comptime_int' 2147483647
+    |     `-IntegerLiteral {{address}} <col:10, col:20> 'comptime_int' non-object 2147483647
     |-DeclStmt {{address}} <line:3:1, col:21>
     | `-VarGroupDecl {{address}} <col:1, col:21>
     |   |-VarDecl {{address:b}} <col:5, col:6> b 'i64'
     |   `-ImplicitCastExpr {{address}} <col:10, col:20> 'i64' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-IntegerLiteral {{address}} <col:10, col:20> 'comptime_int' 2147483648
+    |     `-IntegerLiteral {{address}} <col:10, col:20> 'comptime_int' non-object 2147483648
     |-DeclStmt {{address}} <line:4:1, col:31>
     | `-VarGroupDecl {{address}} <col:1, col:31>
     |   |-VarDecl {{address:c}} <col:5, col:6> c 'i64'
     |   `-ImplicitCastExpr {{address}} <col:10, col:30> 'i64' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-UnaryOperator {{address}} <col:10, col:30> 'comptime_int' '-'
-    |       `-IntegerLiteral {{address}} <col:11, col:30> 'comptime_int' 9223372036854775808
+    |     `-UnaryOperator {{address}} <col:10, col:30> 'comptime_int' non-object '-'
+    |       `-IntegerLiteral {{address}} <col:11, col:30> 'comptime_int' non-object 9223372036854775808
     |-DeclStmt {{address}} <line:5:1, col:30>
     | `-VarGroupDecl {{address}} <col:1, col:30>
     |   |-VarDecl {{address:d}} <col:5, col:6> d 'u64'
     |   `-ImplicitCastExpr {{address}} <col:10, col:29> 'u64' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-IntegerLiteral {{address}} <col:10, col:29> 'comptime_int' 9223372036854775808
+    |     `-IntegerLiteral {{address}} <col:10, col:29> 'comptime_int' non-object 9223372036854775808
     |-DeclStmt {{address}} <line:6:1, col:31>
     | `-VarGroupDecl {{address}} <col:1, col:31>
     |   |-VarDecl {{address:e}} <col:5, col:6> e 'u64'
     |   `-ImplicitCastExpr {{address}} <col:10, col:30> 'u64' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-IntegerLiteral {{address}} <col:10, col:30> 'comptime_int' 18446744073709551615
+    |     `-IntegerLiteral {{address}} <col:10, col:30> 'comptime_int' non-object 18446744073709551615
     |-ExprStmt {{address}} <line:7:1, col:3>
-    | `-DeclRefExpr {{address}} <col:1, col:2> 'i32' lvalue Var {{address:a}} 'a' 'i32'
+    | `-DeclRefExpr {{address}} <col:1, col:2> 'i32' lvalue 'a' Var {{address:a}} 'a' 'i32'
     |-ExprStmt {{address}} <col:4, col:6>
-    | `-DeclRefExpr {{address}} <col:4, col:5> 'i64' lvalue Var {{address:b}} 'b' 'i64'
+    | `-DeclRefExpr {{address}} <col:4, col:5> 'i64' lvalue 'b' Var {{address:b}} 'b' 'i64'
     |-ExprStmt {{address}} <col:7, col:9>
-    | `-DeclRefExpr {{address}} <col:7, col:8> 'i64' lvalue Var {{address:c}} 'c' 'i64'
+    | `-DeclRefExpr {{address}} <col:7, col:8> 'i64' lvalue 'c' Var {{address:c}} 'c' 'i64'
     |-ExprStmt {{address}} <col:10, col:12>
-    | `-DeclRefExpr {{address}} <col:10, col:11> 'u64' lvalue Var {{address:d}} 'd' 'u64'
+    | `-DeclRefExpr {{address}} <col:10, col:11> 'u64' lvalue 'd' Var {{address:d}} 'd' 'u64'
     `-ExprStmt {{address}} <col:13, col:15>
-      `-DeclRefExpr {{address}} <col:13, col:14> 'u64' lvalue Var {{address:e}} 'e' 'u64')");
+      `-DeclRefExpr {{address}} <col:13, col:14> 'u64' lvalue 'e' Var {{address:e}} 'e' 'u64')");
 }
 
 TEST_F(SemaTest, MaterializesComptimeUnaryPlusWithoutLosingItsExactType) {
@@ -7055,8 +7096,8 @@ TEST_F(SemaTest, MaterializesComptimeUnaryPlusWithoutLosingItsExactType) {
       `-VarGroupDecl {{address}} <col:12, col:28>
         |-VarDecl {{address}} <col:16, col:21> value 'i32'
         `-ImplicitCastExpr {{address}} <col:25, col:27> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          `-UnaryOperator {{address}} <col:25, col:27> 'comptime_int' '+'
-            `-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' 1)");
+          `-UnaryOperator {{address}} <col:25, col:27> 'comptime_int' non-object '+'
+            `-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, RejectsExactIntegersOutsideAllDefaultTypes) {
@@ -7072,13 +7113,13 @@ var explicit u8 := 18446744073709551616;
   `-CompoundStmt {{address}} <line:1:10, line:4:2> contains-errors
     |-DeclStmt {{address}} <line:2:1, col:38> contains-errors
     | `-VarGroupDecl {{address}} <col:1, col:38> contains-errors
-    |   |-VarDecl {{address}} <col:5, col:13> inferred
-    |   `-IntegerLiteral {{address}} <col:17, col:37> 'comptime_int' 18446744073709551616 contains-errors
+    |   |-VarDecl {{address}} <col:5, col:13> inferred '<error>'
+    |   `-IntegerLiteral {{address}} <col:17, col:37> 'comptime_int' non-object 18446744073709551616 contains-errors
     `-DeclStmt {{address}} <line:3:1, col:41> contains-errors
       `-VarGroupDecl {{address}} <col:1, col:41> contains-errors
         |-VarDecl {{address}} <col:5, col:16> explicit 'u8'
         | `-BuiltinType {{address}} <col:14, col:16> 'u8'
-        `-IntegerLiteral {{address}} <col:20, col:40> 'comptime_int' 18446744073709551616 contains-errors)");
+        `-IntegerLiteral {{address}} <col:20, col:40> 'comptime_int' non-object 18446744073709551616 contains-errors)");
 }
 
 TEST_F(SemaTest, PreservesExactIntegersThroughNestedSigns) {
@@ -7092,13 +7133,13 @@ TEST_F(SemaTest, PreservesExactIntegersThroughNestedSigns) {
   `-CompoundStmt {{address}} <line:1:14, line:4:2>
     |-ExprStmt {{address}} <line:2:3, col:15>
     | `-ImplicitCastExpr {{address}} <col:3, col:14> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-UnaryOperator {{address}} <col:3, col:14> 'comptime_int' '-'
-    |     `-IntegerLiteral {{address}} <col:4, col:14> 'comptime_int' 2147483648
+    |   `-UnaryOperator {{address}} <col:3, col:14> 'comptime_int' non-object '-'
+    |     `-IntegerLiteral {{address}} <col:4, col:14> 'comptime_int' non-object 2147483648
     `-ExprStmt {{address}} <line:3:3, col:27>
       `-ImplicitCastExpr {{address}} <col:3, col:26> 'u64' pure-rvalue <ComptimeIntegerMaterialization>
-        `-UnaryOperator {{address}} <col:3, col:26> 'comptime_int' '-'
-          `-UnaryOperator {{address}} <col:5, col:26> 'comptime_int' '-'
-            `-IntegerLiteral {{address}} <col:6, col:26> 'comptime_int' 18446744073709551615)");
+        `-UnaryOperator {{address}} <col:3, col:26> 'comptime_int' non-object '-'
+          `-UnaryOperator {{address}} <col:5, col:26> 'comptime_int' non-object '-'
+            `-IntegerLiteral {{address}} <col:6, col:26> 'comptime_int' non-object 18446744073709551615)");
 }
 
 TEST_F(SemaTest, TypesNumericLiteralsFromSuffixes) {
@@ -7122,34 +7163,34 @@ TEST_F(SemaTest, TypesNumericLiteralsFromSuffixes) {
   `-CompoundStmt {{address}} <line:1:17, line:14:2>
     |-ExprStmt {{address}} <line:2:3, col:7>
     | `-ImplicitCastExpr {{address}} <col:3, col:6> 'i8' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:3, col:6> 'comptime_int' 1i8
+    |   `-IntegerLiteral {{address}} <col:3, col:6> 'comptime_int' non-object 1i8
     |-ExprStmt {{address}} <line:3:3, col:8>
     | `-ImplicitCastExpr {{address}} <col:3, col:7> 'i16' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1i16
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' non-object 1i16
     |-ExprStmt {{address}} <line:4:3, col:8>
     | `-ImplicitCastExpr {{address}} <col:3, col:7> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1i32
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' non-object 1i32
     |-ExprStmt {{address}} <line:5:3, col:8>
     | `-ImplicitCastExpr {{address}} <col:3, col:7> 'i64' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1i64
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' non-object 1i64
     |-ExprStmt {{address}} <line:6:3, col:10>
     | `-ImplicitCastExpr {{address}} <col:3, col:9> 'isize' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:3, col:9> 'comptime_int' 1isize
+    |   `-IntegerLiteral {{address}} <col:3, col:9> 'comptime_int' non-object 1isize
     |-ExprStmt {{address}} <line:7:3, col:7>
     | `-ImplicitCastExpr {{address}} <col:3, col:6> 'u8' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:3, col:6> 'comptime_int' 1u8
+    |   `-IntegerLiteral {{address}} <col:3, col:6> 'comptime_int' non-object 1u8
     |-ExprStmt {{address}} <line:8:3, col:8>
     | `-ImplicitCastExpr {{address}} <col:3, col:7> 'u16' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1u16
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' non-object 1u16
     |-ExprStmt {{address}} <line:9:3, col:8>
     | `-ImplicitCastExpr {{address}} <col:3, col:7> 'u32' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1u32
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' non-object 1u32
     |-ExprStmt {{address}} <line:10:3, col:8>
     | `-ImplicitCastExpr {{address}} <col:3, col:7> 'u64' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' 1u64
+    |   `-IntegerLiteral {{address}} <col:3, col:7> 'comptime_int' non-object 1u64
     |-ExprStmt {{address}} <line:11:3, col:10>
     | `-ImplicitCastExpr {{address}} <col:3, col:9> 'usize' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:3, col:9> 'comptime_int' 1usize
+    |   `-IntegerLiteral {{address}} <col:3, col:9> 'comptime_int' non-object 1usize
     |-ExprStmt {{address}} <line:12:3, col:10>
     | `-FloatLiteral {{address}} <col:3, col:9> 'f32' pure-rvalue 1
     `-ExprStmt {{address}} <line:13:3, col:10>
@@ -7169,26 +7210,26 @@ TEST_F(SemaTest, MaterializesSuffixedLiteralsAfterOnlyDirectNegation) {
   `-CompoundStmt {{address}} <line:1:14, line:6:2>
     |-ExprStmt {{address}} <line:2:3, col:16>
     | `-ImplicitCastExpr {{address}} <col:3, col:15> 'i8' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-UnaryOperator {{address}} <col:3, col:15> 'comptime_int' '-'
-    |     `-ParenExpr {{address}} <col:4, col:15> 'comptime_int'
-    |       `-ParenExpr {{address}} <col:5, col:14> 'comptime_int'
-    |         `-ParenExpr {{address}} <col:6, col:13> 'comptime_int'
-    |           `-IntegerLiteral {{address}} <col:7, col:12> 'comptime_int' 128i8
+    |   `-UnaryOperator {{address}} <col:3, col:15> 'comptime_int' non-object '-'
+    |     `-ParenExpr {{address}} <col:4, col:15> 'comptime_int' non-object
+    |       `-ParenExpr {{address}} <col:5, col:14> 'comptime_int' non-object
+    |         `-ParenExpr {{address}} <col:6, col:13> 'comptime_int' non-object
+    |           `-IntegerLiteral {{address}} <col:7, col:12> 'comptime_int' non-object 128i8
     |-ExprStmt {{address}} <line:3:3, col:13>
     | `-UnaryOperator {{address}} <col:3, col:12> 'i8' pure-rvalue '-'
     |   `-ParenExpr {{address}} <col:4, col:12> 'i8' pure-rvalue
     |     `-ImplicitCastExpr {{address}} <col:5, col:11> 'i8' pure-rvalue <ComptimeIntegerMaterialization>
-    |       `-UnaryOperator {{address}} <col:5, col:11> 'comptime_int' '-'
-    |         `-IntegerLiteral {{address}} <col:6, col:11> 'comptime_int' 128i8
+    |       `-UnaryOperator {{address}} <col:5, col:11> 'comptime_int' non-object '-'
+    |         `-IntegerLiteral {{address}} <col:6, col:11> 'comptime_int' non-object 128i8
     |-ExprStmt {{address}} <line:4:3, col:10>
     | `-UnaryOperator {{address}} <col:3, col:9> 'u8' pure-rvalue '+'
     |   `-ImplicitCastExpr {{address}} <col:4, col:9> 'u8' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-ParenExpr {{address}} <col:4, col:9> 'comptime_int'
-    |       `-IntegerLiteral {{address}} <col:5, col:8> 'comptime_int' 1u8
+    |     `-ParenExpr {{address}} <col:4, col:9> 'comptime_int' non-object
+    |       `-IntegerLiteral {{address}} <col:5, col:8> 'comptime_int' non-object 1u8
     `-ExprStmt {{address}} <line:5:3, col:12>
       `-ImplicitCastExpr {{address}} <col:3, col:11> 'i8' pure-rvalue <ComptimeIntegerMaterialization>
-        `-UnaryOperator {{address}} <col:3, col:11> 'comptime_int' '-'
-          `-IntegerLiteral {{address}} <col:5, col:11> 'comptime_int' 128i8)");
+        `-UnaryOperator {{address}} <col:3, col:11> 'comptime_int' non-object '-'
+          `-IntegerLiteral {{address}} <col:5, col:11> 'comptime_int' non-object 128i8)");
 }
 
 TEST_F(SemaTest, AcceptsSuffixedIntegerBoundaryValues) {
@@ -7794,7 +7835,7 @@ TEST_F(SemaTest, ExplicitConversionReadsItsSourceEvenWhenDiscarded) {
     `-ExprStmt {{address}} <line:3:3, col:10> contains-errors
       `-FunctionalCastExpr {{address}} <col:3, col:9> 'i32' pure-rvalue target <col:3, col:6> 'i32' contains-errors
         `-ImplicitCastExpr {{address}} <col:7, col:8> 'i32' pure-rvalue <LValueToRValue> contains-errors
-          `-DeclRefExpr {{address}} <col:7, col:8> 'i32' lvalue Var {{address:x}} 'x' 'i32' contains-errors
+          `-DeclRefExpr {{address}} <col:7, col:8> 'i32' lvalue 'x' Var {{address:x}} 'x' 'i32' contains-errors
 )");
 }
 
@@ -7809,16 +7850,16 @@ TEST_F(SemaTest, PreservesFailedNumericTypeCallSyntax) {
 `-FunctionDecl {{address}} <test.cw:1:1, line:4:2> F 'func () void' contains-errors
   `-CompoundStmt {{address}} <line:1:10, line:4:2> contains-errors
     |-ExprStmt {{address}} <line:2:3, col:14> contains-errors
-    | `-CallExpr {{address}} <col:3, col:13> contains-errors
+    | `-CallExpr {{address}} <col:3, col:13> '<error>' contains-errors
     |   |-BuiltinTypeExpr {{address}} <col:3, col:6> 'i32'
-    |   `-IntegerLiteral {{address}} <col:7, col:12> 'comptime_int' 128i8 contains-errors
+    |   `-IntegerLiteral {{address}} <col:7, col:12> 'comptime_int' non-object 128i8 contains-errors
     `-ExprStmt {{address}} <line:3:3, col:12> contains-errors
-      `-CallExpr {{address}} <col:3, col:11> contains-errors
+      `-CallExpr {{address}} <col:3, col:11> '<error>' contains-errors
         |-BuiltinTypeExpr {{address}} <col:3, col:6> 'i32'
         |-ImplicitCastExpr {{address}} <col:7, col:8> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-        | `-IntegerLiteral {{address}} <col:7, col:8> 'comptime_int' 1
+        | `-IntegerLiteral {{address}} <col:7, col:8> 'comptime_int' non-object 1
         `-ImplicitCastExpr {{address}} <col:9, col:10> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          `-IntegerLiteral {{address}} <col:9, col:10> 'comptime_int' 2
+          `-IntegerLiteral {{address}} <col:9, col:10> 'comptime_int' non-object 2
 )");
 }
 
@@ -7848,11 +7889,11 @@ TEST_F(SemaTest, PreservesFunctionalCastAfterConstantEvaluationFailure) {
   `-CompoundStmt {{address}} <line:1:10, line:3:2> contains-errors
     `-DeclStmt {{address}} <line:2:3, col:23> contains-errors
       `-VarGroupDecl {{address}} <col:3, col:23> contains-errors
-        `-VarDecl {{address}} <col:7, col:22> a contains-errors
+        `-VarDecl {{address}} <col:7, col:22> a '<error>' contains-errors
           `-ArrayType {{address}} <col:9, col:22> contains-errors
             |-FunctionalCastExpr {{address}} <col:10, col:17> 'u8' pure-rvalue target <col:10, col:12> 'u8'
             | `-ImplicitCastExpr {{address}} <col:13, col:16> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-            |   `-IntegerLiteral {{address}} <col:13, col:16> 'comptime_int' 300
+            |   `-IntegerLiteral {{address}} <col:13, col:16> 'comptime_int' non-object 300
             `-BuiltinType {{address}} <col:19, col:22> 'i32'
 )");
 }
@@ -7880,14 +7921,14 @@ TEST_F(SemaTest, WarnsForNarrowingEvenWhenTheExactConstantValueFits) {
     |   | `-BuiltinType {{address}} <col:18, col:20> 'u8'
     |   `-ImplicitCastExpr {{address}} <col:24, col:25> 'u8' pure-rvalue <IntegerToInteger>
     |     `-ImplicitCastExpr {{address}} <col:24, col:25> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |       `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' 1
+    |       `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' non-object 1
     `-DeclStmt {{address}} <col:27, col:43>
       `-VarGroupDecl {{address}} <col:27, col:43>
         |-VarDecl {{address}} <col:31, col:35> b 'u8'
         | `-BuiltinType {{address}} <col:33, col:35> 'u8'
         `-ImplicitCastExpr {{address}} <col:39, col:42> 'u8' pure-rvalue <IntegerToInteger>
           `-ImplicitCastExpr {{address}} <col:39, col:42> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-            `-IntegerLiteral {{address}} <col:39, col:42> 'comptime_int' 257)");
+            `-IntegerLiteral {{address}} <col:39, col:42> 'comptime_int' non-object 257)");
 }
 
 TEST_F(SemaTest, InsertsRuntimeIntegerConversionsAndWarnsOnlyWhenNarrowing) {
@@ -7912,33 +7953,33 @@ var sign u32 := source;
     |   | `-BuiltinType {{address}} <col:11, col:13> 'u8'
     |   `-ImplicitCastExpr {{address}} <col:17, col:20> 'u8' pure-rvalue <IntegerToInteger>
     |     `-ImplicitCastExpr {{address}} <col:17, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |       `-IntegerLiteral {{address}} <col:17, col:20> 'comptime_int' 257
+    |       `-IntegerLiteral {{address}} <col:17, col:20> 'comptime_int' non-object 257
     |-DeclStmt {{address}} <line:3:1, col:25>
     | `-VarGroupDecl {{address}} <col:1, col:25>
     |   |-VarDecl {{address}} <col:5, col:14> narrow 'u8'
     |   | `-BuiltinType {{address}} <col:12, col:14> 'u8'
     |   `-ImplicitCastExpr {{address}} <col:18, col:24> 'u8' pure-rvalue <IntegerToInteger>
     |     `-ImplicitCastExpr {{address}} <col:18, col:24> 'i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:18, col:24> 'i32' lvalue ParmVar {{address:source}} 'source' 'i32'
+    |       `-DeclRefExpr {{address}} <col:18, col:24> 'i32' lvalue 'source' ParmVar {{address:source}} 'source' 'i32'
     |-DeclStmt {{address}} <line:4:1, col:20>
     | `-VarGroupDecl {{address}} <col:1, col:20>
     |   |-VarDecl {{address:copy}} <col:5, col:9> hold 'i32'
     |   `-ImplicitCastExpr {{address}} <col:13, col:19> 'i32' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:13, col:19> 'i32' lvalue ParmVar {{address:source}} 'source' 'i32'
+    |     `-DeclRefExpr {{address}} <col:13, col:19> 'i32' lvalue 'source' ParmVar {{address:source}} 'source' 'i32'
     |-DeclStmt {{address}} <line:5:1, col:24>
     | `-VarGroupDecl {{address}} <col:1, col:24>
     |   |-VarDecl {{address}} <col:5, col:13> wide 'i64'
     |   | `-BuiltinType {{address}} <col:10, col:13> 'i64'
     |   `-ImplicitCastExpr {{address}} <col:17, col:23> 'i64' pure-rvalue <IntegerToInteger>
     |     `-ImplicitCastExpr {{address}} <col:17, col:23> 'i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue ParmVar {{address:source}} 'source' 'i32'
+    |       `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue 'source' ParmVar {{address:source}} 'source' 'i32'
     `-DeclStmt {{address}} <line:6:1, col:24>
       `-VarGroupDecl {{address}} <col:1, col:24>
         |-VarDecl {{address}} <col:5, col:13> sign 'u32'
         | `-BuiltinType {{address}} <col:10, col:13> 'u32'
         `-ImplicitCastExpr {{address}} <col:17, col:23> 'u32' pure-rvalue <IntegerToInteger>
           `-ImplicitCastExpr {{address}} <col:17, col:23> 'i32' pure-rvalue <LValueToRValue>
-            `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue ParmVar {{address:source}} 'source' 'i32')");
+            `-DeclRefExpr {{address}} <col:17, col:23> 'i32' lvalue 'source' ParmVar {{address:source}} 'source' 'i32')");
 }
 
 TEST_F(SemaTest, ConvertsSizeIntegerInitializersWithinTheirFamily) {
@@ -7960,14 +8001,14 @@ var to_signed isize := unsigned_value;
     |   | `-BuiltinType {{address}} <col:17, col:22> 'usize'
     |   `-ImplicitCastExpr {{address}} <col:26, col:38> 'usize' pure-rvalue <IntegerToInteger>
     |     `-ImplicitCastExpr {{address}} <col:26, col:38> 'isize' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:26, col:38> 'isize' lvalue ParmVar {{address:signed_value}} 'signed_value' 'isize'
+    |       `-DeclRefExpr {{address}} <col:26, col:38> 'isize' lvalue 'signed_value' ParmVar {{address:signed_value}} 'signed_value' 'isize'
     `-DeclStmt {{address}} <line:3:1, col:39>
       `-VarGroupDecl {{address}} <col:1, col:39>
         |-VarDecl {{address}} <col:5, col:20> to_signed 'isize'
         | `-BuiltinType {{address}} <col:15, col:20> 'isize'
         `-ImplicitCastExpr {{address}} <col:24, col:38> 'isize' pure-rvalue <IntegerToInteger>
           `-ImplicitCastExpr {{address}} <col:24, col:38> 'usize' pure-rvalue <LValueToRValue>
-            `-DeclRefExpr {{address}} <col:24, col:38> 'usize' lvalue ParmVar {{address:unsigned_value}} 'unsigned_value' 'usize')");
+            `-DeclRefExpr {{address}} <col:24, col:38> 'usize' lvalue 'unsigned_value' ParmVar {{address:unsigned_value}} 'unsigned_value' 'usize')");
 }
 
 TEST_F(SemaTest, WarnsAtExplicitNumericInitializerPrecisionBoundaries) {
@@ -8009,63 +8050,63 @@ var literal_double f64 := 1;
     |   | `-BuiltinType {{address}} <col:17, col:20> 'f32'
     |   `-ImplicitCastExpr {{address}} <col:24, col:29> 'f32' pure-rvalue <IntegerToFloat>
     |     `-ImplicitCastExpr {{address}} <col:24, col:29> 'i16' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:24, col:29> 'i16' lvalue ParmVar {{address:small}} 'small' 'i16'
+    |       `-DeclRefExpr {{address}} <col:24, col:29> 'i16' lvalue 'small' ParmVar {{address:small}} 'small' 'i16'
     |-DeclStmt {{address}} <line:3:1, col:32>
     | `-VarGroupDecl {{address}} <col:1, col:32>
     |   |-VarDecl {{address}} <col:5, col:21> lossy_single 'f32'
     |   | `-BuiltinType {{address}} <col:18, col:21> 'f32'
     |   `-ImplicitCastExpr {{address}} <col:25, col:31> 'f32' pure-rvalue <IntegerToFloat>
     |     `-ImplicitCastExpr {{address}} <col:25, col:31> 'i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:25, col:31> 'i32' lvalue ParmVar {{address:medium}} 'medium' 'i32'
+    |       `-DeclRefExpr {{address}} <col:25, col:31> 'i32' lvalue 'medium' ParmVar {{address:medium}} 'medium' 'i32'
     |-DeclStmt {{address}} <line:4:1, col:31>
     | `-VarGroupDecl {{address}} <col:1, col:31>
     |   |-VarDecl {{address}} <col:5, col:20> safe_double 'f64'
     |   | `-BuiltinType {{address}} <col:17, col:20> 'f64'
     |   `-ImplicitCastExpr {{address}} <col:24, col:30> 'f64' pure-rvalue <IntegerToFloat>
     |     `-ImplicitCastExpr {{address}} <col:24, col:30> 'i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:24, col:30> 'i32' lvalue ParmVar {{address:medium}} 'medium' 'i32'
+    |       `-DeclRefExpr {{address}} <col:24, col:30> 'i32' lvalue 'medium' ParmVar {{address:medium}} 'medium' 'i32'
     |-DeclStmt {{address}} <line:5:1, col:31>
     | `-VarGroupDecl {{address}} <col:1, col:31>
     |   |-VarDecl {{address}} <col:5, col:21> lossy_double 'f64'
     |   | `-BuiltinType {{address}} <col:18, col:21> 'f64'
     |   `-ImplicitCastExpr {{address}} <col:25, col:30> 'f64' pure-rvalue <IntegerToFloat>
     |     `-ImplicitCastExpr {{address}} <col:25, col:30> 'i64' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:25, col:30> 'i64' lvalue ParmVar {{address:large}} 'large' 'i64'
+    |       `-DeclRefExpr {{address}} <col:25, col:30> 'i64' lvalue 'large' ParmVar {{address:large}} 'large' 'i64'
     |-DeclStmt {{address}} <line:6:1, col:30>
     | `-VarGroupDecl {{address}} <col:1, col:30>
     |   |-VarDecl {{address}} <col:5, col:21> narrow_float 'f32'
     |   | `-BuiltinType {{address}} <col:18, col:21> 'f32'
     |   `-ImplicitCastExpr {{address}} <col:25, col:29> 'f32' pure-rvalue <FloatToFloat>
     |     `-ImplicitCastExpr {{address}} <col:25, col:29> 'f64' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:25, col:29> 'f64' lvalue ParmVar {{address:wide}} 'wide' 'f64'
+    |       `-DeclRefExpr {{address}} <col:25, col:29> 'f64' lvalue 'wide' ParmVar {{address:wide}} 'wide' 'f64'
     |-DeclStmt {{address}} <line:7:1, col:32>
     | `-VarGroupDecl {{address}} <col:1, col:32>
     |   |-VarDecl {{address}} <col:5, col:21> float_to_int 'i32'
     |   | `-BuiltinType {{address}} <col:18, col:21> 'i32'
     |   `-ImplicitCastExpr {{address}} <col:25, col:31> 'i32' pure-rvalue <FloatToInteger>
     |     `-ImplicitCastExpr {{address}} <col:25, col:31> 'f32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:25, col:31> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32'
+    |       `-DeclRefExpr {{address}} <col:25, col:31> 'f32' lvalue 'single' ParmVar {{address:single}} 'single' 'f32'
     |-DeclStmt {{address}} <line:8:1, col:29>
     | `-VarGroupDecl {{address}} <col:1, col:29>
     |   |-VarDecl {{address}} <col:5, col:18> narrow_int 'i8'
     |   | `-BuiltinType {{address}} <col:16, col:18> 'i8'
     |   `-ImplicitCastExpr {{address}} <col:22, col:28> 'i8' pure-rvalue <IntegerToInteger>
     |     `-ImplicitCastExpr {{address}} <col:22, col:28> 'i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:22, col:28> 'i32' lvalue ParmVar {{address:medium}} 'medium' 'i32'
+    |       `-DeclRefExpr {{address}} <col:22, col:28> 'i32' lvalue 'medium' ParmVar {{address:medium}} 'medium' 'i32'
     |-DeclStmt {{address}} <line:9:1, col:29>
     | `-VarGroupDecl {{address}} <col:1, col:29>
     |   |-VarDecl {{address}} <col:5, col:23> literal_single 'f32'
     |   | `-BuiltinType {{address}} <col:20, col:23> 'f32'
     |   `-ImplicitCastExpr {{address}} <col:27, col:28> 'f32' pure-rvalue <IntegerToFloat>
     |     `-ImplicitCastExpr {{address}} <col:27, col:28> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |       `-IntegerLiteral {{address}} <col:27, col:28> 'comptime_int' 1
+    |       `-IntegerLiteral {{address}} <col:27, col:28> 'comptime_int' non-object 1
     `-DeclStmt {{address}} <line:10:1, col:29>
       `-VarGroupDecl {{address}} <col:1, col:29>
         |-VarDecl {{address}} <col:5, col:23> literal_double 'f64'
         | `-BuiltinType {{address}} <col:20, col:23> 'f64'
         `-ImplicitCastExpr {{address}} <col:27, col:28> 'f64' pure-rvalue <IntegerToFloat>
           `-ImplicitCastExpr {{address}} <col:27, col:28> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-            `-IntegerLiteral {{address}} <col:27, col:28> 'comptime_int' 1)");
+            `-IntegerLiteral {{address}} <col:27, col:28> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, PreservesRuntimeUnaryTypesAndRejectsUnsignedNegation) {
@@ -8090,14 +8131,14 @@ var bad := -ch;
     |   |-VarDecl {{address}} <col:5, col:9> plus 'u8'
     |   `-UnaryOperator {{address}} <col:13, col:16> 'u8' pure-rvalue '+'
     |     `-ImplicitCastExpr {{address}} <col:14, col:16> 'u8' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:14, col:16> 'u8' lvalue Var {{address:ch}} 'ch' 'u8'
+    |       `-DeclRefExpr {{address}} <col:14, col:16> 'u8' lvalue 'ch' Var {{address:ch}} 'ch' 'u8'
     |-DeclStmt {{address}} <line:4:1, col:16> contains-errors
     | `-VarGroupDecl {{address}} <col:1, col:16> contains-errors
-    |   |-VarDecl {{address}} <col:5, col:8> bad
-    |   `-UnaryOperator {{address}} <col:12, col:15> '-' contains-errors
-    |     `-DeclRefExpr {{address}} <col:13, col:15> 'u8' lvalue Var {{address:ch}} 'ch' 'u8'
+    |   |-VarDecl {{address}} <col:5, col:8> bad '<error>'
+    |   `-UnaryOperator {{address}} <col:12, col:15> '<error>' '-' contains-errors
+    |     `-DeclRefExpr {{address}} <col:13, col:15> 'u8' lvalue 'ch' Var {{address:ch}} 'ch' 'u8'
     `-ExprStmt {{address}} <line:5:1, col:6> contains-errors
-      `-UnaryOperator {{address}} <col:1, col:5> '-' contains-errors
+      `-UnaryOperator {{address}} <col:1, col:5> '<error>' '-' contains-errors
         `-CharacterLiteral {{address}} <col:2, col:5> 'u8' pure-rvalue 98)");
 }
 
@@ -8132,7 +8173,7 @@ var mixed := 1 + 2.0;
         `-BinaryOperator {{address}} <col:14, col:21> 'f64' pure-rvalue '+'
           |-ImplicitCastExpr {{address}} <col:14, col:15> 'f64' pure-rvalue <IntegerToFloat>
           | `-ImplicitCastExpr {{address}} <col:14, col:15> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          |   `-IntegerLiteral {{address}} <col:14, col:15> 'comptime_int' 1
+          |   `-IntegerLiteral {{address}} <col:14, col:15> 'comptime_int' non-object 1
           `-FloatLiteral {{address}} <col:18, col:21> 'f64' pure-rvalue 2)");
 }
 
@@ -8162,45 +8203,45 @@ var same_rank64 := signed64 + unsigned64;
     |   `-BinaryOperator {{address}} <col:24, col:43> 'i64' pure-rvalue '+'
     |     |-ImplicitCastExpr {{address}} <col:24, col:32> 'i64' pure-rvalue <IntegerToInteger>
     |     | `-ImplicitCastExpr {{address}} <col:24, col:32> 'i32' pure-rvalue <LValueToRValue>
-    |     |   `-DeclRefExpr {{address}} <col:24, col:32> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |     |   `-DeclRefExpr {{address}} <col:24, col:32> 'i32' lvalue 'signed32' ParmVar {{address:signed32}} 'signed32' 'i32'
     |     `-ImplicitCastExpr {{address}} <col:35, col:43> 'i64' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:35, col:43> 'i64' lvalue ParmVar {{address:signed64}} 'signed64' 'i64'
+    |       `-DeclRefExpr {{address}} <col:35, col:43> 'i64' lvalue 'signed64' ParmVar {{address:signed64}} 'signed64' 'i64'
     |-DeclStmt {{address}} <line:3:1, col:38>
     | `-VarGroupDecl {{address}} <col:1, col:38>
     |   |-VarDecl {{address}} <col:5, col:12> covered 'i64'
     |   `-BinaryOperator {{address}} <col:16, col:37> 'i64' pure-rvalue '+'
     |     |-ImplicitCastExpr {{address}} <col:16, col:26> 'i64' pure-rvalue <IntegerToInteger>
     |     | `-ImplicitCastExpr {{address}} <col:16, col:26> 'u32' pure-rvalue <LValueToRValue>
-    |     |   `-DeclRefExpr {{address}} <col:16, col:26> 'u32' lvalue ParmVar {{address:unsigned32}} 'unsigned32' 'u32'
+    |     |   `-DeclRefExpr {{address}} <col:16, col:26> 'u32' lvalue 'unsigned32' ParmVar {{address:unsigned32}} 'unsigned32' 'u32'
     |     `-ImplicitCastExpr {{address}} <col:29, col:37> 'i64' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:29, col:37> 'i64' lvalue ParmVar {{address:signed64}} 'signed64' 'i64'
+    |       `-DeclRefExpr {{address}} <col:29, col:37> 'i64' lvalue 'signed64' ParmVar {{address:signed64}} 'signed64' 'i64'
     |-DeclStmt {{address}} <line:4:1, col:40>
     | `-VarGroupDecl {{address}} <col:1, col:40>
     |   |-VarDecl {{address}} <col:5, col:14> same_rank 'u32'
     |   `-BinaryOperator {{address}} <col:18, col:39> 'u32' pure-rvalue '+'
     |     |-ImplicitCastExpr {{address}} <col:18, col:26> 'u32' pure-rvalue <IntegerToInteger>
     |     | `-ImplicitCastExpr {{address}} <col:18, col:26> 'i32' pure-rvalue <LValueToRValue>
-    |     |   `-DeclRefExpr {{address}} <col:18, col:26> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |     |   `-DeclRefExpr {{address}} <col:18, col:26> 'i32' lvalue 'signed32' ParmVar {{address:signed32}} 'signed32' 'i32'
     |     `-ImplicitCastExpr {{address}} <col:29, col:39> 'u32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:29, col:39> 'u32' lvalue ParmVar {{address:unsigned32}} 'unsigned32' 'u32'
+    |       `-DeclRefExpr {{address}} <col:29, col:39> 'u32' lvalue 'unsigned32' ParmVar {{address:unsigned32}} 'unsigned32' 'u32'
     |-DeclStmt {{address}} <line:5:1, col:45>
     | `-VarGroupDecl {{address}} <col:1, col:45>
     |   |-VarDecl {{address}} <col:5, col:19> wider_unsigned 'u64'
     |   `-BinaryOperator {{address}} <col:23, col:44> 'u64' pure-rvalue '+'
     |     |-ImplicitCastExpr {{address}} <col:23, col:31> 'u64' pure-rvalue <IntegerToInteger>
     |     | `-ImplicitCastExpr {{address}} <col:23, col:31> 'i32' pure-rvalue <LValueToRValue>
-    |     |   `-DeclRefExpr {{address}} <col:23, col:31> 'i32' lvalue ParmVar {{address:signed32}} 'signed32' 'i32'
+    |     |   `-DeclRefExpr {{address}} <col:23, col:31> 'i32' lvalue 'signed32' ParmVar {{address:signed32}} 'signed32' 'i32'
     |     `-ImplicitCastExpr {{address}} <col:34, col:44> 'u64' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:34, col:44> 'u64' lvalue ParmVar {{address:unsigned64}} 'unsigned64' 'u64'
+    |       `-DeclRefExpr {{address}} <col:34, col:44> 'u64' lvalue 'unsigned64' ParmVar {{address:unsigned64}} 'unsigned64' 'u64'
     `-DeclStmt {{address}} <line:6:1, col:42>
       `-VarGroupDecl {{address}} <col:1, col:42>
         |-VarDecl {{address}} <col:5, col:16> same_rank64 'u64'
         `-BinaryOperator {{address}} <col:20, col:41> 'u64' pure-rvalue '+'
           |-ImplicitCastExpr {{address}} <col:20, col:28> 'u64' pure-rvalue <IntegerToInteger>
           | `-ImplicitCastExpr {{address}} <col:20, col:28> 'i64' pure-rvalue <LValueToRValue>
-          |   `-DeclRefExpr {{address}} <col:20, col:28> 'i64' lvalue ParmVar {{address:signed64}} 'signed64' 'i64'
+          |   `-DeclRefExpr {{address}} <col:20, col:28> 'i64' lvalue 'signed64' ParmVar {{address:signed64}} 'signed64' 'i64'
           `-ImplicitCastExpr {{address}} <col:31, col:41> 'u64' pure-rvalue <LValueToRValue>
-            `-DeclRefExpr {{address}} <col:31, col:41> 'u64' lvalue ParmVar {{address:unsigned64}} 'unsigned64' 'u64')");
+            `-DeclRefExpr {{address}} <col:31, col:41> 'u64' lvalue 'unsigned64' ParmVar {{address:unsigned64}} 'unsigned64' 'u64')");
 }
 
 TEST_F(SemaTest, MaterializesStandaloneExactIntegerExpressions) {
@@ -8218,18 +8259,18 @@ TEST_F(SemaTest, MaterializesStandaloneExactIntegerExpressions) {
   `-CompoundStmt {{address}} <col:14, line:6:2>
     |-ExprStmt {{address}} <line:2:1, col:3>
     | `-ImplicitCastExpr {{address}} <col:1, col:2> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:1, col:2> 'comptime_int' 1
+    |   `-IntegerLiteral {{address}} <col:1, col:2> 'comptime_int' non-object 1
     |-ExprStmt {{address}} <line:3:1, col:4>
     | `-ImplicitCastExpr {{address}} <col:1, col:3> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-UnaryOperator {{address}} <col:1, col:3> 'comptime_int' '+'
-    |     `-IntegerLiteral {{address}} <col:2, col:3> 'comptime_int' 1
+    |   `-UnaryOperator {{address}} <col:1, col:3> 'comptime_int' non-object '+'
+    |     `-IntegerLiteral {{address}} <col:2, col:3> 'comptime_int' non-object 1
     |-ExprStmt {{address}} <line:4:1, col:4>
     | `-ImplicitCastExpr {{address}} <col:1, col:3> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-UnaryOperator {{address}} <col:1, col:3> 'comptime_int' '-'
-    |     `-IntegerLiteral {{address}} <col:2, col:3> 'comptime_int' 1
-    `-ImplicitResultInitializationExpr {{address}} <line:5:1, col:2> 'void' ReturnVar {{address:return_object}} 'i32'
+    |   `-UnaryOperator {{address}} <col:1, col:3> 'comptime_int' non-object '-'
+    |     `-IntegerLiteral {{address}} <col:2, col:3> 'comptime_int' non-object 1
+    `-ImplicitResultInitializationExpr {{address}} <line:5:1, col:2> 'void' non-object ReturnVar {{address:return_object}} 'i32'
       `-ImplicitCastExpr {{address}} <col:1, col:2> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-        `-IntegerLiteral {{address}} <col:1, col:2> 'comptime_int' 1)");
+        `-IntegerLiteral {{address}} <col:1, col:2> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, MaterializesIntegerBeforeStrictBooleanCheck) {
@@ -8241,8 +8282,8 @@ TEST_F(SemaTest, MaterializesIntegerBeforeStrictBooleanCheck) {
   `-CompoundStmt {{address}} <col:10, col:22> contains-errors
     `-IfStmt {{address}} <col:12, col:20> contains-errors
       |-ImplicitCastExpr {{address}} <col:15, col:17> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-      | `-UnaryOperator {{address}} <col:15, col:17> 'comptime_int' '-'
-      |   `-IntegerLiteral {{address}} <col:16, col:17> 'comptime_int' 1
+      | `-UnaryOperator {{address}} <col:15, col:17> 'comptime_int' non-object '-'
+      |   `-IntegerLiteral {{address}} <col:16, col:17> 'comptime_int' non-object 1
       `-CompoundStmt {{address}} <col:18, col:20>)");
 }
 
@@ -8301,11 +8342,11 @@ var value := 1 + 18446744073709551616;
   `-CompoundStmt {{address}} <line:1:10, line:3:2> contains-errors
     `-DeclStmt {{address}} <line:2:1, col:39> contains-errors
       `-VarGroupDecl {{address}} <col:1, col:39> contains-errors
-        |-VarDecl {{address}} <col:5, col:10> value
-        `-BinaryOperator {{address}} <col:14, col:38> '+' contains-errors
+        |-VarDecl {{address}} <col:5, col:10> value '<error>'
+        `-BinaryOperator {{address}} <col:14, col:38> '<error>' '+' contains-errors
           |-ImplicitCastExpr {{address}} <col:14, col:15> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          | `-IntegerLiteral {{address}} <col:14, col:15> 'comptime_int' 1
-          `-IntegerLiteral {{address}} <col:18, col:38> 'comptime_int' 18446744073709551616 contains-errors)");
+          | `-IntegerLiteral {{address}} <col:14, col:15> 'comptime_int' non-object 1
+          `-IntegerLiteral {{address}} <col:18, col:38> 'comptime_int' non-object 18446744073709551616 contains-errors)");
 }
 
 // Conditional expression types and value categories.
@@ -8345,12 +8386,12 @@ return condition ? large : single;
     |   |-VarDecl {{address}} <col:5, col:10> fixed 'i64'
     |   `-ConditionalOperator {{address}} <col:14, col:35> 'i64' pure-rvalue
     |     |-ImplicitCastExpr {{address}} <col:14, col:23> 'bool' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:14, col:23> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+    |     | `-DeclRefExpr {{address}} <col:14, col:23> 'bool' lvalue 'condition' ParmVar {{address:condition}} 'condition' 'bool'
     |     |-ImplicitCastExpr {{address}} <col:26, col:27> 'i64' pure-rvalue <IntegerToInteger>
     |     | `-ImplicitCastExpr {{address}} <col:26, col:27> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |     |   `-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' 1
+    |     |   `-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' non-object 1
     |     `-ImplicitCastExpr {{address}} <col:30, col:35> 'i64' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:30, col:35> 'i64' lvalue ParmVar {{address:large}} 'large' 'i64'
+    |       `-DeclRefExpr {{address}} <col:30, col:35> 'i64' lvalue 'large' ParmVar {{address:large}} 'large' 'i64'
     |-DeclStmt {{address}} <line:4:1, col:45>
     | `-VarGroupDecl {{address}} <col:1, col:45>
     |   |-VarDecl {{address}} <col:5, col:14> local 'f64'
@@ -8358,45 +8399,45 @@ return condition ? large : single;
     |   `-ImplicitCastExpr {{address}} <col:18, col:44> 'f64' pure-rvalue <FloatToFloat>
     |     `-ConditionalOperator {{address}} <col:18, col:44> 'f32' pure-rvalue
     |       |-ImplicitCastExpr {{address}} <col:18, col:27> 'bool' pure-rvalue <LValueToRValue>
-    |       | `-DeclRefExpr {{address}} <col:18, col:27> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+    |       | `-DeclRefExpr {{address}} <col:18, col:27> 'bool' lvalue 'condition' ParmVar {{address:condition}} 'condition' 'bool'
     |       |-ImplicitCastExpr {{address}} <col:30, col:35> 'f32' pure-rvalue <IntegerToFloat>
     |       | `-ImplicitCastExpr {{address}} <col:30, col:35> 'i64' pure-rvalue <LValueToRValue>
-    |       |   `-DeclRefExpr {{address}} <col:30, col:35> 'i64' lvalue ParmVar {{address:large}} 'large' 'i64'
+    |       |   `-DeclRefExpr {{address}} <col:30, col:35> 'i64' lvalue 'large' ParmVar {{address:large}} 'large' 'i64'
     |       `-ImplicitCastExpr {{address}} <col:38, col:44> 'f32' pure-rvalue <LValueToRValue>
-    |         `-DeclRefExpr {{address}} <col:38, col:44> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32'
+    |         `-DeclRefExpr {{address}} <col:38, col:44> 'f32' lvalue 'single' ParmVar {{address:single}} 'single' 'f32'
     |-DeclStmt {{address}} <line:5:1, col:43>
     | `-VarGroupDecl {{address}} <col:1, col:43>
     |   |-VarDecl {{address}} <col:5, col:12> reverse 'f32'
     |   `-ConditionalOperator {{address}} <col:16, col:42> 'f32' pure-rvalue
     |     |-ImplicitCastExpr {{address}} <col:16, col:25> 'bool' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:16, col:25> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+    |     | `-DeclRefExpr {{address}} <col:16, col:25> 'bool' lvalue 'condition' ParmVar {{address:condition}} 'condition' 'bool'
     |     |-ImplicitCastExpr {{address}} <col:28, col:34> 'f32' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:28, col:34> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32'
+    |     | `-DeclRefExpr {{address}} <col:28, col:34> 'f32' lvalue 'single' ParmVar {{address:single}} 'single' 'f32'
     |     `-ImplicitCastExpr {{address}} <col:37, col:42> 'f32' pure-rvalue <IntegerToFloat>
     |       `-ImplicitCastExpr {{address}} <col:37, col:42> 'i64' pure-rvalue <LValueToRValue>
-    |         `-DeclRefExpr {{address}} <col:37, col:42> 'i64' lvalue ParmVar {{address:large}} 'large' 'i64'
+    |         `-DeclRefExpr {{address}} <col:37, col:42> 'i64' lvalue 'large' ParmVar {{address:large}} 'large' 'i64'
     |-ExprStmt {{address}} <line:6:1, col:37>
-    | `-CallExpr {{address}} <col:1, col:36> 'void'
-    |   |-DeclRefExpr {{address}} <col:1, col:8> 'func (f32) void' Function {{address:consume}} 'consume' 'func (f32) void'
+    | `-CallExpr {{address}} <col:1, col:36> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:1, col:8> 'func (f32) void' non-object 'consume' Function {{address:consume}} 'consume' 'func (f32) void'
     |   `-ConditionalOperator {{address}} <col:9, col:35> 'f32' pure-rvalue
     |     |-ImplicitCastExpr {{address}} <col:9, col:18> 'bool' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:9, col:18> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+    |     | `-DeclRefExpr {{address}} <col:9, col:18> 'bool' lvalue 'condition' ParmVar {{address:condition}} 'condition' 'bool'
     |     |-ImplicitCastExpr {{address}} <col:21, col:26> 'f32' pure-rvalue <IntegerToFloat>
     |     | `-ImplicitCastExpr {{address}} <col:21, col:26> 'i64' pure-rvalue <LValueToRValue>
-    |     |   `-DeclRefExpr {{address}} <col:21, col:26> 'i64' lvalue ParmVar {{address:large}} 'large' 'i64'
+    |     |   `-DeclRefExpr {{address}} <col:21, col:26> 'i64' lvalue 'large' ParmVar {{address:large}} 'large' 'i64'
     |     `-ImplicitCastExpr {{address}} <col:29, col:35> 'f32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:29, col:35> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32'
+    |       `-DeclRefExpr {{address}} <col:29, col:35> 'f32' lvalue 'single' ParmVar {{address:single}} 'single' 'f32'
     `-ReturnStmt {{address}} <line:7:1, col:35>
-      `-ImplicitResultInitializationExpr {{address}} <col:8, col:34> 'void' ReturnVar {{address:return_object}} 'f64'
+      `-ImplicitResultInitializationExpr {{address}} <col:8, col:34> 'void' non-object ReturnVar {{address:return_object}} 'f64'
         `-ImplicitCastExpr {{address}} <col:8, col:34> 'f64' pure-rvalue <FloatToFloat>
           `-ConditionalOperator {{address}} <col:8, col:34> 'f32' pure-rvalue
             |-ImplicitCastExpr {{address}} <col:8, col:17> 'bool' pure-rvalue <LValueToRValue>
-            | `-DeclRefExpr {{address}} <col:8, col:17> 'bool' lvalue ParmVar {{address:condition}} 'condition' 'bool'
+            | `-DeclRefExpr {{address}} <col:8, col:17> 'bool' lvalue 'condition' ParmVar {{address:condition}} 'condition' 'bool'
             |-ImplicitCastExpr {{address}} <col:20, col:25> 'f32' pure-rvalue <IntegerToFloat>
             | `-ImplicitCastExpr {{address}} <col:20, col:25> 'i64' pure-rvalue <LValueToRValue>
-            |   `-DeclRefExpr {{address}} <col:20, col:25> 'i64' lvalue ParmVar {{address:large}} 'large' 'i64'
+            |   `-DeclRefExpr {{address}} <col:20, col:25> 'i64' lvalue 'large' ParmVar {{address:large}} 'large' 'i64'
             `-ImplicitCastExpr {{address}} <col:28, col:34> 'f32' pure-rvalue <LValueToRValue>
-              `-DeclRefExpr {{address}} <col:28, col:34> 'f32' lvalue ParmVar {{address:single}} 'single' 'f32')");
+              `-DeclRefExpr {{address}} <col:28, col:34> 'f32' lvalue 'single' ParmVar {{address:single}} 'single' 'f32')");
 }
 
 TEST_F(SemaTest, PreservesConditionalObjectValueCategories) {
@@ -8422,7 +8463,7 @@ TEST_F(SemaTest, PreservesConditionalObjectValueCategories) {
     |   | `-ConstType {{address}} <col:13, col:22>
     |   |   `-BuiltinType {{address}} <col:19, col:22> 'i32'
     |   `-ImplicitCastExpr {{address}} <col:26, col:30> 'i32' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:26, col:30> 'i32' lvalue ParmVar {{address:left}} 'left' 'i32'
+    |     `-DeclRefExpr {{address}} <col:26, col:30> 'i32' lvalue 'left' ParmVar {{address:left}} 'left' 'i32'
     |-DeclStmt {{address}} <line:3:3, col:44>
     | `-VarGroupDecl {{address}} <col:3, col:44>
     |   |-VarDecl {{address}} <col:7, col:20> link '&mut i32'
@@ -8430,29 +8471,29 @@ TEST_F(SemaTest, PreservesConditionalObjectValueCategories) {
     |   |   `-BuiltinType {{address}} <col:17, col:20> 'i32'
     |   `-ConditionalOperator {{address}} <col:24, col:43> 'i32' lvalue
     |     |-ImplicitCastExpr {{address}} <col:24, col:28> 'bool' pure-rvalue <LValueToRValue>
-    |     | `-DeclRefExpr {{address}} <col:24, col:28> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
-    |     |-DeclRefExpr {{address}} <col:31, col:35> 'i32' lvalue ParmVar {{address:left}} 'left' 'i32'
-    |     `-DeclRefExpr {{address}} <col:38, col:43> 'i32' lvalue ParmVar {{address:right}} 'right' 'i32'
+    |     | `-DeclRefExpr {{address}} <col:24, col:28> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
+    |     |-DeclRefExpr {{address}} <col:31, col:35> 'i32' lvalue 'left' ParmVar {{address:left}} 'left' 'i32'
+    |     `-DeclRefExpr {{address}} <col:38, col:43> 'i32' lvalue 'right' ParmVar {{address:right}} 'right' 'i32'
     |-DeclStmt {{address}} <line:4:3, col:36>
     | `-VarGroupDecl {{address}} <col:3, col:36>
     |   |-VarDecl {{address}} <col:7, col:12> owned 'i32'
     |   `-ImplicitCastExpr {{address}} <col:16, col:35> 'i32' pure-rvalue <LValueToRValue>
     |     `-ConditionalOperator {{address}} <col:16, col:35> 'const i32' lvalue
     |       |-ImplicitCastExpr {{address}} <col:16, col:20> 'bool' pure-rvalue <LValueToRValue>
-    |       | `-DeclRefExpr {{address}} <col:16, col:20> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
-    |       |-DeclRefExpr {{address}} <col:23, col:27> 'i32' lvalue ParmVar {{address:left}} 'left' 'i32'
-    |       `-DeclRefExpr {{address}} <col:30, col:35> 'const i32' lvalue Var {{address:fixed}} 'fixed' 'const i32'
+    |       | `-DeclRefExpr {{address}} <col:16, col:20> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
+    |       |-DeclRefExpr {{address}} <col:23, col:27> 'i32' lvalue 'left' ParmVar {{address:left}} 'left' 'i32'
+    |       `-DeclRefExpr {{address}} <col:30, col:35> 'const i32' lvalue 'fixed' Var {{address:fixed}} 'fixed' 'const i32'
     `-DeclStmt {{address}} <line:5:3, col:46>
       `-VarGroupDecl {{address}} <col:3, col:46>
         |-VarDecl {{address}} <col:7, col:12> moved 'i32'
         `-ImplicitCastExpr {{address}} <col:16, col:45> 'i32' pure-rvalue <LValueToRValue>
           `-ConditionalOperator {{address}} <col:16, col:45> 'i32' move-lvalue
             |-ImplicitCastExpr {{address}} <col:16, col:20> 'bool' pure-rvalue <LValueToRValue>
-            | `-DeclRefExpr {{address}} <col:16, col:20> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+            | `-DeclRefExpr {{address}} <col:16, col:20> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
             |-UnaryOperator {{address}} <col:23, col:32> 'i32' move-lvalue 'move'
-            | `-DeclRefExpr {{address}} <col:28, col:32> 'i32' lvalue ParmVar {{address:left}} 'left' 'i32'
+            | `-DeclRefExpr {{address}} <col:28, col:32> 'i32' lvalue 'left' ParmVar {{address:left}} 'left' 'i32'
             `-UnaryOperator {{address}} <col:35, col:45> 'i32' move-lvalue 'move'
-              `-DeclRefExpr {{address}} <col:40, col:45> 'i32' lvalue ParmVar {{address:right}} 'right' 'i32')");
+              `-DeclRefExpr {{address}} <col:40, col:45> 'i32' lvalue 'right' ParmVar {{address:right}} 'right' 'i32')");
 }
 
 TEST_F(SemaTest, RejectsNonObjectConditionalValueResults) {
@@ -8491,27 +8532,27 @@ flag ? size : value;
   | `-BuiltinType {{address}} <col:57, col:62> 'usize'
   `-CompoundStmt {{address}} <col:64, line:6:2> contains-errors
     |-ExprStmt {{address}} <line:2:1, col:28> contains-errors
-    | `-ConditionalOperator {{address}} <col:1, col:27> contains-errors
-    |   |-DeclRefExpr {{address}} <col:1, col:10> 'i32' lvalue ParmVar {{address:condition}} 'condition' 'i32'
-    |   |-DeclRefExpr {{address}} <col:13, col:18> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+    | `-ConditionalOperator {{address}} <col:1, col:27> '<error>' contains-errors
+    |   |-DeclRefExpr {{address}} <col:1, col:10> 'i32' lvalue 'condition' ParmVar {{address:condition}} 'condition' 'i32'
+    |   |-DeclRefExpr {{address}} <col:13, col:18> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
     |   `-FloatLiteral {{address}} <col:21, col:27> 'f32' pure-rvalue 1
     |-ExprStmt {{address}} <line:3:1, col:26> contains-errors
-    | `-ConditionalOperator {{address}} <col:1, col:25> contains-errors
-    |   |-DeclRefExpr {{address}} <col:1, col:10> 'i32' lvalue ParmVar {{address:condition}} 'condition' 'i32'
-    |   |-DeclRefExpr {{address}} <col:13, col:17> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
-    |   `-DeclRefExpr {{address}} <col:20, col:25> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+    | `-ConditionalOperator {{address}} <col:1, col:25> '<error>' contains-errors
+    |   |-DeclRefExpr {{address}} <col:1, col:10> 'i32' lvalue 'condition' ParmVar {{address:condition}} 'condition' 'i32'
+    |   |-DeclRefExpr {{address}} <col:13, col:17> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
+    |   `-DeclRefExpr {{address}} <col:20, col:25> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
     |-ExprStmt {{address}} <line:4:1, col:21> contains-errors
-    | `-ConditionalOperator {{address}} <col:1, col:20> contains-errors
+    | `-ConditionalOperator {{address}} <col:1, col:20> '<error>' contains-errors
     |   |-ImplicitCastExpr {{address}} <col:1, col:5> 'bool' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
-    |   |-DeclRefExpr {{address}} <col:8, col:12> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
-    |   `-DeclRefExpr {{address}} <col:15, col:20> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+    |   | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
+    |   |-DeclRefExpr {{address}} <col:8, col:12> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
+    |   `-DeclRefExpr {{address}} <col:15, col:20> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
     `-ExprStmt {{address}} <line:5:1, col:21> contains-errors
-      `-ConditionalOperator {{address}} <col:1, col:20> contains-errors
+      `-ConditionalOperator {{address}} <col:1, col:20> '<error>' contains-errors
         |-ImplicitCastExpr {{address}} <col:1, col:5> 'bool' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
-        |-DeclRefExpr {{address}} <col:8, col:12> 'usize' lvalue ParmVar {{address:size}} 'size' 'usize'
-        `-DeclRefExpr {{address}} <col:15, col:20> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32')");
+        | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
+        |-DeclRefExpr {{address}} <col:8, col:12> 'usize' lvalue 'size' ParmVar {{address:size}} 'size' 'usize'
+        `-DeclRefExpr {{address}} <col:15, col:20> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32')");
 }
 
 TEST_F(SemaTest, SuppressesDependentConditionalDiagnosticsAfterChildErrors) {
@@ -8534,28 +8575,28 @@ flag ? value : value;
   | `-BuiltinType {{address}} <col:31, col:34> 'i32'
   `-CompoundStmt {{address}} <col:36, line:6:2> contains-errors
     |-ExprStmt {{address}} <line:2:1, col:35> contains-errors
-    | `-ConditionalOperator {{address}} <col:1, col:34> contains-errors
-    |   |-DeclRefExpr {{address}} <col:1, col:18> 'missing_condition' contains-errors
-    |   |-DeclRefExpr {{address}} <col:21, col:26> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
-    |   `-DeclRefExpr {{address}} <col:29, col:34> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+    | `-ConditionalOperator {{address}} <col:1, col:34> '<error>' contains-errors
+    |   |-DeclRefExpr {{address}} <col:1, col:18> '<error>' 'missing_condition' <error> contains-errors
+    |   |-DeclRefExpr {{address}} <col:21, col:26> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
+    |   `-DeclRefExpr {{address}} <col:29, col:34> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
     |-ExprStmt {{address}} <line:3:1, col:29> contains-errors
-    | `-ConditionalOperator {{address}} <col:1, col:28> contains-errors
+    | `-ConditionalOperator {{address}} <col:1, col:28> '<error>' contains-errors
     |   |-ImplicitCastExpr {{address}} <col:1, col:5> 'bool' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
-    |   |-DeclRefExpr {{address}} <col:8, col:20> 'missing_then' contains-errors
-    |   `-DeclRefExpr {{address}} <col:23, col:28> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+    |   | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
+    |   |-DeclRefExpr {{address}} <col:8, col:20> '<error>' 'missing_then' <error> contains-errors
+    |   `-DeclRefExpr {{address}} <col:23, col:28> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
     |-ExprStmt {{address}} <line:4:1, col:29> contains-errors
-    | `-ConditionalOperator {{address}} <col:1, col:28> contains-errors
+    | `-ConditionalOperator {{address}} <col:1, col:28> '<error>' contains-errors
     |   |-ImplicitCastExpr {{address}} <col:1, col:5> 'bool' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
-    |   |-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
-    |   `-DeclRefExpr {{address}} <col:16, col:28> 'missing_else' contains-errors
+    |   | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
+    |   |-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
+    |   `-DeclRefExpr {{address}} <col:16, col:28> '<error>' 'missing_else' <error> contains-errors
     `-ExprStmt {{address}} <line:5:1, col:22>
       `-ConditionalOperator {{address}} <col:1, col:21> 'i32' lvalue
         |-ImplicitCastExpr {{address}} <col:1, col:5> 'bool' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
-        |-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
-        `-DeclRefExpr {{address}} <col:16, col:21> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32')");
+        | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
+        |-DeclRefExpr {{address}} <col:8, col:13> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
+        `-DeclRefExpr {{address}} <col:16, col:21> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32')");
 }
 
 // Object pointers, addresses, and dereference.
@@ -8669,9 +8710,9 @@ TEST_F(SemaTest, FormsRawPointerDereferenceAsPointeeLvalue) {
       `-BinaryOperator {{address}} <col:24, col:36> 'i32' lvalue '='
         |-UnaryOperator {{address}} <col:24, col:32> 'i32' lvalue '*'
         | `-ImplicitCastExpr {{address}} <col:25, col:32> '*i32' pure-rvalue <LValueToRValue>
-        |   `-DeclRefExpr {{address}} <col:25, col:32> '*i32' lvalue ParmVar {{address:pointer}} 'pointer' '*i32'
+        |   `-DeclRefExpr {{address}} <col:25, col:32> '*i32' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*i32'
         `-ImplicitCastExpr {{address}} <col:35, col:36> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-          `-IntegerLiteral {{address}} <col:35, col:36> 'comptime_int' 1)");
+          `-IntegerLiteral {{address}} <col:35, col:36> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, DiagnosesInvalidDereferencesAndPreservesPointeeConst) {
@@ -8719,28 +8760,28 @@ TEST_F(SemaTest, FormsObjectAddressesAndPreservesPointeeConst) {
   `-CompoundStmt {{address}} <col:34, line:9:2>
     |-ExprStmt {{address}} <line:3:1, col:10>
     | `-UnaryOperator {{address}} <col:1, col:9> '*i32' pure-rvalue '&'
-    |   `-DeclRefExpr {{address}} <col:2, col:9> 'i32' lvalue ParmVar {{address:mutable}} 'mutable' 'i32'
+    |   `-DeclRefExpr {{address}} <col:2, col:9> 'i32' lvalue 'mutable' ParmVar {{address:mutable}} 'mutable' 'i32'
     |-ExprStmt {{address}} <line:4:1, col:11>
     | `-UnaryOperator {{address}} <col:1, col:10> '*const i32' pure-rvalue '&'
-    |   `-DeclRefExpr {{address}} <col:2, col:10> 'const i32' lvalue ParmVar {{address:readonly}} 'readonly' '&copy i32'
+    |   `-DeclRefExpr {{address}} <col:2, col:10> 'const i32' lvalue 'readonly' ParmVar {{address:readonly}} 'readonly' '&copy i32'
     |-ExprStmt {{address}} <line:5:1, col:7>
     | `-UnaryOperator {{address}} <col:1, col:6> '*i32' pure-rvalue '&'
-    |   `-DeclRefExpr {{address}} <col:2, col:6> 'i32' lvalue ParmVar {{address:link}} 'link' '&mut i32'
+    |   `-DeclRefExpr {{address}} <col:2, col:6> 'i32' lvalue 'link' ParmVar {{address:link}} 'link' '&mut i32'
     |-ExprStmt {{address}} <line:6:1, col:9>
     | `-UnaryOperator {{address}} <col:1, col:8> '*i32' pure-rvalue '&'
-    |   `-DeclRefExpr {{address}} <col:2, col:8> 'i32' lvalue ParmVar {{address:source}} 'source' '&move i32'
+    |   `-DeclRefExpr {{address}} <col:2, col:8> 'i32' lvalue 'source' ParmVar {{address:source}} 'source' '&move i32'
     |-ExprStmt {{address}} <line:7:1, col:11>
     | `-UnaryOperator {{address}} <col:1, col:10> '*const i32' pure-rvalue '&'
     |   `-UnaryOperator {{address}} <col:2, col:10> 'const i32' lvalue '*'
     |     `-ImplicitCastExpr {{address}} <col:3, col:10> '*const i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:3, col:10> '*const i32' lvalue ParmVar {{address:pointer}} 'pointer' '*const i32'
+    |       `-DeclRefExpr {{address}} <col:3, col:10> '*const i32' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*const i32'
     `-ExprStmt {{address}} <line:8:1, col:16>
       `-UnaryOperator {{address}} <col:1, col:15> '*i32' pure-rvalue '&'
         `-ParenExpr {{address}} <col:2, col:15> 'i32' lvalue
           `-BinaryOperator {{address}} <col:3, col:14> 'i32' lvalue '='
-            |-DeclRefExpr {{address}} <col:3, col:10> 'i32' lvalue ParmVar {{address:mutable}} 'mutable' 'i32'
+            |-DeclRefExpr {{address}} <col:3, col:10> 'i32' lvalue 'mutable' ParmVar {{address:mutable}} 'mutable' 'i32'
             `-ImplicitCastExpr {{address}} <col:13, col:14> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-              `-IntegerLiteral {{address}} <col:13, col:14> 'comptime_int' 1)");
+              `-IntegerLiteral {{address}} <col:13, col:14> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, RejectsAddressOfNonLvaluesWithoutPartialResults) {
@@ -8763,9 +8804,9 @@ func Inspect(value i32) {
 | |-ReturnVarDecl {{address:return}} <col:13, col:16> 'i32'
 | | `-BuiltinType {{address}} <col:13, col:16> 'i32'
 | `-CompoundStmt {{address}} <col:17, col:22>
-|   `-ImplicitResultInitializationExpr {{address}} <col:19, col:20> 'void' ReturnVar {{address:return}} 'i32'
+|   `-ImplicitResultInitializationExpr {{address}} <col:19, col:20> 'void' non-object ReturnVar {{address:return}} 'i32'
 |     `-ImplicitCastExpr {{address}} <col:19, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-|       `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' 1
+|       `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' non-object 1
 |-FunctionDecl {{address:sink}} <line:2:1, col:15> Sink 'func () void'
 | `-CompoundStmt {{address}} <col:13, col:15>
 `-FunctionDecl {{address}} <line:3:1, line:8:2> Inspect 'func (i32) void' contains-errors
@@ -8773,22 +8814,22 @@ func Inspect(value i32) {
   | `-BuiltinType {{address}} <col:20, col:23> 'i32'
   `-CompoundStmt {{address}} <col:25, line:8:2> contains-errors
     |-ExprStmt {{address}} <line:4:3, col:17> contains-errors
-    | `-UnaryOperator {{address}} <col:3, col:16> '&' contains-errors
+    | `-UnaryOperator {{address}} <col:3, col:16> '<error>' '&' contains-errors
     |   `-ParenExpr {{address}} <col:4, col:16> 'i32' move-lvalue
     |     `-UnaryOperator {{address}} <col:5, col:15> 'i32' move-lvalue 'move'
-    |       `-DeclRefExpr {{address}} <col:10, col:15> 'i32' lvalue ParmVar {{address:value}} 'value' 'i32'
+    |       `-DeclRefExpr {{address}} <col:10, col:15> 'i32' lvalue 'value' ParmVar {{address:value}} 'value' 'i32'
     |-ExprStmt {{address}} <line:5:3, col:6> contains-errors
-    | `-UnaryOperator {{address}} <col:3, col:5> '&' contains-errors
+    | `-UnaryOperator {{address}} <col:3, col:5> '<error>' '&' contains-errors
     |   `-ImplicitCastExpr {{address}} <col:4, col:5> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |     `-IntegerLiteral {{address}} <col:4, col:5> 'comptime_int' 1
+    |     `-IntegerLiteral {{address}} <col:4, col:5> 'comptime_int' non-object 1
     |-ExprStmt {{address}} <line:6:3, col:11> contains-errors
-    | `-UnaryOperator {{address}} <col:3, col:10> '&' contains-errors
+    | `-UnaryOperator {{address}} <col:3, col:10> '<error>' '&' contains-errors
     |   `-CallExpr {{address}} <col:4, col:10> 'i32' pure-rvalue
-    |     `-DeclRefExpr {{address}} <col:4, col:8> 'func () i32' Function {{address:make}} 'Make' 'func () i32'
+    |     `-DeclRefExpr {{address}} <col:4, col:8> 'func () i32' non-object 'Make' Function {{address:make}} 'Make' 'func () i32'
     `-ExprStmt {{address}} <line:7:3, col:11> contains-errors
-      `-UnaryOperator {{address}} <col:3, col:10> '&' contains-errors
-        `-CallExpr {{address}} <col:4, col:10> 'void'
-          `-DeclRefExpr {{address}} <col:4, col:8> 'func () void' Function {{address:sink}} 'Sink' 'func () void')");
+      `-UnaryOperator {{address}} <col:3, col:10> '<error>' '&' contains-errors
+        `-CallExpr {{address}} <col:4, col:10> 'void' non-object
+          `-DeclRefExpr {{address}} <col:4, col:8> 'func () void' non-object 'Sink' Function {{address:sink}} 'Sink' 'func () void')");
 }
 
 TEST_F(SemaTest, PreventsMutationThroughAddressOfConstObject) {
@@ -8810,7 +8851,7 @@ TEST_F(SemaTest, FormsPointerNullWithoutRetypingItsLiteral) {
   | `-PointerType {{address}} <col:7, col:11>
   |   `-BuiltinType {{address}} <col:8, col:11> 'i32'
   `-ImplicitCastExpr {{address}} <col:15, col:19> '*i32' pure-rvalue <NullToPointer>
-    `-NullLiteral {{address}} <col:15, col:19> '<null>')");
+    `-NullLiteral {{address}} <col:15, col:19> '<null>' non-object)");
 }
 
 TEST_F(SemaTest, PreservesNullEqualityAndRequiredPointerReadsInAst) {
@@ -8829,23 +8870,23 @@ null != null;
     |-ExprStmt {{address}} <line:2:1, col:11>
     | `-BinaryOperator {{address}} <col:1, col:10> 'bool' pure-rvalue '=='
     |   |-ImplicitCastExpr {{address}} <col:1, col:2> '*i32' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:1, col:2> '*i32' lvalue ParmVar {{address:p}} 'p' '*i32'
+    |   | `-DeclRefExpr {{address}} <col:1, col:2> '*i32' lvalue 'p' ParmVar {{address:p}} 'p' '*i32'
     |   `-ImplicitCastExpr {{address}} <col:6, col:10> '*i32' pure-rvalue <NullToPointer>
-    |     `-NullLiteral {{address}} <col:6, col:10> '<null>'
+    |     `-NullLiteral {{address}} <col:6, col:10> '<null>' non-object
     |-ExprStmt {{address}} <line:3:1, col:11>
     | `-BinaryOperator {{address}} <col:1, col:10> 'bool' pure-rvalue '!='
     |   |-ImplicitCastExpr {{address}} <col:1, col:5> '*i32' pure-rvalue <NullToPointer>
-    |   | `-NullLiteral {{address}} <col:1, col:5> '<null>'
+    |   | `-NullLiteral {{address}} <col:1, col:5> '<null>' non-object
     |   `-ImplicitCastExpr {{address}} <col:9, col:10> '*i32' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:9, col:10> '*i32' lvalue ParmVar {{address:p}} 'p' '*i32'
+    |     `-DeclRefExpr {{address}} <col:9, col:10> '*i32' lvalue 'p' ParmVar {{address:p}} 'p' '*i32'
     |-ExprStmt {{address}} <line:4:1, col:14>
     | `-BinaryOperator {{address}} <col:1, col:13> 'bool' pure-rvalue '=='
-    |   |-NullLiteral {{address}} <col:1, col:5> '<null>'
-    |   `-NullLiteral {{address}} <col:9, col:13> '<null>'
+    |   |-NullLiteral {{address}} <col:1, col:5> '<null>' non-object
+    |   `-NullLiteral {{address}} <col:9, col:13> '<null>' non-object
     `-ExprStmt {{address}} <line:5:1, col:14>
       `-BinaryOperator {{address}} <col:1, col:13> 'bool' pure-rvalue '!='
-        |-NullLiteral {{address}} <col:1, col:5> '<null>'
-        `-NullLiteral {{address}} <col:9, col:13> '<null>')");
+        |-NullLiteral {{address}} <col:1, col:5> '<null>' non-object
+        `-NullLiteral {{address}} <col:9, col:13> '<null>' non-object)");
 }
 
 TEST_F(SemaTest, MaterializesNullPointerReferenceArgumentsAfterFormation) {
@@ -8873,18 +8914,18 @@ func Use() {
 `-FunctionDecl {{address}} <line:3:1, line:6:2> Use 'func () void'
   `-CompoundStmt {{address}} <line:3:12, line:6:2>
     |-ExprStmt {{address}} <line:4:3, col:18>
-    | `-CallExpr {{address}} <col:3, col:17> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:11> 'func (&move *func () void) void' Function {{address:take_move}} 'TakeMove' 'func (&move *func () void) void'
+    | `-CallExpr {{address}} <col:3, col:17> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:3, col:11> 'func (&move *func () void) void' non-object 'TakeMove' Function {{address:take_move}} 'TakeMove' 'func (&move *func () void) void'
     |   `-MaterializeTemporaryExpr {{address}} <col:12, col:16> '*func () void' move-lvalue
     |     `-ImplicitCastExpr {{address}} <col:12, col:16> '*func () void' pure-rvalue <NullToPointer>
-    |       `-NullLiteral {{address}} <col:12, col:16> '<null>'
+    |       `-NullLiteral {{address}} <col:12, col:16> '<null>' non-object
     `-ExprStmt {{address}} <line:5:3, col:18>
-      `-CallExpr {{address}} <col:3, col:17> 'void'
-        |-DeclRefExpr {{address}} <col:3, col:11> 'func (&copy *func () void) void' Function {{address:take_copy}} 'TakeCopy' 'func (&copy *func () void) void'
+      `-CallExpr {{address}} <col:3, col:17> 'void' non-object
+        |-DeclRefExpr {{address}} <col:3, col:11> 'func (&copy *func () void) void' non-object 'TakeCopy' Function {{address:take_copy}} 'TakeCopy' 'func (&copy *func () void) void'
         `-ImplicitCastExpr {{address}} <col:12, col:16> 'const *func () void' move-lvalue <NoOp>
           `-MaterializeTemporaryExpr {{address}} <col:12, col:16> '*func () void' move-lvalue
             `-ImplicitCastExpr {{address}} <col:12, col:16> '*func () void' pure-rvalue <NullToPointer>
-              `-NullLiteral {{address}} <col:12, col:16> '<null>')");
+              `-NullLiteral {{address}} <col:12, col:16> '<null>' non-object)");
 }
 
 TEST_F(SemaTest, UsesNullAcrossPointerInitializationAssignmentArgumentsAndResults) {
@@ -9023,28 +9064,28 @@ flag ? null : p;
     | `-BinaryOperator {{address}} <col:1, col:7> 'bool' pure-rvalue '=='
     |   |-ImplicitCastExpr {{address}} <col:1, col:2> '*const *const i32' pure-rvalue <Qualification>
     |   | `-ImplicitCastExpr {{address}} <col:1, col:2> '**i32' pure-rvalue <LValueToRValue>
-    |   |   `-DeclRefExpr {{address}} <col:1, col:2> '**i32' lvalue ParmVar {{address:p}} 'p' '**i32'
+    |   |   `-DeclRefExpr {{address}} <col:1, col:2> '**i32' lvalue 'p' ParmVar {{address:p}} 'p' '**i32'
     |   `-ImplicitCastExpr {{address}} <col:6, col:7> '*const *const i32' pure-rvalue <Qualification>
     |     `-ImplicitCastExpr {{address}} <col:6, col:7> '**const i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:6, col:7> '**const i32' lvalue ParmVar {{address:q}} 'q' '**const i32'
+    |       `-DeclRefExpr {{address}} <col:6, col:7> '**const i32' lvalue 'q' ParmVar {{address:q}} 'q' '**const i32'
     |-ExprStmt {{address}} <line:3:1, col:14>
     | `-ConditionalOperator {{address}} <col:1, col:13> '*const *const i32' pure-rvalue
     |   |-ImplicitCastExpr {{address}} <col:1, col:5> 'bool' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+    |   | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
     |   |-ImplicitCastExpr {{address}} <col:8, col:9> '*const *const i32' pure-rvalue <Qualification>
     |   | `-ImplicitCastExpr {{address}} <col:8, col:9> '**i32' pure-rvalue <LValueToRValue>
-    |   |   `-DeclRefExpr {{address}} <col:8, col:9> '**i32' lvalue ParmVar {{address:p}} 'p' '**i32'
+    |   |   `-DeclRefExpr {{address}} <col:8, col:9> '**i32' lvalue 'p' ParmVar {{address:p}} 'p' '**i32'
     |   `-ImplicitCastExpr {{address}} <col:12, col:13> '*const *const i32' pure-rvalue <Qualification>
     |     `-ImplicitCastExpr {{address}} <col:12, col:13> '**const i32' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:12, col:13> '**const i32' lvalue ParmVar {{address:q}} 'q' '**const i32'
+    |       `-DeclRefExpr {{address}} <col:12, col:13> '**const i32' lvalue 'q' ParmVar {{address:q}} 'q' '**const i32'
     `-ExprStmt {{address}} <line:4:1, col:17>
       `-ConditionalOperator {{address}} <col:1, col:16> '**i32' pure-rvalue
         |-ImplicitCastExpr {{address}} <col:1, col:5> 'bool' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue ParmVar {{address:flag}} 'flag' 'bool'
+        | `-DeclRefExpr {{address}} <col:1, col:5> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
         |-ImplicitCastExpr {{address}} <col:8, col:12> '**i32' pure-rvalue <NullToPointer>
-        | `-NullLiteral {{address}} <col:8, col:12> '<null>'
+        | `-NullLiteral {{address}} <col:8, col:12> '<null>' non-object
         `-ImplicitCastExpr {{address}} <col:15, col:16> '**i32' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:15, col:16> '**i32' lvalue ParmVar {{address:p}} 'p' '**i32')");
+          `-DeclRefExpr {{address}} <col:15, col:16> '**i32' lvalue 'p' ParmVar {{address:p}} 'p' '**i32')");
 }
 
 TEST_F(SemaTest, RecordsPointerBaseAdjustmentBeforeQualificationForEquality) {
@@ -9071,9 +9112,9 @@ d == b;
         |-ImplicitCastExpr {{address}} <col:1, col:2> '*const Base' pure-rvalue <Qualification>
         | `-ImplicitCastExpr {{address}} <col:1, col:2> '*Base' pure-rvalue <BaseSubobject> path Struct {{address:base}} 'Base'
         |   `-ImplicitCastExpr {{address}} <col:1, col:2> '*Derived' pure-rvalue <LValueToRValue>
-        |     `-DeclRefExpr {{address}} <col:1, col:2> '*Derived' lvalue ParmVar {{address:d}} 'd' '*Derived'
+        |     `-DeclRefExpr {{address}} <col:1, col:2> '*Derived' lvalue 'd' ParmVar {{address:d}} 'd' '*Derived'
         `-ImplicitCastExpr {{address}} <col:6, col:7> '*const Base' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:6, col:7> '*const Base' lvalue ParmVar {{address:b}} 'b' '*const Base')");
+          `-DeclRefExpr {{address}} <col:6, col:7> '*const Base' lvalue 'b' ParmVar {{address:b}} 'b' '*const Base')");
 }
 
 TEST_F(SemaTest, PreservesPointerConditionalCategoriesAndMergesDeeperConstBarriers) {
@@ -9266,12 +9307,12 @@ TEST_F(SemaTest, PreservesPointeeConstButNotPointerConstInOffsets) {
   |   `-ConstType {{address}} <col:48, col:57>
   |     `-BuiltinType {{address}} <col:54, col:57> 'i32'
   `-CompoundStmt {{address}} <col:58, col:77>
-    `-ImplicitResultInitializationExpr {{address}} <col:60, col:75> 'void' ReturnVar {{address:result}} '*const i32'
+    `-ImplicitResultInitializationExpr {{address}} <col:60, col:75> 'void' non-object ReturnVar {{address:result}} '*const i32'
       `-BinaryOperator {{address}} <col:60, col:75> '*const i32' pure-rvalue '+'
         |-ImplicitCastExpr {{address}} <col:60, col:67> '*const i32' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:60, col:67> 'const *const i32' lvalue ParmVar {{address:pointer}} 'pointer' '&copy *const i32'
+        | `-DeclRefExpr {{address}} <col:60, col:67> 'const *const i32' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '&copy *const i32'
         `-ImplicitCastExpr {{address}} <col:70, col:75> 'usize' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:70, col:75> 'usize' lvalue ParmVar {{address:count}} 'count' 'usize')");
+          `-DeclRefExpr {{address}} <col:70, col:75> 'usize' lvalue 'count' ParmVar {{address:count}} 'count' 'usize')");
 }
 
 TEST_F(SemaTest, RejectsInvalidPointerOffsetTypes) {
@@ -9508,7 +9549,7 @@ var p &mut *i32 := null;
         | `-ReferenceType {{address}} <col:7, col:16> '&mut'
         |   `-PointerType {{address}} <col:12, col:16>
         |     `-BuiltinType {{address}} <col:13, col:16> 'i32'
-        `-NullLiteral {{address}} <col:20, col:24> '<null>' contains-errors)");
+        `-NullLiteral {{address}} <col:20, col:24> '<null>' non-object contains-errors)");
 }
 
 TEST_F(SemaTest, ReportsNonPointerAndMutableReferenceCandidatesAsNotViableForNull) {
@@ -9550,16 +9591,16 @@ func Use(x &copy i32, y &mut i32) {
   |   `-BuiltinType {{address}} <col:30, col:33> 'i32'
   `-CompoundStmt {{address}} <col:35, line:5:2>
     |-ExprStmt {{address}} <line:3:3, col:16>
-    | `-CallExpr {{address}} <col:3, col:15> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy i32) void' Function {{address:copy}} 'Copy' 'func (&copy i32) void'
+    | `-CallExpr {{address}} <col:3, col:15> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy i32) void' non-object 'Copy' Function {{address:copy}} 'Copy' 'func (&copy i32) void'
     |   `-UnaryOperator {{address}} <col:8, col:14> 'const i32' move-lvalue 'move'
-    |     `-DeclRefExpr {{address}} <col:13, col:14> 'const i32' lvalue ParmVar {{address:x}} 'x' '&copy i32'
+    |     `-DeclRefExpr {{address}} <col:13, col:14> 'const i32' lvalue 'x' ParmVar {{address:x}} 'x' '&copy i32'
     `-ExprStmt {{address}} <line:4:3, col:16>
-      `-CallExpr {{address}} <col:3, col:15> 'void'
-        |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy i32) void' Function {{address:copy}} 'Copy' 'func (&copy i32) void'
+      `-CallExpr {{address}} <col:3, col:15> 'void' non-object
+        |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy i32) void' non-object 'Copy' Function {{address:copy}} 'Copy' 'func (&copy i32) void'
         `-ImplicitCastExpr {{address}} <col:8, col:14> 'const i32' move-lvalue <NoOp>
           `-UnaryOperator {{address}} <col:8, col:14> 'i32' move-lvalue 'move'
-            `-DeclRefExpr {{address}} <col:13, col:14> 'i32' lvalue ParmVar {{address:y}} 'y' '&mut i32')");
+            `-DeclRefExpr {{address}} <col:13, col:14> 'i32' lvalue 'y' ParmVar {{address:y}} 'y' '&mut i32')");
 }
 
 TEST_F(SemaTest, SelectsCopyOperationsForConstMovingObjectsWithBothOperations) {
@@ -9576,19 +9617,19 @@ func Use(x &mut T, y &copy T) T {
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:t}} <test.cw:1:1, col:12> T
-|-ConstructorDecl {{address:copy_ctor}} <line:2:1, col:21> T target Struct {{address:t}} 'T' 'func (&copy T) void'
+|-ConstructorDecl {{address:copy_ctor}} <line:2:1, col:21> T target Struct {{address:t}} 'T' 'ctor T(&copy T)'
 | |-ParmVarDecl {{address}} <col:8, col:17> x '&copy T'
 | | `-ReferenceType {{address}} <col:10, col:17> '&copy'
 | |   `-NamedType {{address}} <col:16, col:17> 'T'
 | `-CompoundStmt {{address}} <col:19, col:21>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-ConstructorDecl {{address:move_ctor}} <line:3:1, col:21> T target Struct {{address:t}} 'T' 'func (&move T) void'
+|-ConstructorDecl {{address:move_ctor}} <line:3:1, col:21> T target Struct {{address:t}} 'T' 'ctor T(&move T)'
 | |-ParmVarDecl {{address}} <col:8, col:17> x '&move T'
 | | `-ReferenceType {{address}} <col:10, col:17> '&move'
 | |   `-NamedType {{address}} <col:16, col:17> 'T'
 | `-CompoundStmt {{address}} <col:19, col:21>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:4:1, col:12> T target Struct {{address:t}} 'T' 'func () void'
+|-DestructorDecl {{address}} <line:4:1, col:12> T target Struct {{address:t}} 'T' 'dtor T()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |-FunctionDecl {{address:copy_assign}} <line:5:1, col:39> operator= 'func (&mut T, &copy T) void'
 | |-ParmVarDecl {{address}} <col:16, col:24> x '&mut T'
@@ -9617,15 +9658,15 @@ func Use(x &mut T, y &copy T) T {
   | `-NamedType {{address}} <col:31, col:32> 'T'
   `-CompoundStmt {{address}} <col:33, line:10:2>
     |-ExprStmt {{address}} <line:8:3, col:14>
-    | `-OperatorCallExpr {{address}} <col:3, col:13> 'void'
-    |   |-DeclRefExpr {{address}} <col:5, col:6> 'func (&mut T, &copy T) void' Function {{address:copy_assign}} 'operator=' 'func (&mut T, &copy T) void'
-    |   |-DeclRefExpr {{address}} <col:3, col:4> 'T' lvalue ParmVar {{address:x}} 'x' '&mut T'
+    | `-OperatorCallExpr {{address}} <col:3, col:13> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:5, col:6> 'func (&mut T, &copy T) void' non-object Function {{address:copy_assign}} 'operator=' 'func (&mut T, &copy T) void'
+    |   |-DeclRefExpr {{address}} <col:3, col:4> 'T' lvalue 'x' ParmVar {{address:x}} 'x' '&mut T'
     |   `-UnaryOperator {{address}} <col:7, col:13> 'const T' move-lvalue 'move'
-    |     `-DeclRefExpr {{address}} <col:12, col:13> 'const T' lvalue ParmVar {{address:y}} 'y' '&copy T'
-    `-ImplicitResultInitializationExpr {{address}} <line:9:3, col:9> 'void' ReturnVar {{address:result}} 'T'
-      `-ConstructionExpr {{address}} <col:3, col:9> 'T' pure-rvalue complete-object Constructor {{address:copy_ctor}} 'T' 'func (&copy T) void'
+    |     `-DeclRefExpr {{address}} <col:12, col:13> 'const T' lvalue 'y' ParmVar {{address:y}} 'y' '&copy T'
+    `-ImplicitResultInitializationExpr {{address}} <line:9:3, col:9> 'void' non-object ReturnVar {{address:result}} 'T'
+      `-ConstructionExpr {{address}} <col:3, col:9> 'T' pure-rvalue complete-object Constructor {{address:copy_ctor}} 'T' 'ctor T(&copy T)'
         `-UnaryOperator {{address}} <col:3, col:9> 'const T' move-lvalue 'move'
-          `-DeclRefExpr {{address}} <col:8, col:9> 'const T' lvalue ParmVar {{address:y}} 'y' '&copy T'
+          `-DeclRefExpr {{address}} <col:8, col:9> 'const T' lvalue 'y' ParmVar {{address:y}} 'y' '&copy T'
 )");
 }
 
@@ -9648,11 +9689,11 @@ TEST_F(SemaTest, MergesConstOnMovingConditionalWithoutConvertingItsBranches) {
     `-ExprStmt {{address}} <line:2:3, col:23>
       `-ConditionalOperator {{address}} <col:3, col:22> 'const i32' move-lvalue
         |-ImplicitCastExpr {{address}} <col:3, col:4> 'bool' pure-rvalue <LValueToRValue>
-        | `-DeclRefExpr {{address}} <col:3, col:4> 'bool' lvalue ParmVar {{address:b}} 'b' 'bool'
+        | `-DeclRefExpr {{address}} <col:3, col:4> 'bool' lvalue 'b' ParmVar {{address:b}} 'b' 'bool'
         |-UnaryOperator {{address}} <col:7, col:13> 'i32' move-lvalue 'move'
-        | `-DeclRefExpr {{address}} <col:12, col:13> 'i32' lvalue ParmVar {{address:x}} 'x' '&mut i32'
+        | `-DeclRefExpr {{address}} <col:12, col:13> 'i32' lvalue 'x' ParmVar {{address:x}} 'x' '&mut i32'
         `-UnaryOperator {{address}} <col:16, col:22> 'const i32' move-lvalue 'move'
-          `-DeclRefExpr {{address}} <col:21, col:22> 'const i32' lvalue ParmVar {{address:y}} 'y' '&copy i32')");
+          `-DeclRefExpr {{address}} <col:21, col:22> 'const i32' lvalue 'y' ParmVar {{address:y}} 'y' '&copy i32')");
 }
 
 TEST_F(SemaTest, ConsumesConstMovingFieldAndArrayProjections) {
@@ -9690,7 +9731,7 @@ func F(s &mut S, a &mut [1] const i32, i usize) {
   |-ParmVarDecl {{address:a}} <col:18, col:38> a '&mut [1] const i32'
   | `-ReferenceType {{address}} <col:20, col:38> '&mut'
   |   `-ArrayType {{address}} <col:25, col:38>
-  |     |-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' 1
+  |     |-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' non-object 1
   |     `-ConstType {{address}} <col:29, col:38>
   |       `-BuiltinType {{address}} <col:35, col:38> 'i32'
   |-ParmVarDecl {{address:i}} <col:40, col:47> i 'usize'
@@ -9700,14 +9741,14 @@ func F(s &mut S, a &mut [1] const i32, i usize) {
     | `-MemberExpr {{address}} <col:3, col:13> 'const i32' move-lvalue .x Field {{address:x}} 'x' 'const i32'
     |   `-ParenExpr {{address}} <col:3, col:11> 'S' move-lvalue
     |     `-UnaryOperator {{address}} <col:4, col:10> 'S' move-lvalue 'move'
-    |       `-DeclRefExpr {{address}} <col:9, col:10> 'S' lvalue ParmVar {{address:s}} 's' '&mut S'
+    |       `-DeclRefExpr {{address}} <col:9, col:10> 'S' lvalue 's' ParmVar {{address:s}} 's' '&mut S'
     `-ExprStmt {{address}} <line:4:3, col:15>
       `-SubscriptExpr {{address}} <col:3, col:14> 'const i32' move-lvalue
         |-ParenExpr {{address}} <col:3, col:11> '[1] const i32' move-lvalue
         | `-UnaryOperator {{address}} <col:4, col:10> '[1] const i32' move-lvalue 'move'
-        |   `-DeclRefExpr {{address}} <col:9, col:10> '[1] const i32' lvalue ParmVar {{address:a}} 'a' '&mut [1] const i32'
+        |   `-DeclRefExpr {{address}} <col:9, col:10> '[1] const i32' lvalue 'a' ParmVar {{address:a}} 'a' '&mut [1] const i32'
         `-ImplicitCastExpr {{address}} <col:12, col:13> 'usize' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:12, col:13> 'usize' lvalue ParmVar {{address:i}} 'i' 'usize')");
+          `-DeclRefExpr {{address}} <col:12, col:13> 'usize' lvalue 'i' ParmVar {{address:i}} 'i' 'usize')");
 }
 
 TEST_F(SemaTest, UsesConstMovingSourcesAcrossValueAndReferenceCallContexts) {
@@ -9913,7 +9954,7 @@ var s := g;
       `-VarGroupDecl {{address}} <col:1, col:12>
         |-VarDecl {{address}} <col:5, col:6> s '[3] u8'
         `-ImplicitCastExpr {{address}} <col:10, col:11> '[3] u8' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:10, col:11> '[3] u8' lvalue Var {{address:g}} 'g' '[3] u8')");
+          `-DeclRefExpr {{address}} <col:10, col:11> '[3] u8' lvalue 'g' Var {{address:g}} 'g' '[3] u8')");
 }
 
 TEST_F(SemaTest, PreservesStringLiteralConstnessThroughAddressAndSubscript) {
@@ -9934,7 +9975,7 @@ TEST_F(SemaTest, PreservesStringLiteralConstnessThroughAddressAndSubscript) {
       `-SubscriptExpr {{address}} <col:1, col:13> 'const u8' lvalue
         |-StringLiteral {{address}} <col:1, col:6> 'const [3] u8' lvalue "abc"
         `-ImplicitCastExpr {{address}} <col:7, col:12> 'usize' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:7, col:12> 'usize' lvalue ParmVar {{address:index}} 'index' 'usize')");
+          `-DeclRefExpr {{address}} <col:7, col:12> 'usize' lvalue 'index' ParmVar {{address:index}} 'index' 'usize')");
 }
 
 TEST_F(SemaTest, CountsDecodedStringLiteralBytesWithoutImplicitTerminator) {
@@ -10056,13 +10097,13 @@ func Assign(dst &mut S, src &copy S) {
   `-CompoundStmt {{address}} <col:38, line:5:2>
     |-ExprStmt {{address}} <line:3:3, col:13>
     | `-BinaryOperator {{address}} <col:3, col:12> 'S' lvalue '='
-    |   |-DeclRefExpr {{address}} <col:3, col:6> 'S' lvalue ParmVar {{address:dst}} 'dst' '&mut S'
-    |   `-DeclRefExpr {{address}} <col:9, col:12> 'const S' lvalue ParmVar {{address:src}} 'src' '&copy S'
+    |   |-DeclRefExpr {{address}} <col:3, col:6> 'S' lvalue 'dst' ParmVar {{address:dst}} 'dst' '&mut S'
+    |   `-DeclRefExpr {{address}} <col:9, col:12> 'const S' lvalue 'src' ParmVar {{address:src}} 'src' '&copy S'
     `-ExprStmt {{address}} <line:4:3, col:13>
       `-BinaryOperator {{address}} <col:3, col:12> 'S' lvalue '='
-        |-DeclRefExpr {{address}} <col:3, col:6> 'S' lvalue ParmVar {{address:dst}} 'dst' '&mut S'
+        |-DeclRefExpr {{address}} <col:3, col:6> 'S' lvalue 'dst' ParmVar {{address:dst}} 'dst' '&mut S'
         `-MaterializeTemporaryExpr {{address}} <col:9, col:12> 'S' move-lvalue
-          `-ConstructionExpr {{address}} <col:9, col:12> 'S' pure-rvalue complete-object target <col:9, col:10> 'S')");
+          `-ConstructionExpr {{address}} <col:9, col:12> 'S' pure-rvalue complete-object target <col:9, col:10> 'S' trivial)");
 }
 
 TEST_F(SemaTest, KeepsTrivialArrayAssignmentSourceObjects) {
@@ -10076,29 +10117,29 @@ TEST_F(SemaTest, KeepsTrivialArrayAssignmentSourceObjects) {
   |-ParmVarDecl {{address:dst}} <line:1:13, col:29> dst '&mut [1] i32'
   | `-ReferenceType {{address}} <col:17, col:29> '&mut'
   |   `-ArrayType {{address}} <col:22, col:29>
-  |     |-IntegerLiteral {{address}} <col:23, col:24> 'comptime_int' 1
+  |     |-IntegerLiteral {{address}} <col:23, col:24> 'comptime_int' non-object 1
   |     `-BuiltinType {{address}} <col:26, col:29> 'i32'
   |-ParmVarDecl {{address:src}} <col:31, col:47> src '&mut [1] i32'
   | `-ReferenceType {{address}} <col:35, col:47> '&mut'
   |   `-ArrayType {{address}} <col:40, col:47>
-  |     |-IntegerLiteral {{address}} <col:41, col:42> 'comptime_int' 1
+  |     |-IntegerLiteral {{address}} <col:41, col:42> 'comptime_int' non-object 1
   |     `-BuiltinType {{address}} <col:44, col:47> 'i32'
   `-CompoundStmt {{address}} <col:49, line:4:2>
     |-ExprStmt {{address}} <line:2:3, col:18>
     | `-BinaryOperator {{address}} <col:3, col:17> '[1] i32' lvalue '='
-    |   |-DeclRefExpr {{address}} <col:3, col:6> '[1] i32' lvalue ParmVar {{address:dst}} 'dst' '&mut [1] i32'
+    |   |-DeclRefExpr {{address}} <col:3, col:6> '[1] i32' lvalue 'dst' ParmVar {{address:dst}} 'dst' '&mut [1] i32'
     |   `-UnaryOperator {{address}} <col:9, col:17> '[1] i32' move-lvalue 'move'
-    |     `-DeclRefExpr {{address}} <col:14, col:17> '[1] i32' lvalue ParmVar {{address:src}} 'src' '&mut [1] i32'
+    |     `-DeclRefExpr {{address}} <col:14, col:17> '[1] i32' lvalue 'src' ParmVar {{address:src}} 'src' '&mut [1] i32'
     `-ExprStmt {{address}} <line:3:3, col:23>
       `-BinaryOperator {{address}} <col:3, col:22> '[1] i32' lvalue '='
-        |-DeclRefExpr {{address}} <col:3, col:6> '[1] i32' lvalue ParmVar {{address:dst}} 'dst' '&mut [1] i32'
+        |-DeclRefExpr {{address}} <col:3, col:6> '[1] i32' lvalue 'dst' ParmVar {{address:dst}} 'dst' '&mut [1] i32'
         `-MaterializeTemporaryExpr {{address}} <col:9, col:22> '[1] i32' move-lvalue
           `-ArrayValueExpr {{address}} <col:9, col:22> '[1] i32' pure-rvalue
             |-ArrayType {{address}} <col:9, col:16>
-            | |-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' 1
+            | |-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' non-object 1
             | `-BuiltinType {{address}} <col:13, col:16> 'i32'
             `-ImplicitCastExpr {{address}} <col:19, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-              `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' 7)");
+              `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' non-object 7)");
 }
 
 TEST_F(SemaTest, MaterializesNonTrivialArrayAssignmentResult) {
@@ -10112,10 +10153,10 @@ func Assign(dst &mut [0] S) {
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:12> S
-|-ConstructorDecl {{address}} <line:2:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|-ConstructorDecl {{address}} <line:2:1, col:12> S target Struct {{address:structure}} 'S' 'ctor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:12> S target Struct {{address:structure}} 'S' 'dtor S()'
 | `-CompoundStmt {{address}} <col:10, col:12>
 |-FunctionDecl {{address:assignment}} <line:4:1, col:43> operator= 'func (&mut S, &copy S) void'
 | |-ParmVarDecl {{address}} <col:16, col:26> dst '&mut S'
@@ -10129,19 +10170,19 @@ func Assign(dst &mut [0] S) {
   |-ParmVarDecl {{address:dst}} <line:5:13, col:27> dst '&mut [0] S'
   | `-ReferenceType {{address}} <col:17, col:27> '&mut'
   |   `-ArrayType {{address}} <col:22, col:27>
-  |     |-IntegerLiteral {{address}} <col:23, col:24> 'comptime_int' 0
+  |     |-IntegerLiteral {{address}} <col:23, col:24> 'comptime_int' non-object 0
   |     `-NamedType {{address}} <col:26, col:27> 'S'
   `-CompoundStmt {{address}} <col:29, line:7:2>
     `-ExprStmt {{address}} <line:6:3, col:18>
       `-ArrayAssignmentExpr {{address}} <col:3, col:17> '[0] S' lvalue
-        |-DeclRefExpr {{address}} <col:3, col:6> '[0] S' lvalue ParmVar {{address:dst}} 'dst' '&mut [0] S'
+        |-DeclRefExpr {{address}} <col:3, col:6> '[0] S' lvalue 'dst' ParmVar {{address:dst}} 'dst' '&mut [0] S'
         |-MaterializeTemporaryExpr {{address}} <col:9, col:17> '[0] S' move-lvalue
         | `-ArrayValueExpr {{address}} <col:9, col:17> '[0] S' pure-rvalue
         |   `-ArrayType {{address}} <col:9, col:14>
-        |     |-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' 0
+        |     |-IntegerLiteral {{address}} <col:10, col:11> 'comptime_int' non-object 0
         |     `-NamedType {{address}} <col:13, col:14> 'S'
-        `-OperatorCallExpr {{address}} <col:3, col:17> 'void'
-          |-DeclRefExpr {{address}} <col:7, col:8> 'func (&mut S, &copy S) void' Function {{address:assignment}} 'operator=' 'func (&mut S, &copy S) void'
+        `-OperatorCallExpr {{address}} <col:3, col:17> 'void' non-object
+          |-DeclRefExpr {{address}} <col:7, col:8> 'func (&mut S, &copy S) void' non-object Function {{address:assignment}} 'operator=' 'func (&mut S, &copy S) void'
           |-OpaqueValueExpr {{address}} <col:3, col:6> 'S' lvalue
           `-ImplicitCastExpr {{address}} <col:9, col:17> 'const S' move-lvalue <NoOp>
             `-OpaqueValueExpr {{address}} <col:9, col:17> 'S' move-lvalue
@@ -10573,13 +10614,13 @@ func Arrays(source &mut [1] Value) {
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}}
 |-StructDecl {{address:structure}} <test.cw:1:1, col:16> Value
-|-ConstructorDecl {{address:copy_constructor}} <line:2:1, col:33> Value target Struct {{address:structure}} 'Value' 'func (&copy Value) void'
+|-ConstructorDecl {{address:copy_constructor}} <line:2:1, col:33> Value target Struct {{address:structure}} 'Value' 'ctor Value(&copy Value)'
 | |-ParmVarDecl {{address:copy_source}} <col:12, col:29> other '&copy Value'
 | | `-ReferenceType {{address}} <col:18, col:29> '&copy'
 | |   `-NamedType {{address}} <col:24, col:29> 'Value'
 | `-CompoundStmt {{address}} <col:31, col:33>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'func () void'
+|-DestructorDecl {{address}} <line:3:1, col:16> Value target Struct {{address:structure}} 'Value' 'dtor Value()'
 | `-CompoundStmt {{address}} <col:14, col:16>
 |-FunctionDecl {{address:copy_assignment}} <line:4:1, col:51> operator= 'func (&mut Value, &copy Value) void'
 | |-ParmVarDecl {{address:assignment_target}} <col:16, col:30> dst '&mut Value'
@@ -10593,25 +10634,25 @@ func Arrays(source &mut [1] Value) {
   |-ParmVarDecl {{address:array_source}} <line:5:13, col:34> source '&mut [1] Value'
   | `-ReferenceType {{address}} <col:20, col:34> '&mut'
   |   `-ArrayType {{address}} <col:25, col:34>
-  |     |-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' 1
+  |     |-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' non-object 1
   |     `-NamedType {{address}} <col:29, col:34> 'Value'
   `-CompoundStmt {{address}} <col:36, line:8:2>
     |-DeclStmt {{address}} <line:6:3, col:39>
     | `-VarGroupDecl {{address}} <col:3, col:39>
     |   |-VarDecl {{address:copied}} <col:7, col:23> copied '[1] Value'
     |   | `-ArrayType {{address}} <col:14, col:23>
-    |   |   |-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' 1
+    |   |   |-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' non-object 1
     |   |   `-NamedType {{address}} <col:18, col:23> 'Value'
-    |   `-ArrayConstructionExpr {{address}} <col:27, col:38> '[1] Value' pure-rvalue Constructor {{address:copy_constructor}} 'Value' 'func (&copy Value) void'
+    |   `-ArrayConstructionExpr {{address}} <col:27, col:38> '[1] Value' pure-rvalue Constructor {{address:copy_constructor}} 'Value' 'ctor Value(&copy Value)'
     |     `-UnaryOperator {{address}} <col:27, col:38> '[1] Value' move-lvalue 'move'
-    |       `-DeclRefExpr {{address}} <col:32, col:38> '[1] Value' lvalue ParmVar {{address:array_source}} 'source' '&mut [1] Value'
+    |       `-DeclRefExpr {{address}} <col:32, col:38> '[1] Value' lvalue 'source' ParmVar {{address:array_source}} 'source' '&mut [1] Value'
     `-ExprStmt {{address}} <line:7:3, col:24>
       `-ArrayAssignmentExpr {{address}} <col:3, col:23> '[1] Value' lvalue
-        |-DeclRefExpr {{address}} <col:3, col:9> '[1] Value' lvalue Var {{address:copied}} 'copied' '[1] Value'
+        |-DeclRefExpr {{address}} <col:3, col:9> '[1] Value' lvalue 'copied' Var {{address:copied}} 'copied' '[1] Value'
         |-UnaryOperator {{address}} <col:12, col:23> '[1] Value' move-lvalue 'move'
-        | `-DeclRefExpr {{address}} <col:17, col:23> '[1] Value' lvalue ParmVar {{address:array_source}} 'source' '&mut [1] Value'
-        `-OperatorCallExpr {{address}} <col:3, col:23> 'void'
-          |-DeclRefExpr {{address}} <col:10, col:11> 'func (&mut Value, &copy Value) void' Function {{address:copy_assignment}} 'operator=' 'func (&mut Value, &copy Value) void'
+        | `-DeclRefExpr {{address}} <col:17, col:23> '[1] Value' lvalue 'source' ParmVar {{address:array_source}} 'source' '&mut [1] Value'
+        `-OperatorCallExpr {{address}} <col:3, col:23> 'void' non-object
+          |-DeclRefExpr {{address}} <col:10, col:11> 'func (&mut Value, &copy Value) void' non-object Function {{address:copy_assignment}} 'operator=' 'func (&mut Value, &copy Value) void'
           |-OpaqueValueExpr {{address}} <col:3, col:9> 'Value' lvalue
           `-ImplicitCastExpr {{address}} <col:12, col:23> 'const Value' move-lvalue <NoOp>
             `-OpaqueValueExpr {{address}} <col:12, col:23> 'Value' move-lvalue
@@ -10670,7 +10711,7 @@ TEST_F(SemaTest, InfersGlobalDirectInitializerType) {
 `-VarGroupDecl {{address}} <test.cw:1:1, col:17>
   |-VarDecl {{address}} <col:5, col:11> global 'i32'
   `-ImplicitCastExpr {{address}} <col:15, col:16> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    `-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' 1)");
+    `-IntegerLiteral {{address}} <col:15, col:16> 'comptime_int' non-object 1)");
 }
 
 TEST_F(SemaTest, ChecksGlobalInitializerListArity) {
@@ -10701,20 +10742,20 @@ func Make() i32 { 7 })");
 |-VarGroupDecl {{address}} <test.cw:1:1, col:21>
 | |-VarDecl {{address:first}} <col:5, col:10> first 'i32'
 | `-CallExpr {{address}} <col:14, col:20> 'i32' pure-rvalue
-|   `-DeclRefExpr {{address}} <col:14, col:18> 'func () i32' Function {{address:make}} 'Make' 'func () i32'
+|   `-DeclRefExpr {{address}} <col:14, col:18> 'func () i32' non-object 'Make' Function {{address:make}} 'Make' 'func () i32'
 |-VarGroupDecl {{address}} <line:2:1, col:25>
 | |-VarDecl {{address}} <col:5, col:15> second 'i64'
 | | `-BuiltinType {{address}} <col:12, col:15> 'i64'
 | `-ImplicitCastExpr {{address}} <col:19, col:24> 'i64' pure-rvalue <IntegerToInteger>
 |   `-ImplicitCastExpr {{address}} <col:19, col:24> 'i32' pure-rvalue <LValueToRValue>
-|     `-DeclRefExpr {{address}} <col:19, col:24> 'i32' lvalue Var {{address:first}} 'first' 'i32'
+|     `-DeclRefExpr {{address}} <col:19, col:24> 'i32' lvalue 'first' Var {{address:first}} 'first' 'i32'
 `-FunctionDecl {{address:make}} <line:3:1, col:22> Make 'func () i32'
   |-ReturnVarDecl {{address:result}} <col:13, col:16> 'i32'
   | `-BuiltinType {{address}} <col:13, col:16> 'i32'
   `-CompoundStmt {{address}} <col:17, col:22>
-    `-ImplicitResultInitializationExpr {{address}} <col:19, col:20> 'void' ReturnVar {{address:result}} 'i32'
+    `-ImplicitResultInitializationExpr {{address}} <col:19, col:20> 'void' non-object ReturnVar {{address:result}} 'i32'
       `-ImplicitCastExpr {{address}} <col:19, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-        `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' 7)");
+        `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' non-object 7)");
 }
 
 TEST_F(SemaTest, AnalyzesDeclarationsWithoutPackageClause) {
@@ -10726,20 +10767,20 @@ func Make() i32 { 7 })");
 |-VarGroupDecl {{address}} <test.cw:1:1, col:21>
 | |-VarDecl {{address:first}} <col:5, col:10> first 'i32'
 | `-CallExpr {{address}} <col:14, col:20> 'i32' pure-rvalue
-|   `-DeclRefExpr {{address}} <col:14, col:18> 'func () i32' Function {{address:make}} 'Make' 'func () i32'
+|   `-DeclRefExpr {{address}} <col:14, col:18> 'func () i32' non-object 'Make' Function {{address:make}} 'Make' 'func () i32'
 |-VarGroupDecl {{address}} <line:2:1, col:25>
 | |-VarDecl {{address}} <col:5, col:15> second 'i64'
 | | `-BuiltinType {{address}} <col:12, col:15> 'i64'
 | `-ImplicitCastExpr {{address}} <col:19, col:24> 'i64' pure-rvalue <IntegerToInteger>
 |   `-ImplicitCastExpr {{address}} <col:19, col:24> 'i32' pure-rvalue <LValueToRValue>
-|     `-DeclRefExpr {{address}} <col:19, col:24> 'i32' lvalue Var {{address:first}} 'first' 'i32'
+|     `-DeclRefExpr {{address}} <col:19, col:24> 'i32' lvalue 'first' Var {{address:first}} 'first' 'i32'
 `-FunctionDecl {{address:make}} <line:3:1, col:22> Make 'func () i32'
   |-ReturnVarDecl {{address:result}} <col:13, col:16> 'i32'
   | `-BuiltinType {{address}} <col:13, col:16> 'i32'
   `-CompoundStmt {{address}} <col:17, col:22>
-    `-ImplicitResultInitializationExpr {{address}} <col:19, col:20> 'void' ReturnVar {{address:result}} 'i32'
+    `-ImplicitResultInitializationExpr {{address}} <col:19, col:20> 'void' non-object ReturnVar {{address:result}} 'i32'
       `-ImplicitCastExpr {{address}} <col:19, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-        `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' 7)");
+        `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' non-object 7)");
 }
 
 TEST_F(SemaTest, KeepsGlobalExplicitAndInferredTypesIndependentInBothOrders) {
@@ -10752,17 +10793,17 @@ var c bool, d := true, 3;)");
 | |-VarDecl {{address}} <col:8, col:13> b 'i64'
 | | `-BuiltinType {{address}} <col:10, col:13> 'i64'
 | |-ImplicitCastExpr {{address}} <col:17, col:18> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-| | `-IntegerLiteral {{address}} <col:17, col:18> 'comptime_int' 1
+| | `-IntegerLiteral {{address}} <col:17, col:18> 'comptime_int' non-object 1
 | `-ImplicitCastExpr {{address}} <col:20, col:21> 'i64' pure-rvalue <IntegerToInteger>
 |   `-ImplicitCastExpr {{address}} <col:20, col:21> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-|     `-IntegerLiteral {{address}} <col:20, col:21> 'comptime_int' 2
+|     `-IntegerLiteral {{address}} <col:20, col:21> 'comptime_int' non-object 2
 `-VarGroupDecl {{address}} <line:2:1, col:26>
   |-VarDecl {{address}} <col:5, col:11> c 'bool'
   | `-BuiltinType {{address}} <col:7, col:11> 'bool'
   |-VarDecl {{address}} <col:13, col:14> d 'i32'
   |-BoolLiteral {{address}} <col:18, col:22> 'bool' pure-rvalue true
   `-ImplicitCastExpr {{address}} <col:24, col:25> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' 3)");
+    `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' non-object 3)");
 }
 
 TEST_F(SemaTest, PreservesGlobalHeterogeneousBlockAndResultOwnershipInAst) {
@@ -10775,10 +10816,10 @@ TEST_F(SemaTest, PreservesGlobalHeterogeneousBlockAndResultOwnershipInAst) {
   |-VarDecl {{address:b}} <col:12, col:18> b 'bool'
   | `-BuiltinType {{address}} <col:14, col:18> 'bool'
   `-CompoundStmt {{address}} <col:22, col:33>
-    |-ImplicitResultInitializationExpr {{address}} <col:24, col:25> 'void' Var {{address:a}} 'a' 'i32'
+    |-ImplicitResultInitializationExpr {{address}} <col:24, col:25> 'void' non-object Var {{address:a}} 'a' 'i32'
     | `-ImplicitCastExpr {{address}} <col:24, col:25> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-    |   `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' 1
-    `-ImplicitResultInitializationExpr {{address}} <col:27, col:31> 'void' Var {{address:b}} 'b' 'bool'
+    |   `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' non-object 1
+    `-ImplicitResultInitializationExpr {{address}} <col:27, col:31> 'void' non-object Var {{address:b}} 'b' 'bool'
       `-BoolLiteral {{address}} <col:27, col:31> 'bool' pure-rvalue true)");
 }
 
@@ -10859,11 +10900,11 @@ TEST_F(SemaTest, DoesNotInferAnExplicitlyInvalidGlobalType) {
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-VarGroupDecl {{address}} <test.cw:1:1, col:34> contains-errors
-  |-VarDecl {{address}} <col:5, col:16> bad contains-errors
+  |-VarDecl {{address}} <col:5, col:16> bad '<error>' contains-errors
   | `-NamedType {{address}} <col:9, col:16> 'Missing' contains-errors
   |-VarDecl {{address}} <col:18, col:22> good 'bool'
   |-ImplicitCastExpr {{address}} <col:26, col:27> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-  | `-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' 1
+  | `-IntegerLiteral {{address}} <col:26, col:27> 'comptime_int' non-object 1
   `-BoolLiteral {{address}} <col:29, col:33> 'bool' pure-rvalue true)");
 }
 
@@ -11046,15 +11087,15 @@ TEST_F(SemaTest, DistinguishesInitializationAndAssignmentInSemanticAst) {
     |   `-VarDecl {{address:target}} <col:26, col:36> target 'i32'
     |     `-BuiltinType {{address}} <col:33, col:36> 'i32'
     |-ExprStmt {{address}} <col:38, col:55>
-    | `-InitializationExpr {{address}} <col:38, col:54> 'void'
-    |   |-DeclRefExpr {{address}} <col:38, col:44> 'i32' lvalue Var {{address:target}} 'target' 'i32'
+    | `-InitializationExpr {{address}} <col:38, col:54> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:38, col:44> 'i32' lvalue 'target' Var {{address:target}} 'target' 'i32'
     |   `-ImplicitCastExpr {{address}} <col:48, col:54> 'i32' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:48, col:54> 'i32' lvalue ParmVar {{address:source}} 'source' 'i32'
+    |     `-DeclRefExpr {{address}} <col:48, col:54> 'i32' lvalue 'source' ParmVar {{address:source}} 'source' 'i32'
     `-ExprStmt {{address}} <col:56, col:72>
       `-BinaryOperator {{address}} <col:56, col:71> 'i32' lvalue '='
-        |-DeclRefExpr {{address}} <col:56, col:62> 'i32' lvalue Var {{address:target}} 'target' 'i32'
+        |-DeclRefExpr {{address}} <col:56, col:62> 'i32' lvalue 'target' Var {{address:target}} 'target' 'i32'
         `-ImplicitCastExpr {{address}} <col:65, col:71> 'i32' pure-rvalue <LValueToRValue>
-          `-DeclRefExpr {{address}} <col:65, col:71> 'i32' lvalue ParmVar {{address:source}} 'source' 'i32')");
+          `-DeclRefExpr {{address}} <col:65, col:71> 'i32' lvalue 'source' ParmVar {{address:source}} 'source' 'i32')");
 }
 
 TEST_F(SemaTest, ReportsReadOfUninitializedVariable) {
@@ -11621,6 +11662,123 @@ TEST_F(SemaTest, EmitsDefiniteInitializationFindingsInSourceOrder) {
   ExpectError(4, 28, "use of uninitialized variable 'first'", 5);
   ExpectError(4, 37, "use of uninitialized variable 'second'", 6);
   ExpectError(5, 2, "use of uninitialized variable 'third'", 5);
+}
+
+TEST_F(SemaTest, ReportsUninitializedReadsInShortCircuitOperandsInSourceOrder) {
+  Analyze(R"(func F(flag bool) {
+  var a bool;
+  var b bool;
+  var c bool;
+  var d bool;
+  (a && b) || (flag && (c || d));
+  a || a;
+})");
+
+  ExpectError(5, 3, "use of uninitialized variable 'a'", 1);
+  ExpectError(5, 8, "use of uninitialized variable 'b'", 1);
+  ExpectError(5, 24, "use of uninitialized variable 'c'", 1);
+  ExpectError(5, 29, "use of uninitialized variable 'd'", 1);
+  ExpectError(6, 2, "use of uninitialized variable 'a'", 1);
+  ExpectError(6, 7, "use of uninitialized variable 'a'", 1);
+}
+
+TEST_F(SemaTest, ReportsUninitializedReadsInNestedBranchesAcrossOperands) {
+  Analyze(R"(func Take(first i32, second bool, third i32) i32 { first }
+func F(flag bool) i32 {
+  var a i32;
+  var b bool;
+  var c i32;
+  var d i32;
+  {
+    var values [2] i32 := [2] i32 { flag ? a : 0, c };
+  }
+  Take(flag ? 1 : d, flag && b, c + (flag ? a : d))
+})");
+
+  ExpectError(7, 43, "use of uninitialized variable 'a'", 1);
+  ExpectError(7, 50, "use of uninitialized variable 'c'", 1);
+  ExpectError(9, 18, "use of uninitialized variable 'd'", 1);
+  ExpectError(9, 29, "use of uninitialized variable 'b'", 1);
+  ExpectError(9, 32, "use of uninitialized variable 'c'", 1);
+  ExpectError(9, 44, "use of uninitialized variable 'a'", 1);
+  ExpectError(9, 48, "use of uninitialized variable 'd'", 1);
+}
+
+TEST_F(SemaTest, ReportsConditionalAssignmentSourceBeforeConditionalTarget) {
+  Analyze(R"(func F(flag bool) {
+  var a i32;
+  var b i32;
+  var c i32;
+  var d i32;
+  (flag ? a : b) = (flag ? c : d);
+})");
+
+  ExpectError(5, 27, "use of uninitialized variable 'c'", 1);
+  ExpectError(5, 31, "use of uninitialized variable 'd'", 1);
+  ExpectError(5, 10, "use of uninitialized variable 'a'", 1);
+  ExpectError(5, 14, "use of uninitialized variable 'b'", 1);
+}
+
+TEST_F(SemaTest, ReportsUninitializedReadsInBranchingInitializationSources) {
+  Analyze(R"(func F(flag bool) {
+  var b i32;
+  var a i32;
+  b := flag ? a : 0;
+  {
+    var c i32, d i32 := flag ? b : a, a;
+  }
+}
+func G(flag bool) var result i32 {
+  var a i32;
+  flag && a > 0 ? a : 0
+}
+func W(flag bool) i32 {
+  var a i32;
+  var b bool;
+  while flag && b {}
+  return flag ? a : 0;
+})");
+
+  ExpectError(3, 14, "use of uninitialized variable 'a'", 1);
+  ExpectError(5, 35, "use of uninitialized variable 'a'", 1);
+  ExpectError(5, 38, "use of uninitialized variable 'a'", 1);
+  ExpectError(10, 10, "use of uninitialized variable 'a'", 1);
+  ExpectError(10, 18, "use of uninitialized variable 'a'", 1);
+  ExpectError(15, 16, "use of uninitialized variable 'b'", 1);
+  ExpectError(16, 16, "use of uninitialized variable 'a'", 1);
+}
+
+TEST_F(SemaTest, InitializesGlobalBlockResultsInTailOrderAcrossBranches) {
+  Analyze(R"(var flag bool := true;
+var first i32, second i32 := {
+  flag ? second : 1, first
+})");
+
+  ExpectError(2, 9, "use of uninitialized variable 'second'", 6);
+}
+
+TEST_F(SemaTest, ReportsUninitializedThisReadInBranchingConstructorSource) {
+  Analyze(R"(struct Pair { first i32; second i32; }
+ctor Pair(flag bool) {
+  this.first := flag ? this.second : 1;
+  this.second := 2;
+}
+dtor Pair() {})");
+
+  ExpectError(2, 23, "use of uninitialized variable 'this'", 4);
+}
+
+TEST_F(SemaTest, RecoversFromNestedInitializationWithBranchingSource) {
+  Analyze(R"(func F(flag bool) {
+  var first i32;
+  var second i32;
+  var third i32;
+  first = (second := flag ? third : 1);
+})");
+
+  ExpectError(4, 11, "initialization expression must be used directly as an expression statement", 26);
+  ExpectError(4, 28, "use of uninitialized variable 'third'", 5);
+  ExpectError(4, 2, "use of uninitialized variable 'first'", 5);
 }
 
 TEST_F(SemaTest, OrdersEmptyMergeConflictBeforeFollowingControlFlow) {
@@ -12376,17 +12534,17 @@ TEST_F(SemaTest, AnalyzesGlobalInitializersAndRecoversParseErrors) {
 |-VarGroupDecl {{address}} <test.cw:1:1, col:29> contains-errors
 | |-VarDecl {{address}} <col:5, col:10> g 'i32'
 | | `-BuiltinType {{address}} <col:7, col:10> 'i32'
-| `-DeclRefExpr {{address}} <col:14, col:28> 'missing_global' contains-errors
+| `-DeclRefExpr {{address}} <col:14, col:28> '<error>' 'missing_global' <error> contains-errors
 |-FunctionDecl {{address}} <col:30, col:64> bad 'func () void' contains-errors
 | `-CompoundStmt {{address}} <col:41, col:64> contains-errors
 |   |-ExprStmt {{address}} <col:43, col:56> contains-errors
-|   | `-DeclRefExpr {{address}} <col:43, col:55> 'missing_body' contains-errors
+|   | `-DeclRefExpr {{address}} <col:43, col:55> '<error>' 'missing_body' <error> contains-errors
 |   `-DeclStmt {{address}} <col:57, col:60> contains-errors
 |     `-VarGroupDecl {{address}} <col:57, col:60> contains-errors
 `-FunctionDecl {{address}} <col:65, col:94> good 'func () void' contains-errors
   `-CompoundStmt {{address}} <col:77, col:94> contains-errors
     `-ExprStmt {{address}} <col:79, col:92> contains-errors
-      `-DeclRefExpr {{address}} <col:79, col:91> 'missing_good' contains-errors)");
+      `-DeclRefExpr {{address}} <col:79, col:91> '<error>' 'missing_good' <error> contains-errors)");
 }
 
 TEST_F(SemaTest, CollectsGlobalNameFromDeclarationWithParseErrors) {
@@ -12442,12 +12600,13 @@ field **MissingField;
   ExpectError(0, 0, "function declaration requires a name or operator", 0);
 
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
-|-FunctionDecl {{address}} <test.cw:1:1, col:24> contains-errors
-| |-ReturnVarDecl {{address}} <col:8, col:21> contains-errors
+|-FunctionDecl {{address}} <test.cw:1:1, col:24> '<error>' contains-errors
+| |-ReturnVarDecl {{address}} <col:8, col:21> '<error>' contains-errors
 | | `-NamedType {{address}} <col:8, col:21> 'MissingReturn' contains-errors
 | `-CompoundStmt {{address}} <col:22, col:24>
 `-StructDecl {{address}} <line:2:1, line:4:2> S trivial : 'MissingBase' contains-errors
-  `-FieldDecl {{address}} <line:3:1, col:22> field contains-errors
+  |-BaseType '<error>'
+  `-FieldDecl {{address}} <line:3:1, col:22> field '<error>' contains-errors
     `-PointerType {{address}} <col:7, col:21> contains-errors
       `-PointerType {{address}} <col:8, col:21> contains-errors
         `-NamedType {{address}} <col:9, col:21> 'MissingField' contains-errors)");
@@ -12458,8 +12617,8 @@ TEST_F(SemaTest, SuppressesSemanticDiagnosticsForIncompleteTypeSyntax) {
 
   ExpectError(0, 11, "expected one of '[', 'virtual', 'const', '&', '*', 'func', built-in type, identifier, '::'", 1);
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
-`-FunctionDecl {{address}} <test.cw:1:1, col:14> f contains-errors
-  |-ReturnVarDecl {{address}} <col:10, col:11> contains-errors
+`-FunctionDecl {{address}} <test.cw:1:1, col:14> f '<error>' contains-errors
+  |-ReturnVarDecl {{address}} <col:10, col:11> '<error>' contains-errors
   | `-PointerType {{address}} <col:10, col:11> contains-errors
   `-CompoundStmt {{address}} <col:12, col:14>)");
 }
@@ -12638,4 +12797,103 @@ ctor Box() {}
 export dtor Box() {}
 func Use() { var value := Box(); }
 )");
+}
+
+TEST_F(SemaTest, RejectsOverloadedProgramEntry) {
+  Analyze(R"(func main() i32 { 0 }
+func main(value i32) i32 { value })");
+  ExpectError(1, 5, "program entry 'main' must not be overloaded", 4);
+  ExpectNote(0, 5, "previous entry is here", 4);
+}
+
+TEST_F(SemaTest, RejectsVariableProgramEntry) {
+  Analyze("var main i32 := 0;");
+  ExpectError(0, 4, "program entry 'main' must be a function", 4);
+}
+
+TEST_F(SemaTest, RejectsProgramEntryReturnTypeOnNativeTarget) {
+  Analyze("export func main() f64 { 1.0 }");
+  ExpectError(0, 12, "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'", 4);
+}
+
+TEST_F(SemaTest, RejectsProgramEntryParametersOnNativeTarget) {
+  Analyze("func main(argc i32, argv *u8) i32 { argc }");
+  ExpectError(0, 5, "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'", 4);
+}
+
+TEST_F(SemaTest, RejectsImplicitVirtualImplementationEntrySignature) {
+  Analyze(R"(import struct Base { virtual { func main(this &copy Base) i32; } }
+import dtor Base();
+)");
+  ExpectError(0, 36, "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'", 4);
+}
+
+TEST_F(SemaTest, RejectsProgramEntryOverloadingImplicitVirtualImplementation) {
+  Analyze(R"(import struct Base { virtual { func main(this &copy Base) i32; } }
+import dtor Base();
+func main() i32 { 0 }
+)");
+  ExpectError(0, 36, "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'", 4);
+  ExpectError(2, 5, "program entry 'main' must not be overloaded", 4);
+  ExpectNote(0, 36, "previous entry is here", 4);
+}
+
+TEST_F(WasmSemaTest, RejectsOverloadedProgramEntry) {
+  Analyze(R"(func main(value i32) f64 { 1.0 }
+func main() i32 { 0 })");
+  ExpectError(1, 5, "program entry 'main' must not be overloaded", 4);
+  ExpectNote(0, 5, "previous entry is here", 4);
+}
+
+TEST_F(WasmSemaTest, RejectsVariableProgramEntry) {
+  Analyze("var main i32 := 0;");
+  ExpectError(0, 4, "program entry 'main' must be a function", 4);
+}
+
+TEST_F(SemaTest, AcceptsProgramEntryWithoutParameters) { Analyze("func main() i32 { 0 }"); }
+
+TEST_F(SemaTest, AcceptsProgramEntryWithArguments) { Analyze("func main(argc i32, argv **u8) i32 { argc }"); }
+
+TEST_F(SemaTest, TreatsNamespaceMainAsOrdinaryFunction) {
+  Analyze("namespace api { func main() i32 { 0 } func main(value i32) f64 { 1.0 } }");
+}
+
+TEST_F(SemaTest, AcceptsTranslationUnitWithoutProgramEntry) { Analyze("func Run() i32 { 0 }"); }
+
+TEST_F(WasmSemaTest, AcceptsNonNativeProgramEntrySignature) { Analyze("func main(value i32) f64 { 1.0 }"); }
+
+TEST_F(SemaTest, ReportsProgramEntryErrorsAlongsideOtherErrors) {
+  Analyze(R"(func Use() { missing; }
+func main() f64 { 1.0 })");
+  ExpectError(1, 5, "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'", 4);
+  ExpectError(0, 13, "use of undeclared identifier 'missing'", 7);
+}
+
+TEST_F(SemaTest, SkipsProgramEntryWithUnresolvedType) {
+  Analyze("func main(value Missing) f64 { 1.0 }");
+  ExpectError(0, 16, "unknown type 'Missing'", 7);
+}
+
+TEST_F(SemaTest, SkipsRedefinedProgramEntry) {
+  Analyze(R"(func main() i32 { 0 }
+func main() i32 { 1 })");
+  ExpectError(1, 5, "redefinition of function 'main'", 0);
+  ExpectNote(0, 5, "previous declaration is here", 0);
+}
+
+TEST_F(SemaTest, SkipsProgramEntryVariablesDiagnosedByBinding) {
+  Analyze(R"(func main() i32 { 0 }
+var main i32 := 0;
+var main i32 := 1;)");
+  ExpectError(1, 4, "declaration of variable 'main' conflicts with function declaration", 0);
+  ExpectNote(0, 5, "conflicting declaration is here", 0);
+  ExpectError(2, 4, "declaration of variable 'main' conflicts with function declaration", 0);
+  ExpectNote(0, 5, "conflicting declaration is here", 0);
+}
+
+TEST_F(SemaTest, ChecksOnlyTheFirstProgramEntryVariable) {
+  Analyze("var main i32 := 0; var main i32 := 1;");
+  ExpectError(0, 4, "program entry 'main' must be a function", 4);
+  ExpectError(0, 23, "redefinition of variable 'main'", 0);
+  ExpectNote(0, 4, "previous declaration is here", 0);
 }

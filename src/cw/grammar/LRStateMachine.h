@@ -8,7 +8,7 @@
 #include "Grammar.h"
 #include "LRParseTable.h"
 
-namespace cw::lang {
+namespace cw::grammar {
 
 class LRStateMachine {
  protected:
@@ -36,4 +36,4 @@ class LRStateMachine {
   virtual int OnAccepted() = 0;
 };
 
-}  // namespace cw::lang
+}  // namespace cw::grammar

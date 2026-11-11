@@ -41,7 +41,7 @@ TranslationUnitDecl {{address}}
     |   |   `-NamedType {{address}} <col:13, col:17> 'Base'
     |   `-ImplicitCastExpr {{address}} <col:21, col:28> '*Base' pure-rvalue <BaseSubobject> path Struct {{address:middle}} 'Middle' Struct {{address:base}} 'Base'
     |     `-ImplicitCastExpr {{address}} <col:21, col:28> '*Derived' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:21, col:28> '*Derived' lvalue ParmVar {{address:derived_pointer}} 'derived' '*Derived'
+    |       `-DeclRefExpr {{address}} <col:21, col:28> '*Derived' lvalue 'derived' ParmVar {{address:derived_pointer}} 'derived' '*Derived'
     |-DeclStmt {{address}} <line:17:3, col:44>
     | `-VarGroupDecl {{address}} <col:3, col:44>
     |   |-VarDecl {{address}} <col:7, col:32> readonly_base '*const Base'
@@ -51,7 +51,7 @@ TranslationUnitDecl {{address}}
     |   `-ImplicitCastExpr {{address}} <col:36, col:43> '*const Base' pure-rvalue <Qualification>
     |     `-ImplicitCastExpr {{address}} <col:36, col:43> '*Base' pure-rvalue <BaseSubobject> path Struct {{address:middle}} 'Middle' Struct {{address:base}} 'Base'
     |       `-ImplicitCastExpr {{address}} <col:36, col:43> '*Derived' pure-rvalue <LValueToRValue>
-    |         `-DeclRefExpr {{address}} <col:36, col:43> '*Derived' lvalue ParmVar {{address:derived_pointer}} 'derived' '*Derived'
+    |         `-DeclRefExpr {{address}} <col:36, col:43> '*Derived' lvalue 'derived' ParmVar {{address:derived_pointer}} 'derived' '*Derived'
     |-DeclStmt {{address}} <line:18:3, col:50>
     | `-VarGroupDecl {{address}} <col:3, col:50>
     |   |-VarDecl {{address}} <col:7, col:38> readonly_derived '*const Derived'
@@ -60,7 +60,7 @@ TranslationUnitDecl {{address}}
     |   |     `-NamedType {{address}} <col:31, col:38> 'Derived'
     |   `-ImplicitCastExpr {{address}} <col:42, col:49> '*const Derived' pure-rvalue <Qualification>
     |     `-ImplicitCastExpr {{address}} <col:42, col:49> '*Derived' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:42, col:49> '*Derived' lvalue ParmVar {{address:derived_pointer}} 'derived' '*Derived'
+    |       `-DeclRefExpr {{address}} <col:42, col:49> '*Derived' lvalue 'derived' ParmVar {{address:derived_pointer}} 'derived' '*Derived'
     |-DeclStmt {{address}} <line:19:3, col:51>
     | `-VarGroupDecl {{address}} <col:3, col:51>
     |   |-VarDecl {{address}} <col:7, col:40> safe_nested '*const *const Derived'
@@ -71,15 +71,15 @@ TranslationUnitDecl {{address}}
     |   |         `-NamedType {{address}} <col:33, col:40> 'Derived'
     |   `-ImplicitCastExpr {{address}} <col:44, col:50> '*const *const Derived' pure-rvalue <Qualification>
     |     `-ImplicitCastExpr {{address}} <col:44, col:50> '**Derived' pure-rvalue <LValueToRValue>
-    |       `-DeclRefExpr {{address}} <col:44, col:50> '**Derived' lvalue ParmVar {{address:nested_pointer}} 'nested' '**Derived'
+    |       `-DeclRefExpr {{address}} <col:44, col:50> '**Derived' lvalue 'nested' ParmVar {{address:nested_pointer}} 'nested' '**Derived'
     |-ExprStmt {{address}} <line:21:3, col:18>
-    | `-CallExpr {{address}} <col:3, col:17> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:8> 'func (*Derived) void' Function {{address:exact_mutable}} 'Exact' 'func (*Derived) void'
+    | `-CallExpr {{address}} <col:3, col:17> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:3, col:8> 'func (*Derived) void' non-object 'Exact' Function {{address:exact_mutable}} 'Exact' 'func (*Derived) void'
     |   `-ImplicitCastExpr {{address}} <col:9, col:16> '*Derived' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:9, col:16> '*Derived' lvalue ParmVar {{address:derived_pointer}} 'derived' '*Derived'
+    |     `-DeclRefExpr {{address}} <col:9, col:16> '*Derived' lvalue 'derived' ParmVar {{address:derived_pointer}} 'derived' '*Derived'
     `-ExprStmt {{address}} <line:22:3, col:17>
-      `-CallExpr {{address}} <col:3, col:16> 'void'
-        |-DeclRefExpr {{address}} <col:3, col:7> 'func (*Middle) void' Function {{address:near_middle}} 'Near' 'func (*Middle) void'
+      `-CallExpr {{address}} <col:3, col:16> 'void' non-object
+        |-DeclRefExpr {{address}} <col:3, col:7> 'func (*Middle) void' non-object 'Near' Function {{address:near_middle}} 'Near' 'func (*Middle) void'
         `-ImplicitCastExpr {{address}} <col:8, col:15> '*Middle' pure-rvalue <BaseSubobject> path Struct {{address:middle}} 'Middle'
           `-ImplicitCastExpr {{address}} <col:8, col:15> '*Derived' pure-rvalue <LValueToRValue>
-            `-DeclRefExpr {{address}} <col:8, col:15> '*Derived' lvalue ParmVar {{address:derived_pointer}} 'derived' '*Derived'
+            `-DeclRefExpr {{address}} <col:8, col:15> '*Derived' lvalue 'derived' ParmVar {{address:derived_pointer}} 'derived' '*Derived'

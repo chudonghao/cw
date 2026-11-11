@@ -28,11 +28,10 @@
 
 #include "ASTContext.h"
 #include "ASTVisitor.h"
-#include "CFGBuilder.h"
+#include "CFG.h"
+#include "ConstantEvaluation.h"
 #include "DefiniteInitialization.h"
-#include "GlobalInitLookup.h"
 #include "NamespaceContext.h"
-#include "SemaConstant.h"
 #include "SemaConversion.h"
 #include "SemaOverload.h"
 #include "ast.h"
@@ -353,8 +352,8 @@ ConstructorInitializationTargetKind ClassifyConstructorInitializationTarget(cons
   if (first->GetKind() == NodeKind::BaseSubobjectExpr) {
     const auto& base = static_cast<const BaseSubobjectExpr&>(*first);
     const StructType* required_base = constructor.target_type->GetDeclaration()->base_type;
-    const bool is_valid = !contains_parentheses && path.size() == 1 && target == first && base.op == expr::period &&
-                          base.base_path.size() == 1 && required_base &&
+    const bool is_valid = !contains_parentheses && path.size() == 1 && target == first &&
+                          base.op == MemberAccessKind::Dot && base.base_path.size() == 1 && required_base &&
                           base.GetDeclaration() == required_base->GetDeclaration();
     return is_valid ? ConstructorInitializationTargetKind::ValidPrologue
                     : ConstructorInitializationTargetKind::InvalidPrologue;
@@ -437,7 +436,7 @@ bool InitializationTargetContainsArrayElementProjection(const Expr* target) {
         break;
       case NodeKind::MemberExpr: {
         const auto& member = static_cast<const MemberExpr&>(*target);
-        if (member.op != expr::period) {
+        if (member.op != MemberAccessKind::Dot) {
           return false;
         }
         target = member.Base.get();
@@ -445,7 +444,7 @@ bool InitializationTargetContainsArrayElementProjection(const Expr* target) {
       }
       case NodeKind::BaseSubobjectExpr: {
         const auto& base = static_cast<const BaseSubobjectExpr&>(*target);
-        if (base.op != expr::period) {
+        if (base.op != MemberAccessKind::Dot) {
           return false;
         }
         target = base.Base.get();
@@ -534,35 +533,38 @@ const BuiltinType* DefaultIntegerType(ASTContext& ast_context, const llvm::APSIn
   return nullptr;
 }
 
-bool IsArithmeticBinaryOperator(expr::ExprGrammarSymbol op) {
+bool IsArithmeticBinaryOperator(BinaryOperatorKind op) {
   switch (op) {
-    case expr::plus:
-    case expr::minus:
-    case expr::star:
-    case expr::slash:
-    case expr::percent:
+    case BinaryOperatorKind::Add:
+    case BinaryOperatorKind::Subtract:
+    case BinaryOperatorKind::Multiply:
+    case BinaryOperatorKind::Divide:
+    case BinaryOperatorKind::Remainder:
       return true;
     default:
       return false;
   }
 }
 
-bool IsOrderedComparisonOperator(expr::ExprGrammarSymbol op) {
+bool IsOrderedComparisonOperator(BinaryOperatorKind op) {
   switch (op) {
-    case expr::less:
-    case expr::lessequal:
-    case expr::greater:
-    case expr::greaterequal:
+    case BinaryOperatorKind::Less:
+    case BinaryOperatorKind::LessEqual:
+    case BinaryOperatorKind::Greater:
+    case BinaryOperatorKind::GreaterEqual:
       return true;
     default:
       return false;
   }
 }
 
-bool IsEqualityOperator(expr::ExprGrammarSymbol op) { return op == expr::equalequal || op == expr::exclaimequal; }
+bool IsEqualityOperator(BinaryOperatorKind op) {
+  return op == BinaryOperatorKind::Equal || op == BinaryOperatorKind::NotEqual;
+}
 
-bool IsBitwiseBinaryOperator(expr::ExprGrammarSymbol op) {
-  return op == expr::amp || op == expr::pipe || op == expr::caret;
+bool IsBitwiseBinaryOperator(BinaryOperatorKind op) {
+  return op == BinaryOperatorKind::BitwiseAnd || op == BinaryOperatorKind::BitwiseOr ||
+         op == BinaryOperatorKind::BitwiseXor;
 }
 
 bool IsPointerValueType(QualType type) {
@@ -582,16 +584,6 @@ QualType CommonPointerValueType(ASTContext& ast_context, QualType left, QualType
     return left.WithoutConst();
   }
   return QualType(CommonPointerType(ast_context, left, right));
-}
-
-bool IsOverloadableUnaryOperator(expr::ExprGrammarSymbol op) {
-  return op == expr::plus || op == expr::minus || op == expr::exclaim || op == expr::tilde ||
-         IsIncrementDecrementOperator(op);
-}
-
-bool IsOverloadableBinaryOperator(expr::ExprGrammarSymbol op) {
-  return IsArithmeticBinaryOperator(op) || IsBitwiseBinaryOperator(op) || IsShiftBinaryOperator(op) ||
-         IsOrderedComparisonOperator(op) || IsEqualityOperator(op) || IsCompoundAssignmentOperator(op);
 }
 
 bool IsStructObjectOperand(const Expr& expression) {
@@ -1403,6 +1395,7 @@ void Sema::CompleteCallableInterfaces(TranslationUnitDecl& translation_unit,
   AssociateVirtualImplementations(translation_unit);
   ValidateRequiredOverrideDeclarations(translation_unit, inherited_slots);
   ValidateDeclarationModifiers(translation_unit);
+  ValidateProgramEntry(translation_unit);
 }
 
 void Sema::ValidateDeclarationModifiers(TranslationUnitDecl& translation_unit) {
@@ -1491,6 +1484,57 @@ void Sema::ValidateDeclarationModifiers(TranslationUnitDecl& translation_unit) {
         break;
     }
   }
+}
+
+void Sema::ValidateProgramEntry(TranslationUnitDecl& translation_unit) {
+  const auto* i32 = ast_context_->GetBuiltinType(BuiltinTypeKind::I32);
+  const auto* argv_type = ast_context_->GetPointerType(
+      QualType(ast_context_->GetPointerType(QualType(ast_context_->GetBuiltinType(BuiltinTypeKind::U8)))));
+  const FunctionDecl* entry = nullptr;
+  const auto check_function = [&](FunctionDecl& function) {
+    // Declarations already rejected by interface analysis would only repeat their diagnostics.
+    if (function.name != "main" || function.is_invalid || function.ContainsErrors()) return;
+    if (entry) {
+      Diagnose(function, kErrorDiagnostic, function.name_range, "program entry 'main' must not be overloaded");
+      EmitDiagnostic(kNoteDiagnostic, entry->name_range, "previous entry is here");
+      return;
+    }
+    entry = &function;
+    const auto* type = function.type.GetTypePtr()->AsFunctionType();
+    const auto& parameters = type->GetParameterTypes();
+    if (!ast_context_->GetTargetInfo().IsWasm32() &&
+        (type->GetReturnType() != i32 ||
+         !(parameters.empty() || (parameters.size() == 2 && parameters[0] == i32 && parameters[1] == argv_type)))) {
+      Diagnose(function, kErrorDiagnostic, function.name_range,
+               "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'");
+    }
+  };
+  // Global variables bind only during body analysis, which diagnoses a variable that conflicts with an
+  // interface binding or redefines an earlier variable; only the first unbound variable needs this check.
+  bool variable_checked = static_cast<bool>(LookupDirectName("main", *ast_context_->GetRootNamespace()));
+  for (const auto& declaration : translation_unit.Decls) {
+    if (!declaration) continue;
+    if (declaration->GetKind() == NodeKind::VarGroupDecl) {
+      for (const auto& variable : static_cast<VarGroupDecl&>(*declaration).Vars) {
+        if (!variable || variable->name != "main" || variable_checked) continue;
+        variable_checked = true;
+        if (!variable->is_invalid && !variable->ContainsErrors()) {
+          Diagnose(*variable, kErrorDiagnostic, variable->name_range, "program entry 'main' must be a function");
+        }
+      }
+    } else if (declaration->GetKind() == NodeKind::FunctionDecl) {
+      check_function(static_cast<FunctionDecl&>(*declaration));
+    } else if (declaration->GetKind() == NodeKind::StructDecl && declaration->modifier == DeclModifier::Import) {
+      const auto& structure = static_cast<StructDecl&>(*declaration);
+      if (!structure.VirtualDecl) continue;
+      for (const auto& slot : structure.VirtualDecl->Functions) {
+        // An imported concrete slot without an independent declaration still
+        // names an ordinary implementation in its enclosing namespace.
+        if (slot && !slot->is_abstract && !slot->implementation) check_function(*slot);
+      }
+    }
+  }
+  // The linker diagnoses a missing entry, including when an external object supplies it.
 }
 
 void Sema::ValidateExportedTypeUse(TypeSyntax* type_syntax, QualType type) {
@@ -2237,60 +2281,88 @@ void Sema::ValidateRequiredOverrideDeclarations(TranslationUnitDecl& translation
 
 bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
   BOOST_ASSERT(IsOperatorFunctionName(declaration.name));
-  if (declaration.name == "[]") {
+  const std::optional<OverloadedOperatorKind> op = GetOverloadedOperatorKind(declaration.name);
+  if (!op) {
     Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
              fmt::format("operator '{}' cannot be overloaded", declaration.name));
     return false;
   }
-  if (declaration.name == "()") {
-    if (declaration.ParmVars.empty()) {
-      Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-               "operator '()' requires a receiver parameter");
-      return false;
-    }
 
-    const auto& receiver_parameter = declaration.ParmVars.front();
-    if (!receiver_parameter || !receiver_parameter->type ||
-        (receiver_parameter->Type && receiver_parameter->Type->ContainsErrors())) {
-      return true;
-    }
-
-    const QualType receiver_type = receiver_parameter->type;
-    const ReferenceType* receiver = receiver_type ? receiver_type.GetTypePtr()->AsReferenceType() : nullptr;
-    if (!receiver || receiver->GetReferentType()->GetKind() != TypeKind::Struct) {
-      Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-               fmt::format("first parameter of operator '()' must be a reference to a struct, not '{}'",
-                           TypeSpelling(receiver_parameter->type)));
-      return false;
-    }
-    return true;
-  }
-
-  const expr::ExprGrammarSymbol op = expr::from_string(expr::ExprGrammarSymbol{}, declaration.name.c_str());
   const std::size_t arity = declaration.ParmVars.size();
   bool valid_arity = true;
-  if (op == expr::plus || op == expr::minus || IsIncrementDecrementOperator(op)) {
-    valid_arity = arity == 1 || arity == 2;
-    if (!valid_arity) {
-      Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-               fmt::format("operator '{}' requires one or two parameters", declaration.name));
+  switch (*op) {
+    case OverloadedOperatorKind::Call: {
+      if (declaration.ParmVars.empty()) {
+        Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+                 "operator '()' requires a receiver parameter");
+        return false;
+      }
+
+      const auto& receiver_parameter = declaration.ParmVars.front();
+      if (!receiver_parameter || !receiver_parameter->type ||
+          (receiver_parameter->Type && receiver_parameter->Type->ContainsErrors())) {
+        return true;
+      }
+
+      const QualType receiver_type = receiver_parameter->type;
+      const ReferenceType* receiver = receiver_type ? receiver_type.GetTypePtr()->AsReferenceType() : nullptr;
+      if (!receiver || receiver->GetReferentType()->GetKind() != TypeKind::Struct) {
+        Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+                 fmt::format("first parameter of operator '()' must be a reference to a struct, not '{}'",
+                             TypeSpelling(receiver_parameter->type)));
+        return false;
+      }
+      return true;
     }
-  } else if (op == expr::exclaim || op == expr::tilde) {
-    valid_arity = arity == 1;
-    if (!valid_arity) {
-      Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-               fmt::format("operator '{}' requires exactly one parameter", declaration.name));
-    }
-  } else if (IsOverloadableBinaryOperator(op) || op == expr::equal) {
-    valid_arity = arity == 2;
-    if (!valid_arity) {
-      Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-               fmt::format("operator '{}' requires exactly two parameters", declaration.name));
-    }
-  } else {
-    Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
-             fmt::format("operator '{}' cannot be overloaded", declaration.name));
-    return false;
+    case OverloadedOperatorKind::Plus:
+    case OverloadedOperatorKind::Minus:
+    case OverloadedOperatorKind::PlusPlus:
+    case OverloadedOperatorKind::MinusMinus:
+      valid_arity = arity == 1 || arity == 2;
+      if (!valid_arity) {
+        Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+                 fmt::format("operator '{}' requires one or two parameters", declaration.name));
+      }
+      break;
+    case OverloadedOperatorKind::Exclaim:
+    case OverloadedOperatorKind::Tilde:
+      valid_arity = arity == 1;
+      if (!valid_arity) {
+        Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+                 fmt::format("operator '{}' requires exactly one parameter", declaration.name));
+      }
+      break;
+    case OverloadedOperatorKind::Amp:
+    case OverloadedOperatorKind::Pipe:
+    case OverloadedOperatorKind::Caret:
+    case OverloadedOperatorKind::LessLess:
+    case OverloadedOperatorKind::GreaterGreater:
+    case OverloadedOperatorKind::Star:
+    case OverloadedOperatorKind::Slash:
+    case OverloadedOperatorKind::Percent:
+    case OverloadedOperatorKind::Less:
+    case OverloadedOperatorKind::LessEqual:
+    case OverloadedOperatorKind::Greater:
+    case OverloadedOperatorKind::GreaterEqual:
+    case OverloadedOperatorKind::EqualEqual:
+    case OverloadedOperatorKind::ExclaimEqual:
+    case OverloadedOperatorKind::Equal:
+    case OverloadedOperatorKind::PlusEqual:
+    case OverloadedOperatorKind::MinusEqual:
+    case OverloadedOperatorKind::StarEqual:
+    case OverloadedOperatorKind::SlashEqual:
+    case OverloadedOperatorKind::PercentEqual:
+    case OverloadedOperatorKind::AmpEqual:
+    case OverloadedOperatorKind::PipeEqual:
+    case OverloadedOperatorKind::CaretEqual:
+    case OverloadedOperatorKind::LessLessEqual:
+    case OverloadedOperatorKind::GreaterGreaterEqual:
+      valid_arity = arity == 2;
+      if (!valid_arity) {
+        Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
+                 fmt::format("operator '{}' requires exactly two parameters", declaration.name));
+      }
+      break;
   }
   if (!valid_arity || !declaration.type || declaration.type.GetTypePtr()->GetKind() != TypeKind::Function) {
     return false;
@@ -2298,14 +2370,14 @@ bool Sema::ValidateOperatorFunctionInterface(FunctionDecl& declaration) {
 
   const auto& function_type = static_cast<const FunctionType&>(*declaration.type.GetTypePtr());
   const auto& parameter_types = function_type.GetParameterTypes();
-  if (IsIncrementDecrementOperator(op) && arity == 2 &&
+  if ((*op == OverloadedOperatorKind::PlusPlus || *op == OverloadedOperatorKind::MinusMinus) && arity == 2 &&
       parameter_types[1] != ast_context_->GetBuiltinType(BuiltinTypeKind::I32)) {
     Diagnose(declaration, kErrorDiagnostic, NamedDeclarationRange(declaration),
              fmt::format("second parameter of postfix operator '{}' must be 'i32', not '{}'", declaration.name,
                          TypeSpelling(*parameter_types[1])));
     return false;
   }
-  if (op == expr::equal) {
+  if (*op == OverloadedOperatorKind::Equal) {
     const auto object_type = [](const Type* type) {
       const auto* reference = type->AsReferenceType();
       return reference ? reference->GetReferentType() : type;
@@ -2683,7 +2755,7 @@ void Sema::AnalyzeDeclarationBodies(TranslationUnitDecl& translation_unit) {
   PrepareGlobalBindings();
   {
     GlobalInitLookup global_lookup;
-    llvm::SaveAndRestore<SymbolTable*> local_scope(local_symbols_, &global_lookup.GetLocals());
+    llvm::SaveAndRestore<LocalScopeStack*> local_scope(local_symbols_, &global_lookup.GetLocals());
     // The entire source-ordered global pass finishes before any function body.
     for (auto* declaration : declarations_) {
       if (declaration->GetKind() != NodeKind::VarGroupDecl) continue;
@@ -2714,9 +2786,9 @@ void Sema::AnalyzeDeclarationBodies(TranslationUnitDecl& translation_unit) {
 }
 
 void Sema::AnalyzeFunction(FunctionDecl& declaration) {
-  SymbolTable locals;
+  LocalScopeStack locals;
   const LookupContext lookup_context{declaration.owning_namespace, &locals};
-  llvm::SaveAndRestore<SymbolTable*> local_scope(local_symbols_, &locals);
+  llvm::SaveAndRestore<LocalScopeStack*> local_scope(local_symbols_, &locals);
   llvm::SaveAndRestore<const LookupContext*> lookup_scope(lookup_context_, &lookup_context);
   BOOST_ASSERT(loop_depth_ == 0);
   BOOST_ASSERT(!current_function_);
@@ -2791,7 +2863,7 @@ class ConstructorCompletionInserter final : public ASTVisitor {
 }  // namespace
 
 void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) {
-  const auto global_cfg = CFGBuilder::Build(translation_unit);
+  const auto global_cfg = CFG::Build(translation_unit);
   for (const auto& finding : DefiniteInitializationAnalysis::Run(translation_unit, *global_cfg).findings) {
     BOOST_ASSERT(finding.owner);
     Diagnose(*const_cast<Node*>(finding.owner), kErrorDiagnostic, finding.range,
@@ -2811,7 +2883,7 @@ void Sema::AnalyzeDefiniteInitialization(TranslationUnitDecl& translation_unit) 
       continue;
     }
 
-    std::unique_ptr<CFG> cfg = CFGBuilder::Build(function);
+    std::unique_ptr<CFG> cfg = CFG::Build(function);
     BOOST_ASSERT(cfg);
     const ConstructorPrologueStatus constructor_prologue_status =
         function.GetKind() == NodeKind::ConstructorDecl
@@ -3312,7 +3384,8 @@ std::unique_ptr<Expr> Sema::AnalyzeConstantIntegerExprImpl(std::unique_ptr<Expr>
       unary.Operand = AnalyzeConstantIntegerExprImpl(std::move(unary.Operand));
       const BuiltinType* negated_literal_type = PrepareUnaryOperand(unary);
       InheritErrors(unary, unary.Operand.get());
-      supported = unary.op == expr::plus || unary.op == expr::minus || unary.op == expr::tilde;
+      supported = unary.op == UnaryOperatorKind::Plus || unary.op == UnaryOperatorKind::Minus ||
+                  unary.op == UnaryOperatorKind::BitwiseNot;
       if (supported) AnalyzeBuiltinUnaryOperator(unary);
       if (negated_literal_type) {
         MaterializeComptimeInteger(expression, negated_literal_type);
@@ -3693,11 +3766,11 @@ const BuiltinType* Sema::PrepareUnaryOperand(UnaryOperator& expression) {
   }
 
   const BuiltinType* suffix_type = GetIntegerLiteralSuffixType(*operand, *ast_context_);
-  if (expression.op == expr::minus && suffix_type && suffix_type->IsSignedInteger()) {
+  if (expression.op == UnaryOperatorKind::Minus && suffix_type && suffix_type->IsSignedInteger()) {
     return suffix_type;
   }
   // Unsuffixed sign chains remain exact. Other operations need a concrete operand type.
-  if (suffix_type || (expression.op != expr::plus && expression.op != expr::minus)) {
+  if (suffix_type || (expression.op != UnaryOperatorKind::Plus && expression.op != UnaryOperatorKind::Minus)) {
     MaterializeComptimeInteger(operand);
   }
   return nullptr;
@@ -3706,9 +3779,10 @@ const BuiltinType* Sema::PrepareUnaryOperand(UnaryOperator& expression) {
 std::unique_ptr<Expr> Sema::AnalyzeUnaryOperator(std::unique_ptr<Expr> expression) {
   BOOST_ASSERT(expression && expression->GetKind() == NodeKind::UnaryOperator);
   auto& unary = static_cast<UnaryOperator&>(*expression);
-  if (IsOverloadableUnaryOperator(unary.op) && unary.Operand && !unary.Operand->ContainsErrors() &&
-      unary.Operand->type && IsStructObjectOperand(*unary.Operand)) {
-    if (IsIncrementDecrementOperator(unary.op) && unary.is_postfix) {
+  const std::optional<OverloadedOperatorKind> overloaded = GetOverloadedOperator(unary.op);
+  if (overloaded && unary.Operand && !unary.Operand->ContainsErrors() && unary.Operand->type &&
+      IsStructObjectOperand(*unary.Operand)) {
+    if (IsPostfixOperator(unary.op)) {
       auto zero = std::make_unique<IntegerLiteral>();
       zero->range = unary.operator_range;
       zero->value = llvm::APSInt(32, false);
@@ -3716,10 +3790,10 @@ std::unique_ptr<Expr> Sema::AnalyzeUnaryOperator(std::unique_ptr<Expr> expressio
       std::unique_ptr<Expr> marker = std::move(zero);
       WrapInImplicitCast(marker, QualType(ast_context_->GetBuiltinType(BuiltinTypeKind::I32)),
                          ImplicitConversionKind::ComptimeIntegerMaterialization);
-      return AnalyzeOverloadableOperator(std::move(expression), unary.op, unary.operator_range,
+      return AnalyzeOverloadableOperator(std::move(expression), *overloaded, unary.operator_range,
                                          {&unary.Operand, &marker});
     }
-    return AnalyzeOverloadableOperator(std::move(expression), unary.op, unary.operator_range, {&unary.Operand});
+    return AnalyzeOverloadableOperator(std::move(expression), *overloaded, unary.operator_range, {&unary.Operand});
   }
   AnalyzeBuiltinUnaryOperator(unary);
   return expression;
@@ -3728,18 +3802,20 @@ std::unique_ptr<Expr> Sema::AnalyzeUnaryOperator(std::unique_ptr<Expr> expressio
 std::unique_ptr<Expr> Sema::AnalyzeBinaryOperator(std::unique_ptr<Expr> expression) {
   BOOST_ASSERT(expression && expression->GetKind() == NodeKind::BinaryOperator);
   auto& binary = static_cast<BinaryOperator&>(*expression);
+  // Simple assignment resolves operator '=' in assignment analysis.
+  BOOST_ASSERT(!binary.IsSimpleAssignment());
   const bool has_struct_operand =
       (binary.LHS && !binary.LHS->ContainsErrors() && binary.LHS->type && IsStructObjectOperand(*binary.LHS)) ||
       (binary.RHS && !binary.RHS->ContainsErrors() && binary.RHS->type && IsStructObjectOperand(*binary.RHS));
-  if (IsOverloadableBinaryOperator(binary.op) && has_struct_operand) {
-    return AnalyzeOverloadableOperator(std::move(expression), binary.op, binary.operator_range,
+  if (const auto overloaded = GetOverloadedOperator(binary.op); overloaded && has_struct_operand) {
+    return AnalyzeOverloadableOperator(std::move(expression), *overloaded, binary.operator_range,
                                        {&binary.LHS, &binary.RHS});
   }
   AnalyzeBuiltinBinaryOperator(binary);
   return expression;
 }
 
-std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> expression, expr::ExprGrammarSymbol op,
+std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> expression, OverloadedOperatorKind op,
                                                         SourceRange operator_range,
                                                         const std::vector<std::unique_ptr<Expr>*>& operand_slots) {
   BOOST_ASSERT(expression);
@@ -3758,7 +3834,7 @@ std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> ex
   }
   const auto semantic_arguments = MakeConversionSources(operands);
 
-  const std::string op_spelling(expr::to_string(op));
+  const std::string op_spelling(to_string(op));
   std::vector<const FunctionDecl*> function_declarations;
   const auto operator_lookup = cw::LookupName(NameSyntax::Identifier(op_spelling), *lookup_context_);
   if (const auto* symbol = operator_lookup.GetFunctions()) {
@@ -3766,7 +3842,7 @@ std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> ex
   }
 
   std::vector<OverloadCandidate> candidates(function_declarations.begin(), function_declarations.end());
-  if (op == expr::equal) {
+  if (op == OverloadedOperatorKind::Equal) {
     const Type* type = operands.front()->type.GetTypePtr();
     BOOST_ASSERT(type->AsStructType());
     if (type->GetTriviality() == TypeTriviality::Trivial) {
@@ -3832,7 +3908,8 @@ std::unique_ptr<Expr> Sema::AnalyzeOverloadableOperator(std::unique_ptr<Expr> ex
 
   if (std::holds_alternative<const FunctionType*>(selected.target)) {
     // Intrinsic assignment binds references and copies only after both operands have been evaluated.
-    BOOST_ASSERT(op == expr::equal && std::holds_alternative<std::vector<ConversionSequence>>(formation));
+    BOOST_ASSERT(op == OverloadedOperatorKind::Equal &&
+                 std::holds_alternative<std::vector<ConversionSequence>>(formation));
     CommitArgumentConversions(operand_slots, parameter_types, std::get<std::vector<ConversionSequence>>(formation));
     expression->type = QualType(parameter_types.front()->AsReferenceType()->GetReferentType());
     expression->value_category = ValueCategory::LValue;
@@ -3879,8 +3956,8 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
   if (IsIncrementDecrementOperator(expression.op)) {
     if (expression.Operand->value_category != ValueCategory::LValue || operand_type.IsConstQualified()) {
       Diagnose(expression, kErrorDiagnostic, expression.Operand->range,
-               fmt::format("unary operator '{}' requires a modifiable lvalue operand, not {}",
-                           expr::to_string(expression.op), DescribeExpressionType(operand_type)));
+               fmt::format("unary operator '{}' requires a modifiable lvalue operand, not {}", to_string(expression.op),
+                           DescribeExpressionType(operand_type)));
       return;
     }
     if (IsRawObjectPointerType(operand_type)) {
@@ -3888,22 +3965,22 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
         return;
       }
       expression.type = operand_type;
-      expression.value_category = expression.is_postfix ? ValueCategory::PureRValue : ValueCategory::LValue;
+      expression.value_category = IsPostfixOperator(expression.op) ? ValueCategory::PureRValue : ValueCategory::LValue;
       return;
     }
     const BuiltinType* builtin_type = operand_type.GetTypePtr()->AsBuiltinType();
     if (!builtin_type || !(builtin_type->IsInteger() || builtin_type->IsFloatingPoint())) {
       Diagnose(expression, kErrorDiagnostic, expression.range,
-               fmt::format("unary operator '{}' cannot be applied to {}", expr::to_string(expression.op),
+               fmt::format("unary operator '{}' cannot be applied to {}", to_string(expression.op),
                            DescribeExpressionType(operand_type, "type ")));
       return;
     }
     expression.type = operand_type;
-    expression.value_category = expression.is_postfix ? ValueCategory::PureRValue : ValueCategory::LValue;
+    expression.value_category = IsPostfixOperator(expression.op) ? ValueCategory::PureRValue : ValueCategory::LValue;
     return;
   }
 
-  if (expression.op == expr::amp) {
+  if (expression.op == UnaryOperatorKind::AddressOf) {
     if (operand_type.GetTypePtr()->GetKind() == TypeKind::FunctionOverloadSet) {
       expression.type = QualType(ast_context_->GetAddressOfFunctionOverloadSetType());
       expression.value_category = ValueCategory::None;
@@ -3919,7 +3996,7 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
     return;
   }
 
-  if (expression.op == expr::star) {
+  if (expression.op == UnaryOperatorKind::Dereference) {
     if (operand_type.GetTypePtr()->GetKind() != TypeKind::Pointer) {
       Diagnose(
           expression, kErrorDiagnostic, expression.range,
@@ -3940,7 +4017,7 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
     return;
   }
 
-  if (expression.op == expr::move_) {
+  if (expression.op == UnaryOperatorKind::Move) {
     if (expression.Operand->value_category == ValueCategory::LValue &&
         (operand_type && operand_type.GetTypePtr()->IsObject())) {
       expression.type = operand_type;
@@ -3952,7 +4029,7 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
     return;
   }
 
-  if (expression.op == expr::exclaim) {
+  if (expression.op == UnaryOperatorKind::LogicalNot) {
     if (operand_type.WithoutConst() == QualType(ast_context_->GetBuiltinType(BuiltinTypeKind::Bool))) {
       ApplyDefaultValueConversion(expression.Operand);
       expression.type = operand_type.WithoutConst();
@@ -3964,9 +4041,10 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
     return;
   }
 
-  if (expression.op != expr::plus && expression.op != expr::minus && expression.op != expr::tilde) {
+  if (expression.op != UnaryOperatorKind::Plus && expression.op != UnaryOperatorKind::Minus &&
+      expression.op != UnaryOperatorKind::BitwiseNot) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("unary operator '{}' is not supported", expr::to_string(expression.op)));
+             fmt::format("unary operator '{}' is not supported", to_string(expression.op)));
     return;
   }
 
@@ -3976,7 +4054,7 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
   }
 
   const BuiltinType* builtin_type = operand_type.GetTypePtr()->AsBuiltinType();
-  if (expression.op != expr::tilde && builtin_type && builtin_type->IsFloatingPoint()) {
+  if (expression.op != UnaryOperatorKind::BitwiseNot && builtin_type && builtin_type->IsFloatingPoint()) {
     ApplyDefaultValueConversion(expression.Operand);
     expression.type = operand_type.WithoutConst();
     expression.value_category = ValueCategory::PureRValue;
@@ -3986,12 +4064,12 @@ void Sema::AnalyzeBuiltinUnaryOperator(UnaryOperator& expression) {
   const BuiltinType* integer_type = builtin_type && builtin_type->IsInteger() ? builtin_type : nullptr;
   if (!integer_type) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("unary operator '{}' cannot be applied to {}", expr::to_string(expression.op),
+             fmt::format("unary operator '{}' cannot be applied to {}", to_string(expression.op),
                          DescribeExpressionType(operand_type, "type ")));
     return;
   }
 
-  if (expression.op != expr::minus || integer_type->IsSignedInteger()) {
+  if (expression.op != UnaryOperatorKind::Minus || integer_type->IsSignedInteger()) {
     ApplyDefaultValueConversion(expression.Operand);
     expression.type = operand_type.WithoutConst();
     expression.value_category = ValueCategory::PureRValue;
@@ -4023,7 +4101,7 @@ void Sema::AnalyzeBuiltinBinaryOperator(BinaryOperator& expression) {
   const bool is_logical = IsLogicalBinaryOperator(op);
   if (!is_arithmetic && !is_bitwise && !is_shift && !is_ordered_comparison && !is_equality && !is_logical) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("binary operator '{}' is not supported", expr::to_string(expression.op)));
+             fmt::format("binary operator '{}' is not supported", to_string(expression.op)));
     return;
   }
   if (const auto pointer_arithmetic =
@@ -4043,7 +4121,7 @@ void Sema::AnalyzeBuiltinBinaryOperator(BinaryOperator& expression) {
       return;
     }
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("binary operator '{}' cannot be applied to {}", expr::to_string(expression.op),
+             fmt::format("binary operator '{}' cannot be applied to {}", to_string(expression.op),
                          DescribeOperandTypes(expression.LHS->type, expression.RHS->type, "types ")));
     return;
   }
@@ -4068,7 +4146,7 @@ void Sema::AnalyzeBuiltinBinaryOperator(BinaryOperator& expression) {
   const auto* left_builtin = expression.LHS->type.GetTypePtr()->AsBuiltinType();
   const auto* right_builtin = expression.RHS->type.GetTypePtr()->AsBuiltinType();
   const bool invalid_integer_operands =
-      (op == expr::percent || is_bitwise || is_shift) &&
+      (op == BinaryOperatorKind::Remainder || is_bitwise || is_shift) &&
       (!left_builtin || !left_builtin->IsInteger() || !right_builtin || !right_builtin->IsInteger());
   if (is_shift && !invalid_integer_operands) {
     if (!is_compound_assignment) {
@@ -4093,7 +4171,7 @@ void Sema::AnalyzeBuiltinBinaryOperator(BinaryOperator& expression) {
   }
   if (!common_type) {
     Diagnose(expression, kErrorDiagnostic, expression.range,
-             fmt::format("binary operator '{}' cannot be applied to {}", expr::to_string(expression.op),
+             fmt::format("binary operator '{}' cannot be applied to {}", to_string(expression.op),
                          DescribeOperandTypes(expression.LHS->type, expression.RHS->type, "types ")));
     return;
   }
@@ -4135,7 +4213,7 @@ void Sema::AnalyzeBuiltinPointerArithmetic(BinaryOperator& expression, PointerAr
     const auto* common_pointer = CommonQualifiedPointerType(*ast_context_, expression.LHS->type, expression.RHS->type);
     if (!common_pointer) {
       Diagnose(expression, kErrorDiagnostic, expression.range,
-               fmt::format("binary operator '{}' cannot be applied to {}", expr::to_string(expression.op),
+               fmt::format("binary operator '{}' cannot be applied to {}", to_string(expression.op),
                            DescribeOperandTypes(expression.LHS->type, expression.RHS->type, "types ")));
       return;
     }
@@ -4389,8 +4467,8 @@ std::unique_ptr<Expr> Sema::AnalyzeAssignment(std::unique_ptr<Expr> expression_n
 
   const QualType target_type = expression.LHS->type;
   if (!expression.IsCompoundAssignment() && target_type.GetTypePtr()->AsStructType()) {
-    return AnalyzeOverloadableOperator(std::move(expression_node), expr::equal, expression.operator_range,
-                                       {&expression.LHS, &expression.RHS});
+    return AnalyzeOverloadableOperator(std::move(expression_node), OverloadedOperatorKind::Equal,
+                                       expression.operator_range, {&expression.LHS, &expression.RHS});
   }
 
   if (expression.LHS->value_category != ValueCategory::LValue || target_type.IsConstQualified() ||
@@ -4441,7 +4519,7 @@ std::unique_ptr<Expr> Sema::AnalyzeAssignment(std::unique_ptr<Expr> expression_n
     auto element = std::make_unique<BinaryOperator>();
     element->range = expression.range;
     element->operator_range = expression.operator_range;
-    element->op = expr::equal;
+    element->op = BinaryOperatorKind::Assign;
     element->LHS = std::move(target);
     element->RHS = std::move(source);
     auto operation = AnalyzeAssignment(std::move(element));
@@ -4554,7 +4632,7 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
   while (root && (root->GetKind() == NodeKind::MemberExpr || root->GetKind() == NodeKind::BaseSubobjectExpr)) {
     path.push_back(root);
     const Expr* base = nullptr;
-    expr::ExprGrammarSymbol access_operator{};
+    MemberAccessKind access_operator{};
     bool has_declaration = false;
     if (root->GetKind() == NodeKind::MemberExpr) {
       const auto& member = static_cast<const MemberExpr&>(*root);
@@ -4568,7 +4646,7 @@ void Sema::AnalyzeInitializationExpr(InitializationExpr& expression, ExpressionU
       has_declaration = base_subobject.GetDeclaration();
     }
     base = IgnoreImplicitBaseSubobjectCasts(base);
-    if (access_operator == expr::arrow || !has_declaration || !base || !base->type) {
+    if (access_operator == MemberAccessKind::Arrow || !has_declaration || !base || !base->type) {
       if (target_is_valid) {
         Diagnose(*expression.Target, kErrorDiagnostic, expression.Target->range,
                  "initialization target must name an object directly or through '.'");
@@ -5038,7 +5116,6 @@ std::unique_ptr<Expr> Sema::AnalyzeDeclRefExpr(std::unique_ptr<Expr> expression,
 std::unique_ptr<Expr> Sema::AnalyzeMemberExpr(std::unique_ptr<Expr> expression_node) {
   BOOST_ASSERT(expression_node && expression_node->GetKind() == NodeKind::MemberExpr);
   auto& expression = static_cast<MemberExpr&>(*expression_node);
-  BOOST_ASSERT(expression.op == expr::period || expression.op == expr::arrow);
   expression.declaration = nullptr;
   expression.type = QualType{};
   expression.value_category = ValueCategory::None;
@@ -5049,7 +5126,7 @@ std::unique_ptr<Expr> Sema::AnalyzeMemberExpr(std::unique_ptr<Expr> expression_n
   const StructDecl* structure = nullptr;
   bool result_is_const = false;
   ValueCategory result_category = ValueCategory::None;
-  if (expression.op == expr::period) {
+  if (expression.op == MemberAccessKind::Dot) {
     const QualType base_type = expression.Base->type;
     if (base_type.GetTypePtr()->GetKind() != TypeKind::Struct ||
         expression.Base->value_category == ValueCategory::None) {
@@ -5126,7 +5203,7 @@ std::unique_ptr<Expr> Sema::AnalyzeMemberExpr(std::unique_ptr<Expr> expression_n
   }
 
   if (selected_base_type) {
-    if (expression.op == expr::period && expression.Base->value_category == ValueCategory::PureRValue) {
+    if (expression.op == MemberAccessKind::Dot && expression.Base->value_category == ValueCategory::PureRValue) {
       MaterializeObject(expression.Base);
     }
 
@@ -5154,7 +5231,7 @@ std::unique_ptr<Expr> Sema::AnalyzeMemberExpr(std::unique_ptr<Expr> expression_n
     return expression_node;
   }
 
-  if (expression.op == expr::period && expression.Base->value_category == ValueCategory::PureRValue) {
+  if (expression.op == MemberAccessKind::Dot && expression.Base->value_category == ValueCategory::PureRValue) {
     MaterializeObject(expression.Base);
   }
 
@@ -5164,7 +5241,8 @@ std::unique_ptr<Expr> Sema::AnalyzeMemberExpr(std::unique_ptr<Expr> expression_n
     auto base = std::make_unique<ImplicitCastExpr>();
     base->range = expression.Base->range;
     const QualType object_type(ast_context_->GetStructType(current), result_is_const);
-    base->type = expression.op == expr::period ? object_type : QualType(ast_context_->GetPointerType(object_type));
+    base->type =
+        expression.op == MemberAccessKind::Dot ? object_type : QualType(ast_context_->GetPointerType(object_type));
     base->value_category = expression.Base->value_category;
     base->conversion_kind = ImplicitConversionKind::BaseSubobject;
     base->base_path = std::move(base_path);
@@ -5876,7 +5954,6 @@ void Sema::AnalyzeDestructorCallExpr(DestructorCallExpr& expression) {
 }
 
 void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
-  BOOST_ASSERT(expression.op == expr::period || expression.op == expr::arrow);
   expression.type = QualType{};
   expression.value_category = ValueCategory::None;
 
@@ -5885,7 +5962,7 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
   ValueCategory receiver_category = ValueCategory::None;
   bool receiver_is_valid = false;
   if (expression.Receiver && !expression.Receiver->ContainsErrors() && expression.Receiver->type) {
-    if (expression.op == expr::period) {
+    if (expression.op == MemberAccessKind::Dot) {
       receiver_type = expression.Receiver->type;
       receiver_category = expression.Receiver->value_category;
       if ((receiver_type && receiver_type.GetTypePtr()->IsObject()) && receiver_category != ValueCategory::None) {
@@ -5904,7 +5981,7 @@ void Sema::AnalyzeReceiverCallExpr(ReceiverCallExpr& expression) {
           auto dereference = std::make_unique<UnaryOperator>();
           dereference->range = expression.Receiver->range;
           dereference->operator_range = expression.operator_range;
-          dereference->op = expr::star;
+          dereference->op = UnaryOperatorKind::Dereference;
           dereference->type = pointee_type;
           dereference->value_category = ValueCategory::LValue;
           dereference->Operand = std::move(expression.Receiver);

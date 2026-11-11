@@ -14,9 +14,12 @@
 #include "ASTDumpTest.h"
 #include "cw/ASTContext.h"
 #include "cw/Diagnostic.h"
+#include "cw/ExprGrammar.h"
 #include "cw/Lexer.h"
 #include "cw/Parser.h"
 #include "cw/Source.h"
+#include "cw/grammar/Grammar.h"
+#include "cw/grammar/GrammarAnalyzer.h"
 
 class ParserTest : public ::testing::Test {
   std::vector<cw::Source> sources_;
@@ -61,7 +64,8 @@ class ParserTest : public ::testing::Test {
   }
 
   void ExpectAstDump(std::string_view expected_dump) {
-    cw::test::ExpectAstDump(*ast_context_.GetTranslationUnitDecl(), sources_, expected_dump);
+    cw::test::ExpectAstDump(*ast_context_.GetTranslationUnitDecl(), sources_, cw::ASTDumper::Stage::Parsed,
+                            expected_dump);
   }
 
   void TearDown() override {
@@ -1178,7 +1182,7 @@ TEST_F(ParserTest, DistinguishesConstructionAndDestructionCallNodes) {
     |-ExprStmt {{address}} <col:18, col:23>
     | `-DeclRefExpr {{address}} <col:18, col:22> 'this'
     |-ExprStmt {{address}} <col:24, col:41>
-    | `-ConstructionExpr {{address}} <col:24, col:40> complete-object target <col:33, col:34> 'T'
+    | `-ConstructionExpr {{address}} <col:24, col:40> target <col:33, col:34> 'T'
     |   |-DeclRefExpr {{address}} <col:30, col:31> 'p'
     |   |-IntegerLiteral {{address}} <col:35, col:36> 2
     |   `-DeclRefExpr {{address}} <col:38, col:39> 'x'
@@ -1782,4 +1786,13 @@ TEST_F(ParserTest, DoesNotCarryImportModifierAcrossFiles) {
   ExpectAstDump(R"(TranslationUnitDecl {{address}} contains-errors
 `-FunctionDecl {{address}} <last.cw:1:1, col:12> F
   `-CompoundStmt {{address}} <col:10, col:12>)");
+}
+
+TEST(Grammar, CW_Expr) {
+  using namespace cw;
+
+  grammar::Grammar g = ExprGrammar();
+  auto ga = grammar::GrammarAnalyzer::Analyze(g, grammar::GrammarAnalyzer::ALL);
+  ASSERT_FALSE(ga.IsLR0());
+  ASSERT_TRUE(ga.IsSLR());
 }

@@ -53,7 +53,7 @@ const DeclRefExpr* AddressedFunctionName(const Expr& expression) {
   }
 
   const auto& address = static_cast<const UnaryOperator&>(*unwrapped);
-  if (address.op != expr::amp || !address.Operand) {
+  if (address.op != UnaryOperatorKind::AddressOf || !address.Operand) {
     return nullptr;
   }
   const Expr* operand = address.Operand->IgnoreParens();

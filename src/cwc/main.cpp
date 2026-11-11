@@ -125,52 +125,6 @@ bool ReadSources(const CompileOptions& options, std::vector<cw::Source>& sources
   return true;
 }
 
-bool CheckProgramEntry(cw::ASTContext& context, cw::DiagnosticEngine& diagnostics) {
-  const auto* i32 = context.GetBuiltinType(cw::BuiltinTypeKind::I32);
-  const auto* argv_type = context.GetPointerType(
-      cw::QualType(context.GetPointerType(cw::QualType(context.GetBuiltinType(cw::BuiltinTypeKind::U8)))));
-  const cw::FunctionDecl* entry = nullptr;
-  const auto check_function = [&](const cw::FunctionDecl& function) {
-    if (function.name != "main") return;
-    if (entry) {
-      diagnostics.Add(cw::kErrorDiagnostic, function.name_range, "program entry 'main' must not be overloaded");
-      diagnostics.Add(cw::kNoteDiagnostic, entry->name_range, "previous entry is here");
-      return;
-    }
-    entry = &function;
-    const auto* type = function.type.GetTypePtr()->AsFunctionType();
-    const auto& parameters = type->GetParameterTypes();
-    if (!context.GetTargetInfo().IsWasm32() &&
-        (type->GetReturnType() != i32 ||
-         !(parameters.empty() || (parameters.size() == 2 && parameters[0] == i32 && parameters[1] == argv_type)))) {
-      diagnostics.Add(cw::kErrorDiagnostic, function.name_range,
-                      "program entry must have signature 'func main() i32' or 'func main(argc i32, argv **u8) i32'");
-    }
-  };
-  for (const auto& declaration : context.GetTranslationUnitDecl()->Decls) {
-    if (declaration->GetKind() == cw::NodeKind::VarGroupDecl) {
-      for (const auto& variable : static_cast<const cw::VarGroupDecl&>(*declaration).Vars) {
-        if (variable->name == "main") {
-          diagnostics.Add(cw::kErrorDiagnostic, variable->name_range, "program entry 'main' must be a function");
-        }
-      }
-    } else if (declaration->GetKind() == cw::NodeKind::FunctionDecl) {
-      check_function(static_cast<const cw::FunctionDecl&>(*declaration));
-    } else if (declaration->GetKind() == cw::NodeKind::StructDecl &&
-               declaration->modifier == cw::DeclModifier::Import) {
-      const auto& structure = static_cast<const cw::StructDecl&>(*declaration);
-      if (!structure.VirtualDecl) continue;
-      for (const auto& slot : structure.VirtualDecl->Functions) {
-        // An imported concrete slot without an independent declaration still
-        // names an ordinary implementation in its enclosing namespace.
-        if (!slot->is_abstract && !slot->implementation) check_function(*slot);
-      }
-    }
-  }
-  // The linker diagnoses a missing entry, including when an external object supplies it.
-  return !diagnostics.HasErrors();
-}
-
 std::unique_ptr<llvm::Module> GenerateModule(const std::vector<cw::Source>& sources, cw::DiagnosticEngine& diagnostics,
                                              llvm::LLVMContext& llvm_context, const cw::TargetInfo& target_info,
                                              const llvm::TargetMachine& target, std::string* interface_text) {
@@ -192,9 +146,6 @@ std::unique_ptr<llvm::Module> GenerateModule(const std::vector<cw::Source>& sour
   sema.SetASTContext(&ast_context);
   sema();
   if (diagnostics.HasErrors()) {
-    return nullptr;
-  }
-  if (!CheckProgramEntry(ast_context, diagnostics)) {
     return nullptr;
   }
   if (interface_text) {

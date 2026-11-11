@@ -18,13 +18,13 @@ TranslationUnitDecl {{address}}
 | |-ReturnVarDecl {{address:draw_return}} <col:66, col:69> 'i32'
 | | `-BuiltinType {{address}} <col:66, col:69> 'i32'
 | `-CompoundStmt {{address}} <col:70, line:9:2>
-|   `-ImplicitResultInitializationExpr {{address}} <line:8:3, col:8> 'void' ReturnVar {{address:draw_return}} 'i32'
+|   `-ImplicitResultInitializationExpr {{address}} <line:8:3, col:8> 'void' non-object ReturnVar {{address:draw_return}} 'i32'
 |     `-ImplicitCastExpr {{address}} <col:3, col:8> 'i32' pure-rvalue <LValueToRValue>
-|       `-DeclRefExpr {{address}} <col:3, col:8> 'i32' lvalue ParmVar {{address:draw_value}} 'value' 'i32'
-|-ConstructorDecl {{address}} <line:11:1, col:40> VirtualInterfacePointerTarget target Struct {{address:target}} 'VirtualInterfacePointerTarget' 'func () void'
+|       `-DeclRefExpr {{address}} <col:3, col:8> 'i32' lvalue 'value' ParmVar {{address:draw_value}} 'value' 'i32'
+|-ConstructorDecl {{address}} <line:11:1, col:40> VirtualInterfacePointerTarget target Struct {{address:target}} 'VirtualInterfacePointerTarget' 'ctor VirtualInterfacePointerTarget()'
 | `-CompoundStmt {{address}} <col:38, col:40>
 |   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
-|-DestructorDecl {{address}} <line:13:1, col:40> VirtualInterfacePointerTarget target Struct {{address:target}} 'VirtualInterfacePointerTarget' 'func () void'
+|-DestructorDecl {{address}} <line:13:1, col:40> VirtualInterfacePointerTarget target Struct {{address:target}} 'VirtualInterfacePointerTarget' 'dtor VirtualInterfacePointerTarget()'
 | `-CompoundStmt {{address}} <col:38, col:40>
 `-FunctionDecl {{address}} <line:15:1, line:20:2> VirtualInterfacePointer 'func (&copy VirtualInterfacePointerTarget) i32'
   |-ParmVarDecl {{address:object}} <line:15:30, col:72> object '&copy VirtualInterfacePointerTarget'
@@ -43,8 +43,8 @@ TranslationUnitDecl {{address}}
     |   |     |-BuiltinType {{address}} <col:58, col:61> 'i32'
     |   |     `-BuiltinType {{address}} <col:63, col:66> 'i32'
     |   `-ImplicitOverloadSetSelectionExpr {{address}} <col:70, col:75> '*func (&copy VirtualInterfacePointerTarget, i32) i32' pure-rvalue Function {{address:draw_definition}} 'Draw' 'func (&copy VirtualInterfacePointerTarget, i32) i32'
-    |     `-UnaryOperator {{address}} <col:70, col:75> '<address-of-function-overload-set>' '&'
-    |       `-DeclRefExpr {{address}} <col:71, col:75> '<function-overload-set>' 'Draw'
+    |     `-UnaryOperator {{address}} <col:70, col:75> '<address-of-function-overload-set>' non-object '&'
+    |       `-DeclRefExpr {{address}} <col:71, col:75> '<function-overload-set>' non-object 'Draw' overload-set
     |-DeclStmt {{address}} <line:17:3, col:82>
     | `-VarGroupDecl {{address}} <col:3, col:82>
     |   |-VarDecl {{address:slot}} <col:7, col:72> slot 'virtual *func (&copy VirtualInterfacePointerTarget, i32) i32'
@@ -56,19 +56,19 @@ TranslationUnitDecl {{address}}
     |   |       |-BuiltinType {{address}} <col:64, col:67> 'i32'
     |   |       `-BuiltinType {{address}} <col:69, col:72> 'i32'
     |   `-ImplicitOverloadSetSelectionExpr {{address}} <col:76, col:81> 'virtual *func (&copy VirtualInterfacePointerTarget, i32) i32' pure-rvalue VirtualFunction {{address:draw_interface}} 'Draw' 'func (&copy VirtualInterfacePointerTarget, i32) i32'
-    |     `-UnaryOperator {{address}} <col:76, col:81> '<address-of-function-overload-set>' '&'
-    |       `-DeclRefExpr {{address}} <col:77, col:81> '<function-overload-set>' 'Draw'
-    `-ImplicitResultInitializationExpr {{address}} <line:19:3, col:38> 'void' ReturnVar {{address:return}} 'i32'
+    |     `-UnaryOperator {{address}} <col:76, col:81> '<address-of-function-overload-set>' non-object '&'
+    |       `-DeclRefExpr {{address}} <col:77, col:81> '<function-overload-set>' non-object 'Draw' overload-set
+    `-ImplicitResultInitializationExpr {{address}} <line:19:3, col:38> 'void' non-object ReturnVar {{address:return}} 'i32'
       `-BinaryOperator {{address}} <col:3, col:38> 'i32' pure-rvalue '+'
         |-CallExpr {{address}} <col:3, col:20> 'i32' pure-rvalue
         | |-ImplicitCastExpr {{address}} <col:3, col:9> '*func (&copy VirtualInterfacePointerTarget, i32) i32' pure-rvalue <LValueToRValue>
-        | | `-DeclRefExpr {{address}} <col:3, col:9> '*func (&copy VirtualInterfacePointerTarget, i32) i32' lvalue Var {{address:direct}} 'direct' '*func (&copy VirtualInterfacePointerTarget, i32) i32'
-        | |-DeclRefExpr {{address}} <col:10, col:16> 'const VirtualInterfacePointerTarget' lvalue ParmVar {{address:object}} 'object' '&copy VirtualInterfacePointerTarget'
+        | | `-DeclRefExpr {{address}} <col:3, col:9> '*func (&copy VirtualInterfacePointerTarget, i32) i32' lvalue 'direct' Var {{address:direct}} 'direct' '*func (&copy VirtualInterfacePointerTarget, i32) i32'
+        | |-DeclRefExpr {{address}} <col:10, col:16> 'const VirtualInterfacePointerTarget' lvalue 'object' ParmVar {{address:object}} 'object' '&copy VirtualInterfacePointerTarget'
         | `-ImplicitCastExpr {{address}} <col:18, col:19> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-        |   `-IntegerLiteral {{address}} <col:18, col:19> 'comptime_int' 1
+        |   `-IntegerLiteral {{address}} <col:18, col:19> 'comptime_int' non-object 1
         `-CallExpr {{address}} <col:23, col:38> 'i32' pure-rvalue
           |-ImplicitCastExpr {{address}} <col:23, col:27> 'virtual *func (&copy VirtualInterfacePointerTarget, i32) i32' pure-rvalue <LValueToRValue>
-          | `-DeclRefExpr {{address}} <col:23, col:27> 'virtual *func (&copy VirtualInterfacePointerTarget, i32) i32' lvalue Var {{address:slot}} 'slot' 'virtual *func (&copy VirtualInterfacePointerTarget, i32) i32'
-          |-DeclRefExpr {{address}} <col:28, col:34> 'const VirtualInterfacePointerTarget' lvalue ParmVar {{address:object}} 'object' '&copy VirtualInterfacePointerTarget'
+          | `-DeclRefExpr {{address}} <col:23, col:27> 'virtual *func (&copy VirtualInterfacePointerTarget, i32) i32' lvalue 'slot' Var {{address:slot}} 'slot' 'virtual *func (&copy VirtualInterfacePointerTarget, i32) i32'
+          |-DeclRefExpr {{address}} <col:28, col:34> 'const VirtualInterfacePointerTarget' lvalue 'object' ParmVar {{address:object}} 'object' '&copy VirtualInterfacePointerTarget'
           `-ImplicitCastExpr {{address}} <col:36, col:37> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
-            `-IntegerLiteral {{address}} <col:36, col:37> 'comptime_int' 2
+            `-IntegerLiteral {{address}} <col:36, col:37> 'comptime_int' non-object 2

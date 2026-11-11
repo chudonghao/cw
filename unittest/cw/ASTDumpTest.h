@@ -68,9 +68,10 @@ inline AstDumpLinePattern BuildAstDumpLinePattern(std::string_view line) {
 }  // namespace detail
 
 /// \brief Compares an AST dump and verifies named address identity.
-inline void ExpectAstDump(Node& node, const std::vector<Source>& sources, std::string_view expected_dump) {
+inline void ExpectAstDump(Node& node, const std::vector<Source>& sources, ASTDumper::Stage stage,
+                          std::string_view expected_dump) {
   std::ostringstream output;
-  ASTDumper dumper(output, sources);
+  ASTDumper dumper(output, sources, stage);
   dumper.Dump(node);
 
   // Share captures across lines so declaration references must retain address identity.

@@ -37,9 +37,9 @@ TranslationUnitDecl {{address}}
 | | `-ReferenceType {{address}} <col:38, col:48> '&copy'
 | |   `-NamedType {{address}} <col:44, col:48> 'Base'
 | `-CompoundStmt {{address}} <col:49, line:19:2>
-|   `-ImplicitResultInitializationExpr {{address}} <line:18:3, col:8> 'void' ReturnVar {{address:return_result}} '&copy Base'
+|   `-ImplicitResultInitializationExpr {{address}} <line:18:3, col:8> 'void' non-object ReturnVar {{address:return_result}} '&copy Base'
 |     `-ImplicitCastExpr {{address}} <col:3, col:8> 'const Base' lvalue <BaseSubobject> path Struct {{address:middle}} 'Middle' Struct {{address:base}} 'Base'
-|       `-DeclRefExpr {{address}} <col:3, col:8> 'const Derived' lvalue ParmVar {{address:return_value}} 'value' '&copy Derived'
+|       `-DeclRefExpr {{address}} <col:3, col:8> 'const Derived' lvalue 'value' ParmVar {{address:return_value}} 'value' '&copy Derived'
 `-FunctionDecl {{address}} <line:21:1, line:29:2> DerivedToBaseReferenceBinding 'func (&mut Derived, *Derived) void'
   |-ParmVarDecl {{address:case_value}} <line:21:36, col:54> value '&mut Derived'
   | `-ReferenceType {{address}} <col:42, col:54> '&mut'
@@ -54,34 +54,34 @@ TranslationUnitDecl {{address}}
     |   | `-ReferenceType {{address}} <col:12, col:21> '&mut'
     |   |   `-NamedType {{address}} <col:17, col:21> 'Base'
     |   `-ImplicitCastExpr {{address}} <col:25, col:30> 'Base' lvalue <BaseSubobject> path Struct {{address:middle}} 'Middle' Struct {{address:base}} 'Base'
-    |     `-DeclRefExpr {{address}} <col:25, col:30> 'Derived' lvalue ParmVar {{address:case_value}} 'value' '&mut Derived'
+    |     `-DeclRefExpr {{address}} <col:25, col:30> 'Derived' lvalue 'value' ParmVar {{address:case_value}} 'value' '&mut Derived'
     |-ExprStmt {{address}} <line:24:3, col:16>
-    | `-CallExpr {{address}} <col:3, col:15> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:8> 'func (&copy Derived) void' Function {{address:exact_derived}} 'Exact' 'func (&copy Derived) void'
+    | `-CallExpr {{address}} <col:3, col:15> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:3, col:8> 'func (&copy Derived) void' non-object 'Exact' Function {{address:exact_derived}} 'Exact' 'func (&copy Derived) void'
     |   `-ImplicitCastExpr {{address}} <col:9, col:14> 'const Derived' lvalue <NoOp>
-    |     `-DeclRefExpr {{address}} <col:9, col:14> 'Derived' lvalue ParmVar {{address:case_value}} 'value' '&mut Derived'
+    |     `-DeclRefExpr {{address}} <col:9, col:14> 'Derived' lvalue 'value' ParmVar {{address:case_value}} 'value' '&mut Derived'
     |-ExprStmt {{address}} <line:25:3, col:15>
-    | `-CallExpr {{address}} <col:3, col:14> 'void'
-    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy Middle) void' Function {{address:near_middle}} 'Near' 'func (&copy Middle) void'
+    | `-CallExpr {{address}} <col:3, col:14> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy Middle) void' non-object 'Near' Function {{address:near_middle}} 'Near' 'func (&copy Middle) void'
     |   `-ImplicitCastExpr {{address}} <col:8, col:13> 'const Middle' lvalue <NoOp>
     |     `-ImplicitCastExpr {{address}} <col:8, col:13> 'Middle' lvalue <BaseSubobject> path Struct {{address:middle}} 'Middle'
-    |       `-DeclRefExpr {{address}} <col:8, col:13> 'Derived' lvalue ParmVar {{address:case_value}} 'value' '&mut Derived'
+    |       `-DeclRefExpr {{address}} <col:8, col:13> 'Derived' lvalue 'value' ParmVar {{address:case_value}} 'value' '&mut Derived'
     |-ExprStmt {{address}} <line:26:3, col:19>
-    | `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' .
+    | `-ReceiverCallExpr {{address}} <col:3, col:18> 'void' non-object .
     |   |-ImplicitCastExpr {{address}} <col:3, col:8> 'const Base' lvalue <NoOp>
     |   | `-ImplicitCastExpr {{address}} <col:3, col:8> 'Base' lvalue <BaseSubobject> path Struct {{address:middle}} 'Middle' Struct {{address:base}} 'Base'
-    |   |   `-DeclRefExpr {{address}} <col:3, col:8> 'Derived' lvalue ParmVar {{address:case_value}} 'value' '&mut Derived'
-    |   `-DeclRefExpr {{address}} <col:9, col:16> 'func (&copy Base) void' Function {{address:receive}} 'Receive' 'func (&copy Base) void'
+    |   |   `-DeclRefExpr {{address}} <col:3, col:8> 'Derived' lvalue 'value' ParmVar {{address:case_value}} 'value' '&mut Derived'
+    |   `-DeclRefExpr {{address}} <col:9, col:16> 'func (&copy Base) void' non-object 'Receive' Function {{address:receive}} 'Receive' 'func (&copy Base) void'
     |-ExprStmt {{address}} <line:27:3, col:22>
-    | `-ReceiverCallExpr {{address}} <col:3, col:21> 'void' ->
+    | `-ReceiverCallExpr {{address}} <col:3, col:21> 'void' non-object ->
     |   |-ImplicitCastExpr {{address}} <col:3, col:10> 'const Base' lvalue <NoOp>
     |   | `-ImplicitCastExpr {{address}} <col:3, col:10> 'Base' lvalue <BaseSubobject> path Struct {{address:middle}} 'Middle' Struct {{address:base}} 'Base'
     |   |   `-UnaryOperator {{address}} <col:3, col:10> 'Derived' lvalue '*'
     |   |     `-ImplicitCastExpr {{address}} <col:3, col:10> '*Derived' pure-rvalue <LValueToRValue>
-    |   |       `-DeclRefExpr {{address}} <col:3, col:10> '*Derived' lvalue ParmVar {{address:case_pointer}} 'pointer' '*Derived'
-    |   `-DeclRefExpr {{address}} <col:12, col:19> 'func (&copy Base) void' Function {{address:receive}} 'Receive' 'func (&copy Base) void'
+    |   |       `-DeclRefExpr {{address}} <col:3, col:10> '*Derived' lvalue 'pointer' ParmVar {{address:case_pointer}} 'pointer' '*Derived'
+    |   `-DeclRefExpr {{address}} <col:12, col:19> 'func (&copy Base) void' non-object 'Receive' Function {{address:receive}} 'Receive' 'func (&copy Base) void'
     `-ExprStmt {{address}} <line:28:3, col:21>
       `-CallExpr {{address}} <col:3, col:20> 'const Base' lvalue
-        |-DeclRefExpr {{address}} <col:3, col:13> 'func (&copy Derived) &copy Base' Function {{address:return_base}} 'ReturnBase' 'func (&copy Derived) &copy Base'
+        |-DeclRefExpr {{address}} <col:3, col:13> 'func (&copy Derived) &copy Base' non-object 'ReturnBase' Function {{address:return_base}} 'ReturnBase' 'func (&copy Derived) &copy Base'
         `-ImplicitCastExpr {{address}} <col:14, col:19> 'const Derived' lvalue <NoOp>
-          `-DeclRefExpr {{address}} <col:14, col:19> 'Derived' lvalue ParmVar {{address:case_value}} 'value' '&mut Derived'
+          `-DeclRefExpr {{address}} <col:14, col:19> 'Derived' lvalue 'value' ParmVar {{address:case_value}} 'value' '&mut Derived'

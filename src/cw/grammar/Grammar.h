@@ -13,7 +13,7 @@
 #include <boost/container/static_vector.hpp>
 #include <boost/functional/hash.hpp>
 
-namespace cw::lang {
+namespace cw::grammar {
 
 constexpr int kMaxProductionLength = 10;
 
@@ -165,9 +165,9 @@ class Grammar {
   void DumpProduction(std::ostream& os, int pi) const;
 };
 
-}  // namespace cw::lang
+}  // namespace cw::grammar
 
-namespace cw::lang {
+namespace cw::grammar {
 
 template <typename Symbol_t>
 Grammar Grammar::Create(const char* name, const ProductionVec<Symbol_t>& P, int num_symbols, Symbol_t Start, Symbol_t ε,
@@ -222,4 +222,4 @@ Grammar Grammar::Create(const char* name, const ProductionVec<Symbol_t>& P, int 
   return Create(name, P, num_symbols, from_string<Symbol_t>(Start), from_string<Symbol_t>(ε), from_string<Symbol_t>($));
 }
 
-}  // namespace cw::lang
+}  // namespace cw::grammar

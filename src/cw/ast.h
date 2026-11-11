@@ -17,7 +17,6 @@
 #include <llvm/ADT/APSInt.h>
 
 #include "BuiltinTypes.h"
-#include "ExprGrammar.h"
 #include "NameSyntax.h"
 #include "Source.h"
 
@@ -194,18 +193,128 @@ const char* to_string(ImplicitConversionKind kind);
 /// \brief Returns the stable AST spelling of a construction kind.
 const char* to_string(ConstructionKind kind);
 
+/// \brief Builtin or overloadable unary operation; prefix and postfix forms are distinct operations.
+enum class UnaryOperatorKind {
+  PreIncrement,
+  PreDecrement,
+  PostIncrement,
+  PostDecrement,
+  Plus,
+  Minus,
+  LogicalNot,
+  BitwiseNot,
+  Dereference,
+  AddressOf,
+  Move,
+};
+
+/// \brief Builtin or overloadable binary operation, including simple and compound assignment.
+enum class BinaryOperatorKind {
+  Multiply,
+  Divide,
+  Remainder,
+  Add,
+  Subtract,
+  ShiftLeft,
+  ShiftRight,
+  Less,
+  LessEqual,
+  Greater,
+  GreaterEqual,
+  Equal,
+  NotEqual,
+  BitwiseAnd,
+  BitwiseXor,
+  BitwiseOr,
+  LogicalAnd,
+  LogicalOr,
+  Assign,
+  MultiplyAssign,
+  DivideAssign,
+  RemainderAssign,
+  AddAssign,
+  SubtractAssign,
+  ShiftLeftAssign,
+  ShiftRightAssign,
+  BitwiseAndAssign,
+  BitwiseXorAssign,
+  BitwiseOrAssign,
+};
+
+/// \brief Member access through an object ('.') or through a pointer ('->').
+enum class MemberAccessKind { Dot, Arrow };
+
+/// \brief Returns the source spelling of a unary operator; both increment forms spell '++'.
+const char* to_string(UnaryOperatorKind kind);
+
+/// \brief Returns the source spelling of a binary operator.
+const char* to_string(BinaryOperatorKind kind);
+
+/// \brief Returns the source spelling of a member access operator.
+const char* to_string(MemberAccessKind kind);
+
+/// \brief Operator that an operator function can overload, named by spelling because one operator can stand
+/// for several operations, such as negation and subtraction.
+enum class OverloadedOperatorKind {
+  Plus,
+  Minus,
+  PlusPlus,
+  MinusMinus,
+  Exclaim,
+  Tilde,
+  Amp,
+  Pipe,
+  Caret,
+  LessLess,
+  GreaterGreater,
+  Star,
+  Slash,
+  Percent,
+  Less,
+  LessEqual,
+  Greater,
+  GreaterEqual,
+  EqualEqual,
+  ExclaimEqual,
+  Equal,
+  PlusEqual,
+  MinusEqual,
+  StarEqual,
+  SlashEqual,
+  PercentEqual,
+  AmpEqual,
+  PipeEqual,
+  CaretEqual,
+  LessLessEqual,
+  GreaterGreaterEqual,
+  Call,
+};
+
+/// \brief Returns the operator function name spelling of an overloadable operator.
+const char* to_string(OverloadedOperatorKind kind);
+
+/// \brief Returns the overloadable operator spelled by an operator function name, if any.
+std::optional<OverloadedOperatorKind> GetOverloadedOperatorKind(std::string_view name);
+
+/// \brief Returns the operator a unary operation may resolve to, or nothing for builtin-only operations.
+std::optional<OverloadedOperatorKind> GetOverloadedOperator(UnaryOperatorKind op);
+
+/// \brief Returns the operator a binary operation may resolve to, or nothing for builtin-only operations.
+std::optional<OverloadedOperatorKind> GetOverloadedOperator(BinaryOperatorKind op);
+
 /// \brief Returns whether a stored declaration name is an operator spelling.
 bool IsOperatorFunctionName(std::string_view name);
 
-bool IsIncrementDecrementOperator(expr::ExprGrammarSymbol op);
-bool IsLogicalBinaryOperator(expr::ExprGrammarSymbol op);
-bool IsShiftBinaryOperator(expr::ExprGrammarSymbol op);
-bool IsCompoundAssignmentOperator(expr::ExprGrammarSymbol op);
-bool IsAssignmentOperator(expr::ExprGrammarSymbol op);
+bool IsIncrementDecrementOperator(UnaryOperatorKind op);
+bool IsPostfixOperator(UnaryOperatorKind op);
+bool IsLogicalBinaryOperator(BinaryOperatorKind op);
+bool IsShiftBinaryOperator(BinaryOperatorKind op);
+bool IsCompoundAssignmentOperator(BinaryOperatorKind op);
+bool IsAssignmentOperator(BinaryOperatorKind op);
 bool IsAssignmentOperator(std::string_view name);
 
 /// \brief Returns the corresponding binary operator for compound assignment, or the original operator.
-expr::ExprGrammarSymbol GetComputationOp(expr::ExprGrammarSymbol op);
+BinaryOperatorKind GetComputationOp(BinaryOperatorKind op);
 
 /// \brief Builtin raw pointer arithmetic selected by an operator and its operand types.
 enum class PointerArithmeticKind {
@@ -220,7 +329,7 @@ bool IsRawObjectPointerType(QualType type);
 
 /// \brief Classifies '+', '-', '+=' and '-=' over the operand types alone.
 /// Sema and CodeGen share this shape check; Sema separately rejects zero-sized pointees.
-PointerArithmeticKind ClassifyPointerArithmetic(expr::ExprGrammarSymbol op, QualType lhs, QualType rhs);
+PointerArithmeticKind ClassifyPointerArithmetic(BinaryOperatorKind op, QualType lhs, QualType rhs);
 
 /// \brief One source-level declaration attribute.
 struct Attribute {
@@ -625,9 +734,8 @@ struct ParenExpr : Expr {
 struct UnaryOperator : Expr {
   std::unique_ptr<Expr> Operand{};  ///< Operand expression.
 
-  expr::ExprGrammarSymbol op{};  ///< Operator (plus, minus, star, amp, exclaim, tilde, plusplus, minusminus).
+  UnaryOperatorKind op{};        ///< Operation; x++ and x-- are distinct postfix operations.
   SourceRange operator_range{};  ///< Exact source range of the operator token.
-  bool is_postfix{};             ///< true for x++/x--, false for ++x/--x.
 
   NodeKind GetKind() const override { return NodeKind::UnaryOperator; }
   void Accept(ASTVisitor& visitor) override;
@@ -639,13 +747,13 @@ struct BinaryOperator : Expr {
   std::unique_ptr<Expr> LHS{};  ///< Left-hand side expression.
   std::unique_ptr<Expr> RHS{};  ///< Right-hand side expression.
 
-  expr::ExprGrammarSymbol op{};  ///< Operator.
+  BinaryOperatorKind op{};       ///< Operation.
   SourceRange operator_range{};  ///< Exact source range of the operator token.
 
   NodeKind GetKind() const override { return NodeKind::BinaryOperator; }
   void Accept(ASTVisitor& visitor) override;
   void Traverse(ASTVisitor& visitor) override;
-  bool IsSimpleAssignment() const { return op == expr::equal; }
+  bool IsSimpleAssignment() const { return op == BinaryOperatorKind::Assign; }
   bool IsCompoundAssignment() const { return IsCompoundAssignmentOperator(op); }
   bool IsAssignment() const { return IsAssignmentOperator(op); }
 };
@@ -691,7 +799,7 @@ struct MemberExpr : Expr {
   std::string member{};          ///< Member name.
   SourceRange member_range{};    ///< Exact source range of the member name.
   SourceRange operator_range{};  ///< Exact source range of '.' or '->'.
-  expr::ExprGrammarSymbol op{};  ///< Access operator (period or arrow).
+  MemberAccessKind op{};         ///< Access operator.
 
   const FieldDecl* declaration{};  ///< Non-owning final referenced field.
 
@@ -705,7 +813,7 @@ struct BaseSubobjectExpr : Expr {
   std::unique_ptr<Expr> Base{};  ///< Owning expression containing the selected base subobject.
 
   SourceRange operator_range{};  ///< Exact source range of '.' or '->'.
-  expr::ExprGrammarSymbol op{};  ///< Access operator (period or arrow).
+  MemberAccessKind op{};         ///< Access operator.
 
   std::vector<const StructDecl*> base_path{};  ///< Non-owning direct-base path to the selected subobject.
 
@@ -853,7 +961,7 @@ struct ReceiverCallExpr : CallExpr {
   std::unique_ptr<Expr> Receiver{};  ///< Syntax operand; Sema stores the prepared or converted first argument.
 
   SourceRange operator_range{};  ///< Exact source range of '.' or '->'.
-  expr::ExprGrammarSymbol op{};  ///< Access operator (period or arrow).
+  MemberAccessKind op{};         ///< Access operator.
 
   NodeKind GetKind() const override { return NodeKind::ReceiverCallExpr; }
   void Accept(ASTVisitor& visitor) override;

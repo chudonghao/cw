@@ -15,30 +15,30 @@ TranslationUnitDecl {{address}}
     |-ExprStmt {{address}} <line:2:3, col:19>
     | `-BinaryOperator {{address}} <col:3, col:18> '*i32' pure-rvalue '+'
     |   |-ImplicitCastExpr {{address}} <col:3, col:10> '*i32' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:3, col:10> '*i32' lvalue ParmVar {{address:pointer}} 'pointer' '*i32'
+    |   | `-DeclRefExpr {{address}} <col:3, col:10> '*i32' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*i32'
     |   `-ImplicitCastExpr {{address}} <col:13, col:18> 'usize' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:13, col:18> 'usize' lvalue ParmVar {{address:count}} 'count' 'usize'
+    |     `-DeclRefExpr {{address}} <col:13, col:18> 'usize' lvalue 'count' ParmVar {{address:count}} 'count' 'usize'
     |-ExprStmt {{address}} <line:3:3, col:21>
     | `-BinaryOperator {{address}} <col:3, col:20> '*const i32' pure-rvalue '+'
     |   |-ImplicitCastExpr {{address}} <col:3, col:9> 'isize' pure-rvalue <LValueToRValue>
-    |   | `-DeclRefExpr {{address}} <col:3, col:9> 'isize' lvalue ParmVar {{address:offset}} 'offset' 'isize'
+    |   | `-DeclRefExpr {{address}} <col:3, col:9> 'isize' lvalue 'offset' ParmVar {{address:offset}} 'offset' 'isize'
     |   `-ImplicitCastExpr {{address}} <col:12, col:20> '*const i32' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:12, col:20> '*const i32' lvalue ParmVar {{address:readonly}} 'readonly' '*const i32'
+    |     `-DeclRefExpr {{address}} <col:12, col:20> '*const i32' lvalue 'readonly' ParmVar {{address:readonly}} 'readonly' '*const i32'
     |-ExprStmt {{address}} <line:4:3, col:22>
     | `-BinaryOperator {{address}} <col:3, col:21> 'isize' pure-rvalue '-'
     |   |-ImplicitCastExpr {{address}} <col:3, col:10> '*const i32' pure-rvalue <Qualification>
     |   | `-ImplicitCastExpr {{address}} <col:3, col:10> '*i32' pure-rvalue <LValueToRValue>
-    |   |   `-DeclRefExpr {{address}} <col:3, col:10> '*i32' lvalue ParmVar {{address:pointer}} 'pointer' '*i32'
+    |   |   `-DeclRefExpr {{address}} <col:3, col:10> '*i32' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*i32'
     |   `-ImplicitCastExpr {{address}} <col:13, col:21> '*const i32' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:13, col:21> '*const i32' lvalue ParmVar {{address:readonly}} 'readonly' '*const i32'
+    |     `-DeclRefExpr {{address}} <col:13, col:21> '*const i32' lvalue 'readonly' ParmVar {{address:readonly}} 'readonly' '*const i32'
     |-ExprStmt {{address}} <line:5:3, col:20>
     | `-BinaryOperator {{address}} <col:3, col:19> '*i32' lvalue '+='
-    |   |-DeclRefExpr {{address}} <col:3, col:10> '*i32' lvalue ParmVar {{address:pointer}} 'pointer' '*i32'
+    |   |-DeclRefExpr {{address}} <col:3, col:10> '*i32' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*i32'
     |   `-ImplicitCastExpr {{address}} <col:14, col:19> 'usize' pure-rvalue <LValueToRValue>
-    |     `-DeclRefExpr {{address}} <col:14, col:19> 'usize' lvalue ParmVar {{address:count}} 'count' 'usize'
+    |     `-DeclRefExpr {{address}} <col:14, col:19> 'usize' lvalue 'count' ParmVar {{address:count}} 'count' 'usize'
     |-ExprStmt {{address}} <line:6:3, col:13>
     | `-UnaryOperator {{address}} <col:3, col:12> '*i32' lvalue '++'
-    |   `-DeclRefExpr {{address}} <col:5, col:12> '*i32' lvalue ParmVar {{address:pointer}} 'pointer' '*i32'
+    |   `-DeclRefExpr {{address}} <col:5, col:12> '*i32' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*i32'
     `-ExprStmt {{address}} <line:7:3, col:13>
       `-UnaryOperator {{address}} <col:3, col:12> '*i32' pure-rvalue '--' postfix
-        `-DeclRefExpr {{address}} <col:3, col:10> '*i32' lvalue ParmVar {{address:pointer}} 'pointer' '*i32'
+        `-DeclRefExpr {{address}} <col:3, col:10> '*i32' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*i32'

@@ -1,4 +1,4 @@
-/// \file lang_test.cpp
+/// \file grammar_test.cpp
 /// \copyright 2026 Donghao Chu
 /// \license SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 /// \url https://github.com/chudonghao/cw
@@ -7,9 +7,8 @@
 
 #include <gtest/gtest.h>
 
-#include "cw/ExprGrammar.h"
-#include "cw/lang/Grammar.h"
-#include "cw/lang/GrammarAnalyzer.h"
+#include "cw/grammar/Grammar.h"
+#include "cw/grammar/GrammarAnalyzer.h"
 
 namespace G_ab {
 
@@ -71,12 +70,12 @@ bool is_terminal(Symbol s) { return terminal_start <= s && s < terminal_end; }
 
 }  // namespace G_ab
 
-namespace cw::lang {
+namespace cw::grammar {
 template <>
 G_ab::Symbol from_string<G_ab::Symbol>(const char* s) {
   return G_ab::operator"" _s(s, strlen(s));
 }
-}  // namespace cw::lang
+}  // namespace cw::grammar
 
 namespace G_Expr {
 
@@ -165,14 +164,14 @@ bool is_terminal(Symbol s) { return terminal_start <= s && s < terminal_end; }
 
 }  // namespace G_Expr
 
-namespace cw::lang {
+namespace cw::grammar {
 
 template <>
 G_Expr::Symbol from_string<G_Expr::Symbol>(const char* s) {
   return from_string(G_Expr::Symbol{}, s);
 }
 
-}  // namespace cw::lang
+}  // namespace cw::grammar
 
 namespace G_Equation {
 
@@ -252,15 +251,15 @@ bool is_terminal(Symbol s) { return terminal_start <= s && s < terminal_end; }
 
 }  // namespace G_Equation
 
-namespace cw::lang {
+namespace cw::grammar {
 template <>
 G_Equation::Symbol from_string<G_Equation::Symbol>(const char* s) {
   return from_string(G_Equation::Symbol{}, s);
 }
-}  // namespace cw::lang
+}  // namespace cw::grammar
 
 TEST(Grammar, LR0) {
-  using namespace cw::lang;
+  using namespace cw::grammar;
 
   using Symbol_t = G_ab::Symbol;
   auto num_symbols = G_ab::num_symbols;
@@ -277,7 +276,7 @@ TEST(Grammar, LR0) {
 }
 
 TEST(Grammar, SLR) {
-  using namespace cw::lang;
+  using namespace cw::grammar;
 
   using Symbol_t = G_Expr::Symbol;
   auto num_symbols = G_Expr::num_symbols;
@@ -297,7 +296,7 @@ TEST(Grammar, SLR) {
 }
 
 TEST(Grammar, LR1) {
-  using namespace cw::lang;
+  using namespace cw::grammar;
 
   using Symbol_t = G_Equation::Symbol;
   auto num_symbols = G_Equation::num_symbols;
@@ -314,13 +313,4 @@ TEST(Grammar, LR1) {
   ASSERT_FALSE(ga.IsLR0());
   ASSERT_FALSE(ga.IsSLR());
   // ASSERT_TRUE(ga.IsLR1());
-}
-
-TEST(Grammar, CW_Expr) {
-  using namespace cw;
-
-  lang::Grammar g = ExprGrammar();
-  auto ga = lang::GrammarAnalyzer::Analyze(g, lang::GrammarAnalyzer::ALL);
-  ASSERT_FALSE(ga.IsLR0());
-  ASSERT_TRUE(ga.IsSLR());
 }

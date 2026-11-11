@@ -13,15 +13,14 @@
 #include <utility>
 #include <vector>
 
+#include <boost/assert.hpp>
+
 #include "Diagnostic.h"
 #include "NameLookup.h"
 #include "Source.h"
 #include "ast.h"
 
 namespace cw {
-
-class GlobalInitLookup;
-class SymbolTable;
 
 class ASTContext;
 struct BinaryOperator;
@@ -122,6 +121,21 @@ class Sema {
     VarGroupDecl& GetDeclaration() const { return declaration_; }
   };
 
+  /// Only lives during global initialization analysis; namespace bindings live in the AST.
+  class GlobalInitLookup {
+    LocalScopeStack locals_;
+    std::size_t visible_group_count_{};
+
+   public:
+    LocalScopeStack& GetLocals() { return locals_; }
+    const LocalScopeStack& GetLocals() const { return locals_; }
+    void MakeGroupVisible(std::size_t group_index) {
+      BOOST_ASSERT(group_index == visible_group_count_);
+      visible_group_count_ = group_index + 1;
+    }
+    LookupContext GetContext(const NamespaceContext& from) const { return {&from, &locals_, visible_group_count_}; }
+  };
+
   /// \brief Temporary inherited-slot view used until final virtual-slot or vtable metadata exposes it directly.
   using InheritedVirtualSlots = std::unordered_map<const StructDecl*, std::vector<VirtualFunctionDecl*>>;
 
@@ -137,7 +151,7 @@ class Sema {
   ASTContext* ast_context_{};
 
   /// Borrowed only while a global initializer or function body is being analyzed.
-  SymbolTable* local_symbols_{};
+  LocalScopeStack* local_symbols_{};
   const LookupContext* lookup_context_{};
   /// Namespace of the declaration interface being analyzed; bodies use lookup_context_.
   const NamespaceContext* namespace_context_{};
@@ -177,6 +191,7 @@ class Sema {
   InheritedVirtualSlots CompleteTypeSemantics(TranslationUnitDecl& translation_unit);
   void CompleteCallableInterfaces(TranslationUnitDecl& translation_unit, const InheritedVirtualSlots& inherited_slots);
   void ValidateDeclarationModifiers(TranslationUnitDecl& translation_unit);
+  void ValidateProgramEntry(TranslationUnitDecl& translation_unit);
   void AnalyzeDeclarationBodies(TranslationUnitDecl& translation_unit);
   void FinalizeTranslationUnitSemantics(TranslationUnitDecl& translation_unit);
 
@@ -276,8 +291,7 @@ class Sema {
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeUnaryOperator(std::unique_ptr<Expr> expression);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeBinaryOperator(std::unique_ptr<Expr> expression);
   [[nodiscard]] std::unique_ptr<Expr> AnalyzeOverloadableOperator(std::unique_ptr<Expr> expression,
-                                                                  expr::ExprGrammarSymbol op,
-                                                                  SourceRange operator_range,
+                                                                  OverloadedOperatorKind op, SourceRange operator_range,
                                                                   const std::vector<std::unique_ptr<Expr>*>& operands);
   void AnalyzeBuiltinUnaryOperator(UnaryOperator& expression);
   void AnalyzeBuiltinBinaryOperator(BinaryOperator& expression);
