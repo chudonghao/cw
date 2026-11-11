@@ -1,0 +1,13 @@
+namespace shapes {
+  import trivial struct Origin {
+    x i32;
+  }
+  import trivial struct Size {
+    width i32;
+  }
+  import trivial struct Box : ::shapes::Origin, ::shapes::Size {
+  }
+}
+import trivial struct Labeled : ::shapes::Box {
+  label u8;
+}

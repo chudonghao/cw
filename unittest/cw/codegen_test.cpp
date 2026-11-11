@@ -138,6 +138,18 @@ class CodeGenTest : public ::testing::Test {
     EXPECT_TRUE(codegen_diagnostic_engine_.HasErrors());
   }
 
+  void ExpectError(int line, int column, std::string_view message) {
+    const auto& diagnostics = codegen_diagnostic_engine_.Diagnostics();
+    ASSERT_LT(next_diagnostic_, diagnostics.size()) << "missing expected diagnostic";
+
+    const auto& actual = diagnostics[next_diagnostic_++];
+    EXPECT_EQ(actual.severity, cw::kErrorDiagnostic);
+    EXPECT_EQ(actual.message, std::string(message));
+    ASSERT_TRUE(actual.location.has_value());
+    EXPECT_EQ(actual.location->line, line);
+    EXPECT_EQ(actual.location->column, column);
+  }
+
   void ExpectErrorWithoutLocation(std::string_view message) {
     const auto& diagnostics = codegen_diagnostic_engine_.Diagnostics();
     ASSERT_LT(next_diagnostic_, diagnostics.size()) << "missing expected diagnostic";
@@ -191,6 +203,17 @@ TEST_F(CodeGenTest, ReportsTargetMismatchWithoutSourceLocation) {
   ExpectFailure();
   ExpectErrorWithoutLocation("code generation target does not match the semantic target");
   EXPECT_EQ(Diagnostics(), "error: code generation target does not match the semantic target\n");
+}
+
+TEST_F(CodeGenTest, RejectsCodeThatNeedsMultipleInheritance) {
+  Generate(R"(trivial struct A { value i32; }
+trivial struct B { other i32; }
+trivial struct C : A, B {}
+trivial struct D : C {}
+func Entry(value D) i32 { 0 })");
+
+  ExpectFailure();
+  ExpectError(4, 0, "code generation for multiple inheritance is not supported yet");
 }
 
 struct LanguageFeatureCase {

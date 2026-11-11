@@ -54,13 +54,18 @@ class StructType;
 
 namespace codegen_detail {
 class CodeGenFunction;
-}
+
+/// \brief Returns the direct base of a struct, or null. Code generation rejects multiple inheritance.
+const StructType* GetDirectBase(const StructDecl& declaration);
+/// \brief Whether the vtable of a struct depends on multiple inheritance, which code generation rejects.
+bool VTableUsesMultipleInheritance(const StructDecl& declaration);
+}  // namespace codegen_detail
 
 /// \brief Generates one LLVM module from a successful semantic translation unit.
 class CodeGen {
   friend class codegen_detail::CodeGenFunction;
 
-  enum class TypeConversionFailure { UnsupportedType, InvalidLayout };
+  enum class TypeConversionFailure { UnsupportedType, InvalidLayout, MultipleInheritance };
   using TypeConversionResult = std::variant<llvm::Type*, TypeConversionFailure>;
 
   struct TargetABI {

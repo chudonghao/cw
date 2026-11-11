@@ -174,6 +174,8 @@ add_cwc_driver_case(interface_types interface_contents
   "${interface_driver_case_dir}/types.cw")
 add_cwc_driver_case(interface_virtual interface_contents
   "${interface_driver_case_dir}/virtual.cw")
+add_cwc_driver_case(interface_inheritance interface_contents
+  "${interface_driver_case_dir}/inheritance.cw")
 add_cwc_driver_case(interface_namespaces interface_contents
   "${interface_driver_case_dir}/namespaces_first.cw"
   "${interface_driver_case_dir}/namespaces_second.cw")

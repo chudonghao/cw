@@ -120,7 +120,7 @@ bool IsEmptyRecord(const Type& type) {
     return false;
   }
   const auto& declaration = *record->GetDeclaration();
-  if (declaration.base_type && !IsEmptyRecord(*declaration.base_type)) {
+  if (const StructType* base = codegen_detail::GetDirectBase(declaration); base && !IsEmptyRecord(*base)) {
     return false;
   }
   return std::all_of(declaration.Fields.begin(), declaration.Fields.end(), [](const auto& field) {
@@ -168,7 +168,7 @@ std::optional<HomogeneousAggregate> GetHomogeneousAggregate(const Type& type, co
       result.count += part->count;
       return true;
     };
-    if (declaration.base_type && !append(*declaration.base_type)) {
+    if (const StructType* base = codegen_detail::GetDirectBase(declaration); base && !append(*base)) {
       return std::nullopt;
     }
     for (const auto& field : declaration.Fields) {
@@ -204,7 +204,7 @@ bool ContainsOnlyPointers(const Type& type) {
     return false;
   }
   const auto& declaration = *record->GetDeclaration();
-  if (declaration.base_type && !ContainsOnlyPointers(*declaration.base_type)) {
+  if (const StructType* base = codegen_detail::GetDirectBase(declaration); base && !ContainsOnlyPointers(*base)) {
     return false;
   }
   return std::all_of(declaration.Fields.begin(), declaration.Fields.end(), [](const auto& field) {
@@ -227,8 +227,8 @@ const Type* GetSingleElementStruct(const Type& type, const ASTContext& context) 
   }
   const auto& declaration = *record->GetDeclaration();
   const Type* element = nullptr;
-  if (declaration.base_type && !IsEmptyRecord(*declaration.base_type)) {
-    element = GetSingleElementStruct(*declaration.base_type, context);
+  if (const StructType* base = codegen_detail::GetDirectBase(declaration); base && !IsEmptyRecord(*base)) {
+    element = GetSingleElementStruct(*base, context);
     if (!element) {
       return nullptr;
     }
@@ -267,7 +267,46 @@ const Type* GetSingleElementStruct(const Type& type, const ASTContext& context) 
   return nullptr;
 }
 
+// Whether a struct or one of its bases has more than one direct base. Code generation does not
+// provide the layouts, vtables and adjustments that multiple inheritance needs yet.
+bool UsesMultipleInheritance(const StructDecl& declaration) {
+  return declaration.base_types.size() > 1 ||
+         std::any_of(declaration.base_types.begin(), declaration.base_types.end(),
+                     [](const StructType* base) { return UsesMultipleInheritance(*base->GetDeclaration()); });
+}
+
 }  // namespace
+
+const StructType* codegen_detail::GetDirectBase(const StructDecl& declaration) {
+  BOOST_ASSERT(declaration.base_types.size() <= 1);
+  return declaration.base_types.empty() ? nullptr : declaration.base_types.front();
+}
+
+// Whether the vtable of a single-inheritance struct still depends on multiple inheritance through
+// a covariant return, whose adjustment walks the returned struct's bases.
+bool codegen_detail::VTableUsesMultipleInheritance(const StructDecl& declaration) {
+  if (UsesMultipleInheritance(declaration)) {
+    return true;
+  }
+  for (const StructDecl* current = &declaration; current;
+       current = current->base_types.empty() ? nullptr : current->base_types.front()->GetDeclaration()) {
+    if (!current->VirtualDecl) {
+      continue;
+    }
+    for (const auto& function : current->VirtualDecl->Functions) {
+      const Type* result = function->type.GetTypePtr()->AsFunctionType()->GetReturnType();
+      if (const auto* pointer = result->AsPointerType()) {
+        result = pointer->GetPointee().GetTypePtr();
+      } else if (const auto* reference = result->AsReferenceType()) {
+        result = reference->GetReferentType();
+      }
+      if (const auto* record = result->AsStructType(); record && UsesMultipleInheritance(*record->GetDeclaration())) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 std::unique_ptr<llvm::TargetMachine> CodeGen::CreateTarget(const TargetInfo& target_info, DiagnosticEngine& diagnostics,
                                                            llvm::VersionTuple minimum_os_version) {
@@ -559,6 +598,9 @@ CodeGen::TypeConversionResult CodeGen::ConvertStructType(const StructDecl& decla
   if (const auto it = struct_representations_.find(&declaration); it != struct_representations_.end()) {
     return it->second.type;
   }
+  if (UsesMultipleInheritance(declaration)) {
+    return TypeConversionFailure::MultipleInheritance;
+  }
   const auto shared_result = ast_context_->GetStructLayout(declaration);
   if (std::holds_alternative<LayoutFailure>(shared_result)) {
     return TypeConversionFailure::InvalidLayout;
@@ -571,18 +613,18 @@ CodeGen::TypeConversionResult CodeGen::ConvertStructType(const StructDecl& decla
     bool is_base{};
   };
   std::vector<Element> members;
-  if (declaration.IsPolymorphic() &&
-      (!declaration.base_type || !declaration.base_type->GetDeclaration()->IsPolymorphic())) {
+  const StructType* base_type = codegen_detail::GetDirectBase(declaration);
+  if (declaration.IsPolymorphic() && (!base_type || !base_type->GetDeclaration()->IsPolymorphic())) {
     members.push_back({llvm::PointerType::getUnqual(*llvm_context_), 0, nullptr});
   }
-  if (declaration.base_type) {
-    const auto& base = *declaration.base_type->GetDeclaration();
+  if (base_type) {
+    const auto& base = *base_type->GetDeclaration();
     const auto conversion = ConvertStructType(base);
     if (const auto* failure = std::get_if<TypeConversionFailure>(&conversion)) {
       return *failure;
     }
     if (!base.IsEmpty()) {
-      members.push_back({struct_representations_.at(&base).base_type, *shared.base_offset, nullptr, true});
+      members.push_back({struct_representations_.at(&base).base_type, shared.base_offsets.front(), nullptr, true});
     }
   }
   for (std::size_t index = 0; index < declaration.Fields.size(); ++index) {
@@ -971,6 +1013,10 @@ llvm::Function* CodeGen::GetOrCreateFunction(const FunctionDecl& declaration, St
 llvm::GlobalVariable* CodeGen::GetOrCreateVTable(const StructDecl& declaration) {
   auto it = vtables_.find(&declaration);
   if (it == vtables_.end()) {
+    if (codegen_detail::VTableUsesMultipleInheritance(declaration)) {
+      Unsupported(declaration, "multiple inheritance");
+      return nullptr;
+    }
     const auto name = "cw:" + declaration.QualifiedName() + ":vtable";
     if (module_->getNamedValue(name)) {
       InternalError(declaration, "conflicting stable symbol '" + name + "'");
@@ -1013,6 +1059,10 @@ llvm::Constant* CodeGen::GetVTableAddressPoint(const StructDecl& declaration) {
 llvm::Constant* CodeGen::GetVirtualFunctionPointer(const VirtualFunctionDecl& declaration) {
   const auto* receiver = declaration.ParmVars.front()->type.GetTypePtr()->AsReferenceType();
   const auto& structure = *receiver->GetReferentType()->AsStructType()->GetDeclaration();
+  if (codegen_detail::VTableUsesMultipleInheritance(structure)) {
+    Unsupported(declaration, "multiple inheritance");
+    return nullptr;
+  }
   const auto index = ast_context_->GetVTableLayout(structure).function_indices.at(&declaration);
   auto* word = GetPointerIndexType();
   llvm::Constant* values[] = {
@@ -1204,6 +1254,8 @@ bool CodeGen::DiagnoseTypeConversionFailure(const Node& node, TypeConversionFail
       return Unsupported(node, feature);
     case TypeConversionFailure::InvalidLayout:
       return InternalError(node, "semantic object has no valid target layout");
+    case TypeConversionFailure::MultipleInheritance:
+      return Unsupported(node, "multiple inheritance");
   }
   BOOST_ASSERT(false && "unknown type conversion failure");
   return false;

@@ -333,11 +333,14 @@ std::unique_ptr<StructDecl> Parser::StructDecl_() {
   ExtendRange(*sd, token);
   AdvanceLexer();
 
-  // Optional qualified base type name.
+  // Optional list of qualified direct base names.
   if (token.type == tok::colon) {
-    AdvanceLexer();
-    if (!QualifiedName_(sd->base)) return Unwind(std::move(sd));
-    sd->range.end = sd->base.Range().end;
+    do {
+      AdvanceLexer();
+      NameSyntax& base = sd->bases.emplace_back();
+      if (!QualifiedName_(base)) return Unwind(std::move(sd));
+      sd->range.end = base.Range().end;
+    } while (token.type == tok::comma);
   }
 
   if (token.type != tok::l_brace) {

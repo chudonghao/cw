@@ -1,0 +1,61 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:base}} <multiple_inheritance_conversion.cw:1:1, line:3:2> Base trivial
+| `-FieldDecl {{address}} <line:2:3, col:13> value 'i32'
+|   `-BuiltinType {{address}} <col:9, col:12> 'i32'
+|-StructDecl {{address:left}} <line:5:1, col:30> Left trivial : 'Base'
+| `-BaseType 'Base' Struct {{address:base}} 'Base'
+|-StructDecl {{address:right}} <line:7:1, col:24> Right trivial
+|-StructDecl {{address}} <line:9:1, col:37> Pair trivial : 'Left', 'Right'
+| |-BaseType 'Left' Struct {{address:left}} 'Left'
+| `-BaseType 'Right' Struct {{address:right}} 'Right'
+|-FunctionDecl {{address}} <line:11:1, col:32> Pick 'func (&copy Base) void'
+| |-ParmVarDecl {{address}} <col:11, col:28> object '&copy Base'
+| | `-ReferenceType {{address}} <col:18, col:28> '&copy'
+| |   `-NamedType {{address}} <col:24, col:28> 'Base'
+| `-CompoundStmt {{address}} <col:30, col:32>
+|-FunctionDecl {{address:pick_left}} <line:13:1, col:32> Pick 'func (&copy Left) void'
+| |-ParmVarDecl {{address}} <col:11, col:28> object '&copy Left'
+| | `-ReferenceType {{address}} <col:18, col:28> '&copy'
+| |   `-NamedType {{address}} <col:24, col:28> 'Left'
+| `-CompoundStmt {{address}} <col:30, col:32>
+`-FunctionDecl {{address}} <line:15:1, line:20:2> MultipleInheritanceConversion 'func (&mut Pair, *Pair, *Left) void'
+  |-ParmVarDecl {{address:pair}} <line:15:36, col:50> pair '&mut Pair'
+  | `-ReferenceType {{address}} <col:41, col:50> '&mut'
+  |   `-NamedType {{address}} <col:46, col:50> 'Pair'
+  |-ParmVarDecl {{address:pointer}} <col:52, col:65> pointer '*Pair'
+  | `-PointerType {{address}} <col:60, col:65>
+  |   `-NamedType {{address}} <col:61, col:65> 'Pair'
+  |-ParmVarDecl {{address:left_pointer}} <col:67, col:77> left '*Left'
+  | `-PointerType {{address}} <col:72, col:77>
+  |   `-NamedType {{address}} <col:73, col:77> 'Left'
+  `-CompoundStmt {{address}} <col:79, line:20:2>
+    |-DeclStmt {{address}} <line:16:3, col:30>
+    | `-VarGroupDecl {{address}} <col:3, col:30>
+    |   |-VarDecl {{address}} <col:7, col:21> base '&mut Base'
+    |   | `-ReferenceType {{address}} <col:12, col:21> '&mut'
+    |   |   `-NamedType {{address}} <col:17, col:21> 'Base'
+    |   `-ImplicitCastExpr {{address}} <col:25, col:29> 'Base' lvalue <BaseSubobject> path Struct {{address:left}} 'Left' Struct {{address:base}} 'Base'
+    |     `-DeclRefExpr {{address}} <col:25, col:29> 'Pair' lvalue 'pair' ParmVar {{address:pair}} 'pair' '&mut Pair'
+    |-DeclStmt {{address}} <line:17:3, col:31>
+    | `-VarGroupDecl {{address}} <col:3, col:31>
+    |   |-VarDecl {{address}} <col:7, col:19> right '*Right'
+    |   | `-PointerType {{address}} <col:13, col:19>
+    |   |   `-NamedType {{address}} <col:14, col:19> 'Right'
+    |   `-ImplicitCastExpr {{address}} <col:23, col:30> '*Right' pure-rvalue <BaseSubobject> path Struct {{address:right}} 'Right'
+    |     `-ImplicitCastExpr {{address}} <col:23, col:30> '*Pair' pure-rvalue <LValueToRValue>
+    |       `-DeclRefExpr {{address}} <col:23, col:30> '*Pair' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*Pair'
+    |-ExprStmt {{address}} <line:18:3, col:14>
+    | `-CallExpr {{address}} <col:3, col:13> 'void' non-object
+    |   |-DeclRefExpr {{address}} <col:3, col:7> 'func (&copy Left) void' non-object 'Pick' Function {{address:pick_left}} 'Pick' 'func (&copy Left) void'
+    |   `-ImplicitCastExpr {{address}} <col:8, col:12> 'const Left' lvalue <NoOp>
+    |     `-ImplicitCastExpr {{address}} <col:8, col:12> 'Left' lvalue <BaseSubobject> path Struct {{address:left}} 'Left'
+    |       `-DeclRefExpr {{address}} <col:8, col:12> 'Pair' lvalue 'pair' ParmVar {{address:pair}} 'pair' '&mut Pair'
+    `-DeclStmt {{address}} <line:19:3, col:31>
+      `-VarGroupDecl {{address}} <col:3, col:31>
+        |-VarDecl {{address}} <col:7, col:11> same 'bool'
+        `-BinaryOperator {{address}} <col:15, col:30> 'bool' pure-rvalue '=='
+          |-ImplicitCastExpr {{address}} <col:15, col:19> '*Left' pure-rvalue <LValueToRValue>
+          | `-DeclRefExpr {{address}} <col:15, col:19> '*Left' lvalue 'left' ParmVar {{address:left_pointer}} 'left' '*Left'
+          `-ImplicitCastExpr {{address}} <col:23, col:30> '*Left' pure-rvalue <BaseSubobject> path Struct {{address:left}} 'Left'
+            `-ImplicitCastExpr {{address}} <col:23, col:30> '*Pair' pure-rvalue <LValueToRValue>
+              `-DeclRefExpr {{address}} <col:23, col:30> '*Pair' lvalue 'pointer' ParmVar {{address:pointer}} 'pointer' '*Pair'

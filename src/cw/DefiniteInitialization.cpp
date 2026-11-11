@@ -194,7 +194,7 @@ class FlatLayoutBuilder {
     if (structure->triviality != TypeTriviality::Trivial) {
       return false;
     }
-    if (!structure->base_type && structure->Fields.empty()) {
+    if (structure->base_types.empty() && structure->Fields.empty()) {
       return AppendAtomic(type, path);
     }
     return AppendTrivialAggregate(*structure, path);
@@ -205,10 +205,13 @@ class FlatLayoutBuilder {
       return false;
     }
     const std::size_t begin = layout_->leaves.size();
-    if (structure.base_type && structure.base_type->GetDeclaration()) {
+    for (const StructType* base : structure.base_types) {
+      if (!base || !base->GetDeclaration()) {
+        continue;
+      }
       SubobjectPath base_path = path;
-      base_path.push_back(PathSegment::Base(*structure.base_type->GetDeclaration()));
-      AppendOrdinary(QualType(structure.base_type), base_path);
+      base_path.push_back(PathSegment::Base(*base->GetDeclaration()));
+      AppendOrdinary(QualType(base), base_path);
     }
     for (const auto& field : structure.Fields) {
       if (!field) {
@@ -228,11 +231,14 @@ class FlatLayoutBuilder {
       return false;
     }
     const std::size_t begin = layout_->leaves.size();
-    // A constructor establishes the direct base as one indivisible object.
-    if (structure.base_type && structure.base_type->GetDeclaration()) {
+    // A constructor establishes each direct base as one indivisible object, in declaration order.
+    for (const StructType* base : structure.base_types) {
+      if (!base || !base->GetDeclaration()) {
+        continue;
+      }
       SubobjectPath base_path = path;
-      base_path.push_back(PathSegment::Base(*structure.base_type->GetDeclaration()));
-      AppendAtomic(QualType(structure.base_type), base_path);
+      base_path.push_back(PathSegment::Base(*base->GetDeclaration()));
+      AppendAtomic(QualType(base), base_path);
     }
     for (const auto& field : structure.Fields) {
       if (!field) {
@@ -771,11 +777,14 @@ class AnalysisEngine {
         return access;
       }
       if (segment.kind == PathSegmentKind::Base) {
-        if (!structure->base_type || structure->base_type->GetDeclaration() != segment.base) {
+        const auto base =
+            std::find_if(structure->base_types.begin(), structure->base_types.end(),
+                         [&](const StructType* type) { return type && type->GetDeclaration() == segment.base; });
+        if (base == structure->base_types.end()) {
           return access;
         }
         path.push_back(segment);
-        current_type = QualType(structure->base_type);
+        current_type = QualType(*base);
       } else {
         if (std::none_of(structure->Fields.begin(), structure->Fields.end(),
                          [&](const auto& field) { return field.get() == segment.field; })) {

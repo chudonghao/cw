@@ -1,0 +1,130 @@
+TranslationUnitDecl {{address}} <<invalid sloc>> <invalid sloc>
+|-CXXRecordDecl {{address}} <multiple_inheritance_virtual.cpp:1:1, line:5:1> line:1:8 referenced struct Node definition external-linkage
+| |-DefinitionData polymorphic abstract has_user_declared_ctor can_const_default_init
+| | |-DefaultConstructor exists non_trivial user_provided defaulted_is_constexpr
+| | |-CopyConstructor simple non_trivial has_const_param implicit_has_const_param
+| | |-MoveConstructor
+| | |-CopyAssignment simple non_trivial has_const_param implicit_has_const_param
+| | |-MoveAssignment
+| | `-Destructor non_trivial user_declared
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit referenced struct Node
+| |-CXXMethodDecl {{address:1}} <line:2:3, col:31> col:15 Visit 'int () const' virtual pure external-linkage
+| |-CXXConstructorDecl {{address}} <line:3:3, col:11> col:3 used Node 'void ()' implicit-inline external-linkage
+| | `-CompoundStmt {{address}} <col:10, col:11>
+| |-CXXDestructorDecl {{address}} <line:4:3, col:12> col:3 used ~Node 'void () noexcept' implicit-inline external-linkage
+| | `-CompoundStmt {{address}} <col:11, col:12>
+| |-CXXMethodDecl {{address:2}} <line:1:8> col:8 implicit operator= 'Node &(const Node &)' inline default noexcept-unevaluated {{address:2}} external-linkage
+| | `-ParmVarDecl {{address}} <col:8> col:8 'const Node &'
+| `-CXXConstructorDecl {{address:3}} <col:8> col:8 implicit constexpr Node 'void (const Node &)' inline default noexcept-unevaluated {{address:3}} external-linkage
+|   `-ParmVarDecl {{address}} <col:8> col:8 'const Node &'
+|-CXXRecordDecl {{address:4}} <line:6:1, line:10:1> line:6:8 referenced struct Left definition external-linkage
+| |-DefinitionData polymorphic has_user_declared_ctor can_const_default_init
+| | |-DefaultConstructor exists non_trivial user_provided
+| | |-CopyConstructor simple non_trivial has_const_param needs_overload_resolution implicit_has_const_param
+| | |-MoveConstructor needs_overload_resolution
+| | |-CopyAssignment simple non_trivial has_const_param implicit_has_const_param
+| | |-MoveAssignment needs_overload_resolution
+| | `-Destructor non_trivial user_declared needs_overload_resolution
+| |-public 'Node'
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit referenced struct Left
+| |-CXXMethodDecl {{address:5}} <line:7:3, col:21> col:7 used Visit 'int () const' external-linkage
+| | |-Overrides: [ {{address:1}} Node::Visit 'int () const' ]
+| | `-OverrideAttr {{address}} <col:21>
+| |-CXXConstructorDecl {{address}} <line:8:3, col:20> col:3 used Left 'void ()' implicit-inline external-linkage
+| | |-CXXCtorInitializer 'Node'
+| | | `-CXXConstructExpr {{address}} <col:12, col:17> 'Node' 'void ()'
+| | `-CompoundStmt {{address}} <col:19, col:20>
+| |-CXXDestructorDecl {{address}} <line:9:3, col:12> col:3 used ~Left 'void () noexcept' implicit-inline external-linkage
+| | `-CompoundStmt {{address}} <col:11, col:12>
+| |-CXXConstructorDecl {{address:6}} <line:6:8> col:8 implicit constexpr Left 'void (const Left &)' inline default noexcept-unevaluated {{address:6}} external-linkage
+| | `-ParmVarDecl {{address}} <col:8> col:8 'const Left &'
+| `-CXXMethodDecl {{address:7}} <col:8> col:8 implicit operator= 'Left &(const Left &)' inline default noexcept-unevaluated {{address:7}} external-linkage
+|   `-ParmVarDecl {{address}} <col:8> col:8 'const Left &'
+|-CXXMethodDecl {{address}} parent {{address:4}} prev {{address:5}} <line:11:1, col:37> col:11 used Visit 'int () const' external-linkage
+| |-Overrides: [ {{address:1}} Node::Visit 'int () const' ]
+| |-CompoundStmt {{address}} <col:25, col:37>
+| | `-ReturnStmt {{address}} <col:27, col:34>
+| |   `-IntegerLiteral {{address}} <col:34> 'int' 1
+| `-OverrideAttr {{address}} <line:7:21> Inherited
+|-CXXRecordDecl {{address}} <line:12:1, line:15:1> line:12:8 referenced struct Right definition external-linkage
+| |-DefinitionData polymorphic abstract has_user_declared_ctor can_const_default_init
+| | |-DefaultConstructor exists non_trivial user_provided
+| | |-CopyConstructor simple non_trivial has_const_param needs_overload_resolution implicit_has_const_param
+| | |-MoveConstructor needs_overload_resolution
+| | |-CopyAssignment simple non_trivial has_const_param implicit_has_const_param
+| | |-MoveAssignment needs_overload_resolution
+| | `-Destructor non_trivial user_declared needs_overload_resolution
+| |-public 'Node'
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit referenced struct Right
+| |-CXXConstructorDecl {{address}} <line:13:3, col:21> col:3 used Right 'void ()' implicit-inline external-linkage
+| | |-CXXCtorInitializer 'Node'
+| | | `-CXXConstructExpr {{address}} <col:13, col:18> 'Node' 'void ()'
+| | `-CompoundStmt {{address}} <col:20, col:21>
+| |-CXXDestructorDecl {{address}} <line:14:3, col:13> col:3 used ~Right 'void () noexcept' implicit-inline external-linkage
+| | `-CompoundStmt {{address}} <col:12, col:13>
+| |-CXXConstructorDecl {{address:8}} <line:12:8> col:8 implicit constexpr Right 'void (const Right &)' inline default noexcept-unevaluated {{address:8}} external-linkage
+| | `-ParmVarDecl {{address}} <col:8> col:8 'const Right &'
+| `-CXXMethodDecl {{address:9}} <col:8> col:8 implicit operator= 'Right &(const Right &)' inline default noexcept-unevaluated {{address:9}} external-linkage
+|   `-ParmVarDecl {{address}} <col:8> col:8 'const Right &'
+|-CXXRecordDecl {{address}} <line:17:1, line:20:1> line:17:8 struct Partial definition external-linkage
+| |-DefinitionData polymorphic abstract has_user_declared_ctor can_const_default_init
+| | |-DefaultConstructor exists non_trivial user_provided
+| | |-CopyConstructor simple non_trivial has_const_param needs_overload_resolution implicit_has_const_param
+| | |-MoveConstructor needs_overload_resolution
+| | |-CopyAssignment simple non_trivial has_const_param implicit_has_const_param
+| | |-MoveAssignment needs_overload_resolution
+| | `-Destructor non_trivial user_declared needs_overload_resolution
+| |-public 'Left'
+| |-public 'Right'
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit referenced struct Partial
+| |-CXXConstructorDecl {{address}} <line:18:3, col:32> col:3 Partial 'void ()' implicit-inline external-linkage
+| | |-CXXCtorInitializer 'Left'
+| | | `-CXXConstructExpr {{address}} <col:15, col:20> 'Left' 'void ()'
+| | |-CXXCtorInitializer 'Right'
+| | | `-CXXConstructExpr {{address}} <col:23, col:29> 'Right' 'void ()'
+| | `-CompoundStmt {{address}} <col:31, col:32>
+| |-CXXDestructorDecl {{address}} <line:19:3, col:15> col:3 ~Partial 'void () noexcept' implicit-inline external-linkage
+| | `-CompoundStmt {{address}} <col:14, col:15>
+| |-CXXConstructorDecl {{address:10}} <line:17:8> col:8 implicit constexpr Partial 'void (const Partial &)' inline default noexcept-unevaluated {{address:10}} external-linkage
+| | `-ParmVarDecl {{address}} <col:8> col:8 'const Partial &'
+| `-CXXMethodDecl {{address:11}} <col:8> col:8 implicit operator= 'Partial &(const Partial &)' inline default noexcept-unevaluated {{address:11}} external-linkage
+|   `-ParmVarDecl {{address}} <col:8> col:8 'const Partial &'
+|-CXXRecordDecl {{address:12}} <line:22:1, line:26:1> line:22:8 referenced struct Both definition external-linkage
+| |-DefinitionData polymorphic has_user_declared_ctor can_const_default_init
+| | |-DefaultConstructor exists non_trivial user_provided
+| | |-CopyConstructor simple non_trivial has_const_param needs_overload_resolution implicit_has_const_param
+| | |-MoveConstructor needs_overload_resolution
+| | |-CopyAssignment simple non_trivial has_const_param implicit_has_const_param
+| | |-MoveAssignment needs_overload_resolution
+| | `-Destructor non_trivial user_declared needs_overload_resolution
+| |-public 'Left'
+| |-public 'Right'
+| |-CXXRecordDecl {{address}} <col:1, col:8> col:8 implicit referenced struct Both
+| |-CXXMethodDecl {{address:13}} <line:23:3, col:21> col:7 used Visit 'int () const' external-linkage
+| | |-Overrides: [ {{address:5}} Left::Visit 'int () const', {{address:1}} Node::Visit 'int () const' ]
+| | `-OverrideAttr {{address}} <col:21>
+| |-CXXConstructorDecl {{address}} <line:24:3, col:29> col:3 Both 'void ()' implicit-inline external-linkage
+| | |-CXXCtorInitializer 'Left'
+| | | `-CXXConstructExpr {{address}} <col:12, col:17> 'Left' 'void ()'
+| | |-CXXCtorInitializer 'Right'
+| | | `-CXXConstructExpr {{address}} <col:20, col:26> 'Right' 'void ()'
+| | `-CompoundStmt {{address}} <col:28, col:29>
+| |-CXXDestructorDecl {{address}} <line:25:3, col:12> col:3 ~Both 'void () noexcept' implicit-inline external-linkage
+| | `-CompoundStmt {{address}} <col:11, col:12>
+| |-CXXConstructorDecl {{address:14}} <line:22:8> col:8 implicit constexpr Both 'void (const Both &)' inline default noexcept-unevaluated {{address:14}} external-linkage
+| | `-ParmVarDecl {{address}} <col:8> col:8 'const Both &'
+| `-CXXMethodDecl {{address:15}} <col:8> col:8 implicit operator= 'Both &(const Both &)' inline default noexcept-unevaluated {{address:15}} external-linkage
+|   `-ParmVarDecl {{address}} <col:8> col:8 'const Both &'
+|-CXXMethodDecl {{address:16}} parent {{address:12}} prev {{address:13}} <line:27:1, col:37> col:11 used Visit 'int () const' external-linkage
+| |-Overrides: [ {{address:5}} Left::Visit 'int () const', {{address:1}} Node::Visit 'int () const' ]
+| |-CompoundStmt {{address}} <col:25, col:37>
+| | `-ReturnStmt {{address}} <col:27, col:34>
+| |   `-IntegerLiteral {{address}} <col:34> 'int' 2
+| `-OverrideAttr {{address}} <line:23:21> Inherited
+`-FunctionDecl {{address}} <line:28:1, col:73> col:5 MultipleInheritanceVirtual 'int (const Both &)' external-linkage
+  |-ParmVarDecl {{address:17}} <col:32, col:44> col:44 used both 'const Both &'
+  `-CompoundStmt {{address}} <col:50, col:73>
+    `-ReturnStmt {{address}} <col:52, col:70>
+      `-CXXMemberCallExpr {{address}} <col:59, col:70> 'int'
+        `-MemberExpr {{address}} <col:59, col:64> '<bound member function type>' .Visit {{address:16}}
+          `-DeclRefExpr {{address}} <col:59> 'const Both' lvalue ParmVar {{address:17}} 'both' 'const Both &'

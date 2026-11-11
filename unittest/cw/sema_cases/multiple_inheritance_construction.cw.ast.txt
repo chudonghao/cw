@@ -1,0 +1,110 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:base}} <multiple_inheritance_construction.cw:1:1, line:3:2> Base
+| `-FieldDecl {{address:base_value}} <line:2:3, col:13> value 'i32'
+|   `-BuiltinType {{address}} <col:9, col:12> 'i32'
+|-ConstructorDecl {{address:base_constructor}} <line:5:1, col:46> Base target Struct {{address:base}} 'Base' 'ctor Base(i32)'
+| |-ParmVarDecl {{address:base_parameter}} <col:11, col:20> value 'i32'
+| | `-BuiltinType {{address}} <col:17, col:20> 'i32'
+| `-CompoundStmt {{address}} <col:22, col:46>
+|   |-ExprStmt {{address}} <col:24, col:44>
+|   | `-InitializationExpr {{address}} <col:24, col:43> 'void' non-object
+|   |   |-MemberExpr {{address}} <col:24, col:34> 'i32' lvalue .value Field {{address:base_value}} 'value' 'i32'
+|   |   | `-ThisExpr {{address}} <col:24, col:28> 'Base' lvalue this
+|   |   `-ImplicitCastExpr {{address}} <col:38, col:43> 'i32' pure-rvalue <LValueToRValue>
+|   |     `-DeclRefExpr {{address}} <col:38, col:43> 'i32' lvalue 'value' ParmVar {{address:base_parameter}} 'value' 'i32'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-DestructorDecl {{address}} <line:7:1, col:15> Base target Struct {{address:base}} 'Base' 'dtor Base()'
+| `-CompoundStmt {{address}} <col:13, col:15>
+|-StructDecl {{address:label}} <line:9:1, col:16> Label
+|-ConstructorDecl {{address:label_constructor}} <line:11:1, col:16> Label target Struct {{address:label}} 'Label' 'ctor Label()'
+| `-CompoundStmt {{address}} <col:14, col:16>
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-DestructorDecl {{address}} <line:13:1, col:16> Label target Struct {{address:label}} 'Label' 'dtor Label()'
+| `-CompoundStmt {{address}} <col:14, col:16>
+|-StructDecl {{address:counter}} <line:15:1, line:17:2> Counter : 'Base', 'Label'
+| |-BaseType 'Base' Struct {{address:base}} 'Base'
+| |-BaseType 'Label' Struct {{address:label}} 'Label'
+| `-FieldDecl {{address:limit}} <line:16:3, col:13> limit 'i32'
+|   `-BuiltinType {{address}} <col:9, col:12> 'i32'
+|-ConstructorDecl {{address:counter_constructor}} <line:19:1, line:28:2> Counter target Struct {{address:counter}} 'Counter' 'ctor Counter(i32, bool)'
+| |-ParmVarDecl {{address:start}} <line:19:14, col:23> start 'i32'
+| | `-BuiltinType {{address}} <col:20, col:23> 'i32'
+| |-ParmVarDecl {{address:skip_first}} <col:25, col:40> skip_first 'bool'
+| | `-BuiltinType {{address}} <col:36, col:40> 'bool'
+| `-CompoundStmt {{address}} <col:42, line:28:2>
+|   |-DeclStmt {{address}} <line:20:3, col:26>
+|   | `-VarGroupDecl {{address}} <col:3, col:26>
+|   |   |-VarDecl {{address:first}} <col:7, col:12> first 'i32'
+|   |   `-BinaryOperator {{address}} <col:16, col:25> 'i32' pure-rvalue '+'
+|   |     |-ImplicitCastExpr {{address}} <col:16, col:21> 'i32' pure-rvalue <LValueToRValue>
+|   |     | `-DeclRefExpr {{address}} <col:16, col:21> 'i32' lvalue 'start' ParmVar {{address:start}} 'start' 'i32'
+|   |     `-ImplicitCastExpr {{address}} <col:24, col:25> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|   |       `-IntegerLiteral {{address}} <col:24, col:25> 'comptime_int' non-object 1
+|   |-IfStmt {{address}} <line:21:3, line:25:4>
+|   | |-ImplicitCastExpr {{address}} <line:21:6, col:16> 'bool' pure-rvalue <LValueToRValue>
+|   | | `-DeclRefExpr {{address}} <col:6, col:16> 'bool' lvalue 'skip_first' ParmVar {{address:skip_first}} 'skip_first' 'bool'
+|   | |-CompoundStmt {{address}} <col:17, line:23:4>
+|   | | `-ExprStmt {{address}} <line:22:5, col:30>
+|   | |   `-InitializationExpr {{address}} <col:5, col:29> 'void' non-object
+|   | |     |-BaseSubobjectExpr {{address}} <col:5, col:14> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|   | |     | `-ThisExpr {{address}} <col:5, col:9> 'Counter' lvalue this
+|   | |     `-ConstructionExpr {{address}} <col:18, col:29> 'Base' pure-rvalue base-subobject target <col:18, col:22> 'Base' Constructor {{address:base_constructor}} 'Base' 'ctor Base(i32)'
+|   | |       `-ImplicitCastExpr {{address}} <col:23, col:28> 'i32' pure-rvalue <LValueToRValue>
+|   | |         `-DeclRefExpr {{address}} <col:23, col:28> 'i32' lvalue 'first' Var {{address:first}} 'first' 'i32'
+|   | `-CompoundStmt {{address}} <line:23:10, line:25:4>
+|   |   `-ExprStmt {{address}} <line:24:5, col:30>
+|   |     `-InitializationExpr {{address}} <col:5, col:29> 'void' non-object
+|   |       |-BaseSubobjectExpr {{address}} <col:5, col:14> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|   |       | `-ThisExpr {{address}} <col:5, col:9> 'Counter' lvalue this
+|   |       `-ConstructionExpr {{address}} <col:18, col:29> 'Base' pure-rvalue base-subobject target <col:18, col:22> 'Base' Constructor {{address:base_constructor}} 'Base' 'ctor Base(i32)'
+|   |         `-ImplicitCastExpr {{address}} <col:23, col:28> 'i32' pure-rvalue <LValueToRValue>
+|   |           `-DeclRefExpr {{address}} <col:23, col:28> 'i32' lvalue 'start' ParmVar {{address:start}} 'start' 'i32'
+|   |-ExprStmt {{address}} <line:26:3, col:25>
+|   | `-InitializationExpr {{address}} <col:3, col:24> 'void' non-object
+|   |   |-BaseSubobjectExpr {{address}} <col:3, col:13> 'Label' lvalue .Label Struct {{address:label}} 'Label'
+|   |   | `-ThisExpr {{address}} <col:3, col:7> 'Counter' lvalue this
+|   |   `-ConstructionExpr {{address}} <col:17, col:24> 'Label' pure-rvalue base-subobject target <col:17, col:22> 'Label' Constructor {{address:label_constructor}} 'Label' 'ctor Label()'
+|   |-ExprStmt {{address}} <line:27:3, col:23>
+|   | `-InitializationExpr {{address}} <col:3, col:22> 'void' non-object
+|   |   |-MemberExpr {{address}} <col:3, col:13> 'i32' lvalue .limit Field {{address:limit}} 'limit' 'i32'
+|   |   | `-ThisExpr {{address}} <col:3, col:7> 'Counter' lvalue this
+|   |   `-ImplicitCastExpr {{address}} <col:17, col:22> 'i32' pure-rvalue <LValueToRValue>
+|   |     `-DeclRefExpr {{address}} <col:17, col:22> 'i32' lvalue 'first' Var {{address:first}} 'first' 'i32'
+|   `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+|-ConstructorDecl {{address}} <line:30:1, line:38:2> Counter target Struct {{address:counter}} 'Counter' 'ctor Counter(bool)'
+| |-ParmVarDecl {{address:flag}} <line:30:14, col:23> flag 'bool'
+| | `-BuiltinType {{address}} <col:19, col:23> 'bool'
+| `-CompoundStmt {{address}} <col:25, line:38:2>
+|   `-IfStmt {{address}} <line:31:3, line:37:4>
+|     |-ImplicitCastExpr {{address}} <line:31:6, col:10> 'bool' pure-rvalue <LValueToRValue>
+|     | `-DeclRefExpr {{address}} <col:6, col:10> 'bool' lvalue 'flag' ParmVar {{address:flag}} 'flag' 'bool'
+|     |-CompoundStmt {{address}} <col:11, line:33:4>
+|     | `-ExprStmt {{address}} <line:32:5, col:31>
+|     |   `-InitializationExpr {{address}} <col:5, col:30> 'void' non-object
+|     |     |-ThisExpr {{address}} <col:5, col:9> 'Counter' lvalue this
+|     |     `-ConstructionExpr {{address}} <col:13, col:30> 'Counter' pure-rvalue delegating target <col:13, col:20> 'Counter' Constructor {{address:counter_constructor}} 'Counter' 'ctor Counter(i32, bool)'
+|     |       |-ImplicitCastExpr {{address}} <col:21, col:22> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|     |       | `-IntegerLiteral {{address}} <col:21, col:22> 'comptime_int' non-object 1
+|     |       `-BoolLiteral {{address}} <col:24, col:29> 'bool' pure-rvalue false
+|     `-CompoundStmt {{address}} <line:33:10, line:37:4>
+|       |-ExprStmt {{address}} <line:34:5, col:26>
+|       | `-InitializationExpr {{address}} <col:5, col:25> 'void' non-object
+|       |   |-BaseSubobjectExpr {{address}} <col:5, col:14> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+|       |   | `-ThisExpr {{address}} <col:5, col:9> 'Counter' lvalue this
+|       |   `-ConstructionExpr {{address}} <col:18, col:25> 'Base' pure-rvalue base-subobject target <col:18, col:22> 'Base' Constructor {{address:base_constructor}} 'Base' 'ctor Base(i32)'
+|       |     `-ImplicitCastExpr {{address}} <col:23, col:24> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|       |       `-IntegerLiteral {{address}} <col:23, col:24> 'comptime_int' non-object 2
+|       |-ExprStmt {{address}} <line:35:5, col:27>
+|       | `-InitializationExpr {{address}} <col:5, col:26> 'void' non-object
+|       |   |-BaseSubobjectExpr {{address}} <col:5, col:15> 'Label' lvalue .Label Struct {{address:label}} 'Label'
+|       |   | `-ThisExpr {{address}} <col:5, col:9> 'Counter' lvalue this
+|       |   `-ConstructionExpr {{address}} <col:19, col:26> 'Label' pure-rvalue base-subobject target <col:19, col:24> 'Label' Constructor {{address:label_constructor}} 'Label' 'ctor Label()'
+|       |-ExprStmt {{address}} <line:36:5, col:21>
+|       | `-InitializationExpr {{address}} <col:5, col:20> 'void' non-object
+|       |   |-MemberExpr {{address}} <col:5, col:15> 'i32' lvalue .limit Field {{address:limit}} 'limit' 'i32'
+|       |   | `-ThisExpr {{address}} <col:5, col:9> 'Counter' lvalue this
+|       |   `-ImplicitCastExpr {{address}} <col:19, col:20> 'i32' pure-rvalue <ComptimeIntegerMaterialization>
+|       |     `-IntegerLiteral {{address}} <col:19, col:20> 'comptime_int' non-object 3
+|       `-ImplicitThisInitializationCompleteStmt {{address}} <invalid sloc>
+`-DestructorDecl {{address}} <line:40:1, col:18> Counter target Struct {{address:counter}} 'Counter' 'dtor Counter()'
+  `-CompoundStmt {{address}} <col:16, col:18>

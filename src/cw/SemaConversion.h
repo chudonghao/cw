@@ -64,11 +64,13 @@ struct NumericConversion {
 /// \brief Selects an existing base subobject, preserving its permissions and category.
 struct BaseObjectProjection {
   std::vector<const StructDecl*> path;  ///< Valid direct-base path in source-to-target order.
+  bool ambiguous{};                     ///< The base occurs more than once; `path` is the first of its paths.
 };
 
 /// \brief Adjusts a pointer value to address a base subobject.
 struct BasePointerConversion {
   std::vector<const StructDecl*> path;  ///< Valid direct-base path in source-to-target order.
+  bool ambiguous{};                     ///< The base occurs more than once; `path` is the first of its paths.
 };
 
 /// \brief The declaration chosen by exact function address selection.
@@ -156,10 +158,18 @@ using ValueConversionResult = std::variant<ConversionSequence, ImplicitConversio
 using BuildConversionResult = std::variant<ConversionSequence, ConversionFailure>;
 using FunctionAddressSelectionResult = std::variant<FunctionAddressSelection, OverloadSetSelectionFailure>;
 
-/// \brief Identifies the failed formation without changing the selected conversion.
+/// \brief A selected base conversion whose base occurs more than once in the source.
+struct AmbiguousBaseFailure {
+  QualType derived_type{};  ///< Source struct type.
+  QualType base_type{};     ///< Base struct type selected by type.
+};
+/// \brief A failure found while completing a selected conversion.
+using CompletionFailure = std::variant<ObjectFormationFailure, AmbiguousBaseFailure>;
+
+/// \brief Identifies the failed step without changing the selected conversion.
 struct ConversionCompletionFailure {
-  std::size_t transition_index{};    ///< Formation step that could not be completed.
-  ObjectFormationFailure failure{};  ///< Underlying same-type formation failure.
+  std::size_t transition_index{};  ///< Step that could not be completed.
+  CompletionFailure failure{};     ///< Underlying failure.
 };
 using ConversionCompletionResult = std::optional<ConversionCompletionFailure>;
 
@@ -183,8 +193,9 @@ const PointerType* CommonQualifiedPointerType(ASTContext& ast_context, QualType 
 
 /// \brief Borrows a fully prepared expression without changing it.
 ConversionSource MakeConversionSource(const Expr& expression);
-/// \brief Returns a unique nonempty static base path, or no path.
-std::optional<std::vector<const StructDecl*>> FindDerivedToBasePath(const Type* source, const Type* target);
+/// \brief Returns every nonempty static base path from a struct to one of its bases, in base declaration order.
+/// Several paths mean that the base occurs more than once and selecting it by type is ambiguous.
+std::vector<std::vector<const StructDecl*>> FindDerivedToBasePaths(const Type* source, const Type* target);
 /// \brief Returns whether a concrete target can select a function address.
 bool IsFunctionAddressTarget(QualType type);
 /// \brief Selects exactly one address of the specified concrete type without modifying the source.

@@ -35,29 +35,32 @@ std::uint64_t GetReturnAdjustment(const ASTContext& context, const VirtualFuncti
   std::uint64_t offset = 0;
   while (derived != base) {
     const auto& layout = *std::get<const StructLayout*>(context.GetStructLayout(*derived));
-    BOOST_ASSERT(derived->base_type && layout.base_offset);
-    offset += *layout.base_offset;
-    derived = derived->base_type->GetDeclaration();
+    BOOST_ASSERT(derived->base_types.size() == 1);
+    offset += layout.base_offsets.front();
+    derived = derived->base_types.front()->GetDeclaration();
   }
   return offset;
 }
 
 }  // namespace
 
+// Only single inheritance has a vtable layout so far; code generation rejects multiple inheritance.
 VTableLayout layout_detail::ComputeVTableLayout(const ASTContext& context, const StructDecl& declaration) {
   BOOST_ASSERT(declaration.IsPolymorphic() && !declaration.ContainsErrors());
+  BOOST_ASSERT(declaration.base_types.size() <= 1);
   VTableLayout result;
-  if (declaration.base_type && declaration.base_type->GetDeclaration()->IsPolymorphic()) {
+  if (!declaration.base_types.empty() && declaration.base_types.front()->GetDeclaration()->IsPolymorphic()) {
     const auto& layout = *std::get<const StructLayout*>(context.GetStructLayout(declaration));
-    BOOST_ASSERT(layout.base_offset == 0);
-    result = context.GetVTableLayout(*declaration.base_type->GetDeclaration());
+    BOOST_ASSERT(layout.base_offsets.front() == 0);
+    result = context.GetVTableLayout(*declaration.base_types.front()->GetDeclaration());
   }
   if (!declaration.VirtualDecl) {
     return result;
   }
   for (const auto& function : declaration.VirtualDecl->Functions) {
-    const auto* overridden = function->overridden_virtual_function;
-    if (overridden) {
+    BOOST_ASSERT(function->overridden_virtual_functions.size() <= 1);
+    if (!function->overridden_virtual_functions.empty()) {
+      const auto* overridden = function->overridden_virtual_functions.front();
       const auto inherited_index = result.function_indices.at(overridden);
       // Preserve every inherited static result contract, including older covariant slots.
       for (auto& entry : result.entries) {

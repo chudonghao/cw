@@ -17,6 +17,7 @@
 
 #include "Diagnostic.h"
 #include "NameLookup.h"
+#include "SemaConversion.h"
 #include "Source.h"
 #include "ast.h"
 
@@ -204,6 +205,7 @@ class Sema {
   QualType ResolveTypeImpl(TypeSyntax& type_syntax);
   void ValidateInitialLayouts(TranslationUnitDecl& translation_unit);
   bool HasLayoutPrerequisites(const Type& type);
+  void EmitBasePathNotes(const sema_detail::CompletionFailure& failure);
   bool ValidateStructLayout(StructDecl& declaration);
   bool ValidateObjectLayout(Node& owner, const Type& type);
   bool ValidateLayoutUse(Node& owner, const Type& type);

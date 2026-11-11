@@ -253,6 +253,21 @@ std::unique_ptr<Expr> Cast(std::unique_ptr<Expr> expression, ValueState result, 
   return cast;
 }
 
+// Whether `base` is a direct or indirect base of `derived`.
+bool DerivesFrom(const StructDecl& derived, const StructDecl& base) {
+  std::unordered_set<const StructDecl*> visited;
+  const auto search = [&](const auto& self, const StructDecl& current) -> bool {
+    for (const StructType* base_type : current.base_types) {
+      const StructDecl* candidate = base_type ? base_type->GetDeclaration() : nullptr;
+      if (candidate && visited.insert(candidate).second && (candidate == &base || self(self, *candidate))) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return search(search, derived);
+}
+
 const std::vector<const StructDecl*>& BasePath(const ConversionSequence& sequence) {
   for (const auto& step : sequence.transitions) {
     if (const auto* base = std::get_if<BaseObjectProjection>(&step.semantics)) {
@@ -339,10 +354,11 @@ const PointerType* CommonPointerType(ASTContext& ast_context, QualType left, Qua
   const QualType left_pointee = lhs->GetPointee();
   const QualType right_pointee = rhs->GetPointee();
   const bool pointee_const = left_pointee.IsConstQualified() || right_pointee.IsConstQualified();
-  if (FindDerivedToBasePath(left_pointee.GetTypePtr(), right_pointee.GetTypePtr())) {
+  // A base that occurs more than once still selects the common type; converting to it reports the ambiguity.
+  if (!FindDerivedToBasePaths(left_pointee.GetTypePtr(), right_pointee.GetTypePtr()).empty()) {
     return ast_context.GetPointerType(QualType(right_pointee.GetTypePtr(), pointee_const));
   }
-  if (FindDerivedToBasePath(right_pointee.GetTypePtr(), left_pointee.GetTypePtr())) {
+  if (!FindDerivedToBasePaths(right_pointee.GetTypePtr(), left_pointee.GetTypePtr()).empty()) {
     return ast_context.GetPointerType(QualType(left_pointee.GetTypePtr(), pointee_const));
   }
   return CommonQualifiedPointerType(ast_context, left, right);
@@ -391,33 +407,37 @@ ConversionSource MakeConversionSource(const Expr& expression) {
   return {&expression, {expression.type, expression.value_category}};
 }
 
-std::optional<std::vector<const StructDecl*>> FindDerivedToBasePath(const Type* source_type, const Type* target_type) {
+std::vector<std::vector<const StructDecl*>> FindDerivedToBasePaths(const Type* source_type, const Type* target_type) {
+  std::vector<std::vector<const StructDecl*>> paths;
   if (!source_type || !target_type || !source_type->AsStructType() || !target_type->AsStructType()) {
-    return std::nullopt;
+    return paths;
   }
-  const StructDecl* current = source_type->AsStructType()->GetDeclaration();
+  const StructDecl* source = source_type->AsStructType()->GetDeclaration();
   const StructDecl* target = target_type->AsStructType()->GetDeclaration();
-  if (!current || !target) {
-    return std::nullopt;
+  if (!source || !target) {
+    return paths;
   }
+  // Each occurrence of the target is one path; a base found on the current path is an invalid cycle.
   std::vector<const StructDecl*> path;
-  std::unordered_set<const StructDecl*> visited;
-  while (current) {
-    if (!visited.insert(current).second) {
-      return std::nullopt;
+  std::unordered_set<const StructDecl*> active{source};
+  const auto search = [&](const auto& self, const StructDecl& current) -> void {
+    for (const StructType* base_type : current.base_types) {
+      const StructDecl* base = base_type ? base_type->GetDeclaration() : nullptr;
+      if (!base || !active.insert(base).second) {
+        continue;
+      }
+      path.push_back(base);
+      if (base == target) {
+        paths.push_back(path);
+      } else {
+        self(self, *base);
+      }
+      path.pop_back();
+      active.erase(base);
     }
-    const StructType* base_type = current->base_type;
-    const StructDecl* base = base_type ? base_type->GetDeclaration() : nullptr;
-    if (!base) {
-      return std::nullopt;
-    }
-    path.push_back(base);
-    if (base == target) {
-      return path;
-    }
-    current = base;
-  }
-  return std::nullopt;
+  };
+  search(search, *source);
+  return paths;
 }
 
 bool IsFunctionAddressTarget(QualType type) {
@@ -554,20 +574,20 @@ BuildConversionResult BuildConversion(const ConversionSource& source, QualType t
       return failure(ReferenceBindingFailureKind::NotBindableValue);
     }
     const QualType object_type(reference->GetReferentType());
-    std::vector<const StructDecl*> path;
+    std::vector<std::vector<const StructDecl*>> paths;
     if (current.type.WithoutConst() != object_type) {
-      auto base = FindDerivedToBasePath(current.type.GetTypePtr(), object_type.GetTypePtr());
-      if (!base) {
+      paths = FindDerivedToBasePaths(current.type.GetTypePtr(), object_type.GetTypePtr());
+      if (paths.empty()) {
         return failure(ReferenceBindingFailureKind::ReferentTypeMismatch);
       }
-      path = std::move(*base);
     }
     if (!CanBindMode(current, reference->GetMode())) {
       return failure(ReferenceBindingFailureKind::ModeMismatch);
     }
     materialize();
-    if (!path.empty()) {
-      append(BaseObjectProjection{std::move(path)},
+    if (!paths.empty()) {
+      const bool ambiguous = paths.size() > 1;
+      append(BaseObjectProjection{std::move(paths.front()), ambiguous},
              {QualType(object_type.GetTypePtr(), current.type.IsConstQualified()), current.category});
     }
     if (reference->GetMode() == ReferenceMode::Copy && !current.type.IsConstQualified()) {
@@ -617,9 +637,10 @@ ValueConversionResult BuildValueConversion(ValueState source, QualType target, A
     return unavailable();
   }
   if (current.type.WithoutConst() != target) {
-    if (auto path = FindDerivedToBasePath(current.type.GetTypePtr(), target.GetTypePtr())) {
+    if (auto paths = FindDerivedToBasePaths(current.type.GetTypePtr(), target.GetTypePtr()); !paths.empty()) {
       materialize();
-      append(BaseObjectProjection{std::move(*path)},
+      const bool ambiguous = paths.size() > 1;
+      append(BaseObjectProjection{std::move(paths.front()), ambiguous},
              {QualType(target.GetTypePtr(), current.type.IsConstQualified()), current.category});
     }
   }
@@ -677,7 +698,7 @@ ValueConversionResult BuildValueConversion(ValueState source, QualType target, A
     }
     const auto source_pointee = source_pointer->GetPointee();
     const auto target_pointee = target_pointer->GetPointee();
-    if (auto path = FindDerivedToBasePath(source_pointee.GetTypePtr(), target_pointee.GetTypePtr())) {
+    if (auto paths = FindDerivedToBasePaths(source_pointee.GetTypePtr(), target_pointee.GetTypePtr()); !paths.empty()) {
       if (source_pointee.IsConstQualified() && !target_pointee.IsConstQualified()) {
         return unavailable(ImplicitConversionFailureKind::DiscardsConst);
       }
@@ -686,7 +707,8 @@ ValueConversionResult BuildValueConversion(ValueState source, QualType target, A
       }
       const QualType adjusted(
           ast_context.GetPointerType(QualType(target_pointee.GetTypePtr(), source_pointee.IsConstQualified())));
-      append(BasePointerConversion{std::move(*path)}, {adjusted, ValueCategory::PureRValue});
+      const bool ambiguous = paths.size() > 1;
+      append(BasePointerConversion{std::move(paths.front()), ambiguous}, {adjusted, ValueCategory::PureRValue});
       if (adjusted != target) {
         append(PointerQualification{}, {target, ValueCategory::PureRValue});
       }
@@ -712,13 +734,20 @@ ConversionComparison CompareConversion(const ValueState& source, QualType left_t
       return lhs < rhs ? ConversionComparison::Better : ConversionComparison::Worse;
     }
   }
+  // A base conversion is better only when its target derives from the other target; unrelated
+  // bases are indistinguishable, however deep they are.
   const auto& left_path = BasePath(left);
   const auto& right_path = BasePath(right);
-  if (left_path.size() < right_path.size() && std::equal(left_path.begin(), left_path.end(), right_path.begin())) {
-    return ConversionComparison::Better;
+  if (left_path.empty() != right_path.empty()) {
+    return left_path.empty() ? ConversionComparison::Better : ConversionComparison::Worse;
   }
-  if (right_path.size() < left_path.size() && std::equal(right_path.begin(), right_path.end(), left_path.begin())) {
-    return ConversionComparison::Worse;
+  if (!left_path.empty() && left_path.back() != right_path.back()) {
+    if (DerivesFrom(*left_path.back(), *right_path.back())) {
+      return ConversionComparison::Better;
+    }
+    if (DerivesFrom(*right_path.back(), *left_path.back())) {
+      return ConversionComparison::Worse;
+    }
   }
   const auto* left_reference = left_target.GetTypePtr()->AsReferenceType();
   const auto* right_reference = right_target.GetTypePtr()->AsReferenceType();
@@ -752,6 +781,18 @@ ConversionCompletionResult CompleteConversion(const ConversionSource& source, Qu
   ValueState current = source.state;
   for (std::size_t index = 0; index < sequence.transitions.size(); ++index) {
     auto& step = sequence.transitions[index];
+    const auto* object_base = std::get_if<BaseObjectProjection>(&step.semantics);
+    const auto* pointer_base = std::get_if<BasePointerConversion>(&step.semantics);
+    if ((object_base && object_base->ambiguous) || (pointer_base && pointer_base->ambiguous)) {
+      const auto struct_type = [](QualType type) {
+        if (const auto* pointer = type.GetTypePtr()->AsPointerType()) {
+          type = pointer->GetPointee();
+        }
+        return type.WithoutConst();
+      };
+      return ConversionCompletionFailure{
+          index, AmbiguousBaseFailure{struct_type(current.type), struct_type(step.result.type)}};
+    }
     if (std::holds_alternative<PendingObjectFormation>(step.semantics)) {
       auto result = CompleteObjectFormation(current, step.result.type);
       if (const auto* failure = std::get_if<ObjectFormationFailure>(&result)) {

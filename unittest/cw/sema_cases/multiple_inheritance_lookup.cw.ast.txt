@@ -1,0 +1,37 @@
+TranslationUnitDecl {{address}}
+|-StructDecl {{address:base}} <multiple_inheritance_lookup.cw:1:1, line:3:2> Base trivial
+| `-FieldDecl {{address:base_value}} <line:2:3, col:13> value 'i32'
+|   `-BuiltinType {{address}} <col:9, col:12> 'i32'
+|-StructDecl {{address:left}} <line:5:1, line:7:2> Left trivial : 'Base'
+| |-BaseType 'Base' Struct {{address:base}} 'Base'
+| `-FieldDecl {{address:left_value}} <line:6:3, col:12> left 'i32'
+|   `-BuiltinType {{address}} <col:8, col:11> 'i32'
+|-StructDecl {{address:right}} <line:9:1, line:11:2> Right trivial : 'Base'
+| |-BaseType 'Base' Struct {{address:base}} 'Base'
+| `-FieldDecl {{address:right_value}} <line:10:3, col:13> value 'i32'
+|   `-BuiltinType {{address}} <col:9, col:12> 'i32'
+|-StructDecl {{address}} <line:13:1, col:37> Pair trivial : 'Left', 'Right'
+| |-BaseType 'Left' Struct {{address:left}} 'Left'
+| `-BaseType 'Right' Struct {{address:right}} 'Right'
+`-FunctionDecl {{address}} <line:15:1, line:20:2> MultipleInheritanceLookup 'func (Pair) void'
+  |-ParmVarDecl {{address:pair}} <line:15:32, col:41> pair 'Pair'
+  | `-NamedType {{address}} <col:37, col:41> 'Pair'
+  `-CompoundStmt {{address}} <col:43, line:20:2>
+    |-ExprStmt {{address}} <line:16:3, col:13>
+    | `-MemberExpr {{address}} <col:3, col:12> 'i32' lvalue .left Field {{address:left_value}} 'left' 'i32'
+    |   `-ImplicitCastExpr {{address}} <col:3, col:7> 'Left' lvalue <BaseSubobject> path Struct {{address:left}} 'Left'
+    |     `-DeclRefExpr {{address}} <col:3, col:7> 'Pair' lvalue 'pair' ParmVar {{address:pair}} 'pair' 'Pair'
+    |-ExprStmt {{address}} <line:17:3, col:19>
+    | `-MemberExpr {{address}} <col:3, col:18> 'i32' lvalue .value Field {{address:base_value}} 'value' 'i32'
+    |   `-ImplicitCastExpr {{address}} <col:3, col:12> 'Base' lvalue <BaseSubobject> path Struct {{address:base}} 'Base'
+    |     `-BaseSubobjectExpr {{address}} <col:3, col:12> 'Left' lvalue .Left Struct {{address:left}} 'Left'
+    |       `-DeclRefExpr {{address}} <col:3, col:7> 'Pair' lvalue 'pair' ParmVar {{address:pair}} 'pair' 'Pair'
+    |-ExprStmt {{address}} <line:18:3, col:20>
+    | `-MemberExpr {{address}} <col:3, col:19> 'i32' lvalue .value Field {{address:right_value}} 'value' 'i32'
+    |   `-BaseSubobjectExpr {{address}} <col:3, col:13> 'Right' lvalue .Right Struct {{address:right}} 'Right'
+    |     `-DeclRefExpr {{address}} <col:3, col:7> 'Pair' lvalue 'pair' ParmVar {{address:pair}} 'pair' 'Pair'
+    `-ExprStmt {{address}} <line:19:3, col:25>
+      `-MemberExpr {{address}} <col:3, col:24> 'i32' lvalue .value Field {{address:base_value}} 'value' 'i32'
+        `-BaseSubobjectExpr {{address}} <col:3, col:18> 'Base' lvalue .Base Struct {{address:base}} 'Base'
+          `-BaseSubobjectExpr {{address}} <col:3, col:13> 'Right' lvalue .Right Struct {{address:right}} 'Right'
+            `-DeclRefExpr {{address}} <col:3, col:7> 'Pair' lvalue 'pair' ParmVar {{address:pair}} 'pair' 'Pair'
