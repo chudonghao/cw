@@ -110,6 +110,7 @@ add_cwc_program_case(function_call 11)
 add_cwc_program_case(conditional_result 2)
 add_cwc_program_case(global_initialization 7)
 add_cwc_program_case(virtual_dispatch 2)
+add_cwc_program_case(multiple_inheritance 0)
 add_cwc_program_case(main_arguments 1)
 add_cwc_program_case(pointer_round_trip 19)
 add_cwc_program_case(pointer_arithmetic_result 0)
@@ -139,6 +140,8 @@ add_cwc_driver_case(wasm_virtual_slot_ir wasm_virtual_slot_ir
                        "${wasm_driver_case_dir}/virtual_pointers.cw")
 add_cwc_driver_case(wasm_pointer_arithmetic_ir wasm_pointer_arithmetic_ir
                        "${wasm_driver_case_dir}/pointer_arithmetic.cw")
+add_cwc_driver_case(wasm_multiple_inheritance_ir wasm_multiple_inheritance_ir
+                       "${wasm_driver_case_dir}/multiple_inheritance.cw")
 add_cwc_driver_case(wasm_link wasm_link)
 set_tests_properties("cwc.driver.wasm_link" PROPERTIES SKIP_REGULAR_EXPRESSION "cannot locate wasm-ld")
 add_cwc_driver_case(wasm_multi_source_link wasm_multi_source_link

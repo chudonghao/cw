@@ -132,7 +132,7 @@ class CodeGenFunction {
   // Array element, struct element, base, and field addresses.
   Address EmitArrayElement(Address array, llvm::Value* index, bool in_bounds = false);
   Address EmitStructElement(Address object, unsigned index, llvm::StringRef name);
-  Address EmitBase(Address object, const StructDecl& declaration);
+  Address EmitBase(Address object, const StructDecl& declaration, std::size_t index);
   Address EmitField(Address object, const StructDecl& declaration, const FieldDecl& field);
 
   // Loads, stores, aggregate copies, and per-element array loops.

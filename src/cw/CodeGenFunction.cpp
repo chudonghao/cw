@@ -313,16 +313,16 @@ Address CodeGenFunction::EmitStructElement(Address object, unsigned index, llvm:
   return {pointer, type->getElementType(index), llvm::commonAlignment(object.alignment, offset)};
 }
 
-Address CodeGenFunction::EmitBase(Address object, const StructDecl& declaration) {
+// The direct base `declaration.base_types[index]` of an object of `declaration`.
+Address CodeGenFunction::EmitBase(Address object, const StructDecl& declaration, std::size_t index) {
   const auto& shared = *std::get<const StructLayout*>(codegen_.ast_context_->GetStructLayout(declaration));
   const auto& representation = codegen_.struct_representations_.at(&declaration);
-  const StructType* base_type = GetDirectBase(declaration);
-  BOOST_ASSERT(base_type);
-  const std::uint64_t base_offset = shared.base_offsets.front();
+  const StructType* base_type = declaration.base_types[index];
+  const std::uint64_t base_offset = shared.base_offsets[index];
   Address address = object;
   if (base_offset != 0) {
-    if (representation.base_index) {
-      address = EmitStructElement(object, *representation.base_index, "base");
+    if (const auto& element = representation.base_indices[index]) {
+      address = EmitStructElement(object, *element, "base");
     } else {
       address.pointer = builder_.CreateGEP(builder_.getInt8Ty(), object.pointer, GetTargetIndex(base_offset), "base",
                                            llvm::GEPNoWrapFlags::inBounds() | llvm::GEPNoWrapFlags::noUnsignedWrap());
@@ -651,9 +651,9 @@ bool CodeGenFunction::EmitDestroy(Address address, const Type& type, CodeGen::St
 void CodeGenFunction::EnterDestructorCleanups(const DestructorDecl& declaration) {
   const auto& structure = *declaration.target_type->GetDeclaration();
   // These entries enclose the user body, so every return destroys locals before subobjects.
-  const StructType* base_type = GetDirectBase(structure);
-  if (base_type) {
-    local_cleanups_.push_back({EmitBase(this_address_, structure), base_type, nullptr, true,
+  // Cleanups run in reverse, so fields are destroyed before bases, each in reverse declaration order.
+  for (std::size_t index = 0; index < structure.base_types.size(); ++index) {
+    local_cleanups_.push_back({EmitBase(this_address_, structure, index), structure.base_types[index], nullptr, true,
                                LocalCleanup::Kind::Destroy, CodeGen::StructorKind::Base});
   }
   for (const auto& field : structure.Fields) {
@@ -661,9 +661,14 @@ void CodeGenFunction::EnterDestructorCleanups(const DestructorDecl& declaration)
       local_cleanups_.push_back({EmitField(this_address_, structure, *field), field->type.GetTypePtr(), nullptr, true});
     }
   }
-  if (base_type && base_type->GetDeclaration()->IsPolymorphic()) {
-    local_cleanups_.push_back(
-        {EmitBase(this_address_, structure), base_type, nullptr, true, LocalCleanup::Kind::ExitVirtualDispatch});
+  // Before the fields are destroyed, each dynamic base subobject leaves this struct's dispatch,
+  // in base declaration order.
+  for (std::size_t index = structure.base_types.size(); index > 0; --index) {
+    const StructType* base_type = structure.base_types[index - 1];
+    if (base_type->GetDeclaration()->IsPolymorphic()) {
+      local_cleanups_.push_back({EmitBase(this_address_, structure, index - 1), base_type, nullptr, true,
+                                 LocalCleanup::Kind::ExitVirtualDispatch});
+    }
   }
 }
 
@@ -711,10 +716,6 @@ bool CodeGenFunction::EmitVTablePointers(Address object, const StructDecl& stage
 llvm::Value* CodeGenFunction::EmitVirtualCallee(const VirtualFunctionDecl& declaration, llvm::Value* receiver) {
   const auto* receiver_type = declaration.ParmVars.front()->type.GetTypePtr()->AsReferenceType();
   const auto& structure = *receiver_type->GetReferentType()->AsStructType()->GetDeclaration();
-  if (VTableUsesMultipleInheritance(structure)) {
-    codegen_.Unsupported(declaration, "multiple inheritance");
-    return nullptr;
-  }
   const auto index = codegen_.ast_context_->GetVTableLayout(structure).function_indices.at(&declaration);
   const auto pointer_alignment = llvm::Align(codegen_.ast_context_->GetTargetInfo().GetPointerAlignment());
   auto* table = builder_.CreateAlignedLoad(builder_.getPtrTy(), receiver, pointer_alignment, "vtable");
@@ -1363,10 +1364,15 @@ Address CodeGenFunction::EmitBaseSubobject(const Expr& source, const std::vector
   std::uint64_t offset = 0;
   BOOST_ASSERT(!path.empty());
   for (const auto* base : path) {
-    BOOST_ASSERT(GetDirectBase(*declaration) && GetDirectBase(*declaration)->GetDeclaration() == base);
+    // A struct cannot name the same direct base twice, so each step of the path is unambiguous.
+    const auto& bases = declaration->base_types;
+    const auto step = std::find_if(bases.begin(), bases.end(),
+                                   [&](const StructType* candidate) { return candidate->GetDeclaration() == base; });
+    BOOST_ASSERT(step != bases.end());
+    const auto index = static_cast<std::size_t>(step - bases.begin());
     const auto& shared = *std::get<const StructLayout*>(codegen_.ast_context_->GetStructLayout(*declaration));
-    offset += shared.base_offsets.front();
-    address = EmitBase(address, *declaration);
+    offset += shared.base_offsets[index];
+    address = EmitBase(address, *declaration, index);
     declaration = base;
   }
   // Pointer conversions preserve null; zero-offset base paths need no runtime check.
@@ -2177,9 +2183,6 @@ std::optional<RValue> CodeGenFunction::EmitCall(const CallExpr& expression, Retu
   }
   if (virtual_function) {
     target = EmitVirtualCallee(*virtual_function, arguments[*info.parameters.front().llvm_index]);
-    if (!target) {
-      return std::nullopt;
-    }
   } else if (virtual_pointer) {
     target = EmitVirtualCallee(virtual_pointer, arguments[*info.parameters.front().llvm_index]);
   }

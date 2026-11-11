@@ -121,7 +121,8 @@ bool IsEmptyRecord(const Type& type) {
     return false;
   }
   const auto& declaration = *record->GetDeclaration();
-  if (const StructType* base = codegen_detail::GetDirectBase(declaration); base && !IsEmptyRecord(*base)) {
+  if (!std::all_of(declaration.base_types.begin(), declaration.base_types.end(),
+                   [](const StructType* base) { return IsEmptyRecord(*base); })) {
     return false;
   }
   return std::all_of(declaration.Fields.begin(), declaration.Fields.end(), [](const auto& field) {
@@ -169,8 +170,10 @@ std::optional<HomogeneousAggregate> GetHomogeneousAggregate(const Type& type, co
       result.count += part->count;
       return true;
     };
-    if (const StructType* base = codegen_detail::GetDirectBase(declaration); base && !append(*base)) {
-      return std::nullopt;
+    for (const StructType* base : declaration.base_types) {
+      if (!append(*base)) {
+        return std::nullopt;
+      }
     }
     for (const auto& field : declaration.Fields) {
       const Type* element = field->type.GetTypePtr();
@@ -205,7 +208,8 @@ bool ContainsOnlyPointers(const Type& type) {
     return false;
   }
   const auto& declaration = *record->GetDeclaration();
-  if (const StructType* base = codegen_detail::GetDirectBase(declaration); base && !ContainsOnlyPointers(*base)) {
+  if (!std::all_of(declaration.base_types.begin(), declaration.base_types.end(),
+                   [](const StructType* base) { return ContainsOnlyPointers(*base); })) {
     return false;
   }
   return std::all_of(declaration.Fields.begin(), declaration.Fields.end(), [](const auto& field) {
@@ -228,7 +232,13 @@ const Type* GetSingleElementStruct(const Type& type, const ASTContext& context) 
   }
   const auto& declaration = *record->GetDeclaration();
   const Type* element = nullptr;
-  if (const StructType* base = codegen_detail::GetDirectBase(declaration); base && !IsEmptyRecord(*base)) {
+  for (const StructType* base : declaration.base_types) {
+    if (IsEmptyRecord(*base)) {
+      continue;
+    }
+    if (element) {
+      return nullptr;
+    }
     element = GetSingleElementStruct(*base, context);
     if (!element) {
       return nullptr;
@@ -268,46 +278,7 @@ const Type* GetSingleElementStruct(const Type& type, const ASTContext& context) 
   return nullptr;
 }
 
-// Whether a struct or one of its bases has more than one direct base. Code generation does not
-// provide the layouts, vtables and adjustments that multiple inheritance needs yet.
-bool UsesMultipleInheritance(const StructDecl& declaration) {
-  return declaration.base_types.size() > 1 ||
-         std::any_of(declaration.base_types.begin(), declaration.base_types.end(),
-                     [](const StructType* base) { return UsesMultipleInheritance(*base->GetDeclaration()); });
-}
-
 }  // namespace
-
-const StructType* codegen_detail::GetDirectBase(const StructDecl& declaration) {
-  BOOST_ASSERT(declaration.base_types.size() <= 1);
-  return declaration.base_types.empty() ? nullptr : declaration.base_types.front();
-}
-
-// Whether the vtable of a single-inheritance struct still depends on multiple inheritance through
-// a covariant return, whose adjustment walks the returned struct's bases.
-bool codegen_detail::VTableUsesMultipleInheritance(const StructDecl& declaration) {
-  if (UsesMultipleInheritance(declaration)) {
-    return true;
-  }
-  for (const StructDecl* current = &declaration; current;
-       current = current->base_types.empty() ? nullptr : current->base_types.front()->GetDeclaration()) {
-    if (!current->VirtualDecl) {
-      continue;
-    }
-    for (const auto& function : current->VirtualDecl->Functions) {
-      const Type* result = function->type.GetTypePtr()->AsFunctionType()->GetReturnType();
-      if (const auto* pointer = result->AsPointerType()) {
-        result = pointer->GetPointee().GetTypePtr();
-      } else if (const auto* reference = result->AsReferenceType()) {
-        result = reference->GetReferentType();
-      }
-      if (const auto* record = result->AsStructType(); record && UsesMultipleInheritance(*record->GetDeclaration())) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
 
 std::unique_ptr<llvm::TargetMachine> CodeGen::CreateTarget(const TargetInfo& target_info, DiagnosticEngine& diagnostics,
                                                            llvm::VersionTuple minimum_os_version) {
@@ -599,9 +570,6 @@ CodeGen::TypeConversionResult CodeGen::ConvertStructType(const StructDecl& decla
   if (const auto it = struct_representations_.find(&declaration); it != struct_representations_.end()) {
     return it->second.type;
   }
-  if (UsesMultipleInheritance(declaration)) {
-    return TypeConversionFailure::MultipleInheritance;
-  }
   const auto shared_result = ast_context_->GetStructLayout(declaration);
   if (std::holds_alternative<LayoutFailure>(shared_result)) {
     return TypeConversionFailure::InvalidLayout;
@@ -611,21 +579,21 @@ CodeGen::TypeConversionResult CodeGen::ConvertStructType(const StructDecl& decla
     llvm::Type* type;
     std::uint64_t offset;
     const FieldDecl* field;
-    bool is_base{};
+    std::optional<std::size_t> base;  ///< Index in `StructDecl::base_types`.
   };
   std::vector<Element> members;
-  const StructType* base_type = codegen_detail::GetDirectBase(declaration);
-  if (declaration.IsPolymorphic() && (!base_type || !base_type->GetDeclaration()->IsPolymorphic())) {
+  // A dynamic struct without a primary base introduces the vtable pointer at offset zero.
+  if (declaration.IsPolymorphic() && !shared.primary_base) {
     members.push_back({llvm::PointerType::getUnqual(*llvm_context_), 0, nullptr});
   }
-  if (base_type) {
-    const auto& base = *base_type->GetDeclaration();
+  for (std::size_t index = 0; index < declaration.base_types.size(); ++index) {
+    const auto& base = *declaration.base_types[index]->GetDeclaration();
     const auto conversion = ConvertStructType(base);
     if (const auto* failure = std::get_if<TypeConversionFailure>(&conversion)) {
       return *failure;
     }
     if (!base.IsEmpty()) {
-      members.push_back({struct_representations_.at(&base).base_type, shared.base_offsets.front(), nullptr, true});
+      members.push_back({struct_representations_.at(&base).base_type, shared.base_offsets[index], nullptr, index});
     }
   }
   for (std::size_t index = 0; index < declaration.Fields.size(); ++index) {
@@ -636,8 +604,12 @@ CodeGen::TypeConversionResult CodeGen::ConvertStructType(const StructDecl& decla
     }
     members.push_back({std::get<llvm::Type*>(conversion), shared.field_offsets[index], &field});
   }
+  // The primary base precedes earlier declared bases, as in Clang's CGRecordLowering.
+  std::stable_sort(members.begin(), members.end(),
+                   [](const Element& left, const Element& right) { return left.offset < right.offset; });
 
   StructRepresentation result;
+  result.base_indices.resize(declaration.base_types.size());
   const auto& data_layout = module_->getDataLayout();
   const auto padding_type = [&](std::uint64_t size) -> llvm::Type* {
     if (size == 1) {
@@ -666,8 +638,8 @@ CodeGen::TypeConversionResult CodeGen::ConvertStructType(const StructDecl& decla
         if (save_indices) {
           if (member.field) {
             result.field_indices[member.field] = static_cast<unsigned>(elements.size());
-          } else if (member.is_base) {
-            result.base_index = static_cast<unsigned>(elements.size());
+          } else if (member.base) {
+            result.base_indices[*member.base] = static_cast<unsigned>(elements.size());
           }
         }
         elements.push_back(member.type);
@@ -685,9 +657,9 @@ CodeGen::TypeConversionResult CodeGen::ConvertStructType(const StructDecl& decla
       BOOST_ASSERT(data_layout.getTypeAllocSize(type).getFixedValue() == size);
       if (save_indices) {
         for (const auto& member : members) {
-          const auto index = member.field     ? result.field_indices.at(member.field)
-                             : member.is_base ? *result.base_index
-                                              : 0;
+          const auto index = member.field  ? result.field_indices.at(member.field)
+                             : member.base ? *result.base_indices[*member.base]
+                                           : 0;
           BOOST_ASSERT(data_layout.getStructLayout(type)->getElementOffset(index) == member.offset);
         }
       }
@@ -1014,10 +986,6 @@ llvm::Function* CodeGen::GetOrCreateFunction(const FunctionDecl& declaration, St
 llvm::GlobalVariable* CodeGen::GetOrCreateVTable(const StructDecl& declaration) {
   auto it = vtables_.find(&declaration);
   if (it == vtables_.end()) {
-    if (codegen_detail::VTableUsesMultipleInheritance(declaration)) {
-      Unsupported(declaration, "multiple inheritance");
-      return nullptr;
-    }
     const auto name = "cw:" + declaration.QualifiedName() + ":vtable";
     if (module_->getNamedValue(name)) {
       InternalError(declaration, "conflicting stable symbol '" + name + "'");
@@ -1090,10 +1058,6 @@ llvm::Constant* CodeGen::GetVTableAddressPoint(const StructDecl& declaration, co
 llvm::Constant* CodeGen::GetVirtualFunctionPointer(const VirtualFunctionDecl& declaration) {
   const auto* receiver = declaration.ParmVars.front()->type.GetTypePtr()->AsReferenceType();
   const auto& structure = *receiver->GetReferentType()->AsStructType()->GetDeclaration();
-  if (codegen_detail::VTableUsesMultipleInheritance(structure)) {
-    Unsupported(declaration, "multiple inheritance");
-    return nullptr;
-  }
   const auto index = ast_context_->GetVTableLayout(structure).function_indices.at(&declaration);
   auto* word = GetPointerIndexType();
   llvm::Constant* values[] = {
@@ -1287,8 +1251,6 @@ bool CodeGen::DiagnoseTypeConversionFailure(const Node& node, TypeConversionFail
       return Unsupported(node, feature);
     case TypeConversionFailure::InvalidLayout:
       return InternalError(node, "semantic object has no valid target layout");
-    case TypeConversionFailure::MultipleInheritance:
-      return Unsupported(node, "multiple inheritance");
   }
   BOOST_ASSERT(false && "unknown type conversion failure");
   return false;
